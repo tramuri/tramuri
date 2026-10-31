@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "tramuri"
+# Maturin reads the single source-of-truth version from Cargo.toml's workspace.package.version.
 dynamic = ["version"]
 description = "Local-first, agent-native infrastructure for verified work outcomes"
 readme = "README.md"

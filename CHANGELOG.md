@@ -8,6 +8,8 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-31
+
 ### Added
 
 - Criterion assessment history and deterministic Mission outcome aggregation.

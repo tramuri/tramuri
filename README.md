@@ -4,6 +4,8 @@
   <img src="https://raw.githubusercontent.com/tramuri/tramuri/main/assets/logo.png" alt="Tramuri logo" width="220">
 </p>
 
+<p align="center"><a href="https://github.com/tramuri/tramuri/blob/main/README.md">English</a> · <a href="https://github.com/tramuri/tramuri/blob/main/README.pt-BR.md">Português (Brasil)</a></p>
+
 <p align="center"><strong>From intent to verified outcomes.</strong></p>
 
 <p align="center">

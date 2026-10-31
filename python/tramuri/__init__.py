@@ -1,4 +1,4 @@
-"""Python SDK for Tramuri's shared Rust project-discovery core."""
+"""Python SDK for Tramuri's shared Rust core."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from ._native import (
     _mission_close_json,
     _mission_create_json,
     _mission_get_json,
+    _outcome_assess_json,
+    _outcome_get_json,
     _scan_json,
 )
 
@@ -123,6 +125,47 @@ def evidence_add(
     return json.loads(_evidence_add_json(encoded_path, mission_id, execution_id, kind, locator))
 
 
+def outcome_assess(
+    path: PathLike = ".",
+    *,
+    mission_id: str,
+    contract_revision: int,
+    criterion_id: str,
+    result: str,
+    verifier_kind: str,
+    verifier_reference: str,
+    evidence_ids: tuple[str, ...] | list[str] = (),
+    explanation: str | None = None,
+) -> dict[str, Any]:
+    """Append a criterion assessment through the shared Rust core."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(
+        _outcome_assess_json(
+            encoded_path,
+            json.dumps(
+                {
+                    "mission_id": mission_id,
+                    "contract_revision": contract_revision,
+                    "criterion_id": criterion_id,
+                    "result": result,
+                    "evidence_ids": list(evidence_ids),
+                    "verifier_kind": verifier_kind,
+                    "verifier_reference": verifier_reference,
+                    "explanation": explanation,
+                }
+            ),
+        )
+    )
+
+
+def outcome_get(
+    path: PathLike = ".", *, mission_id: str, contract_revision: int | None = None
+) -> dict[str, Any]:
+    """Get criterion assessment history and the deterministic aggregate outcome."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_outcome_get_json(encoded_path, mission_id, contract_revision))
+
+
 __version__ = version("tramuri")
 
 __all__ = [
@@ -139,4 +182,6 @@ __all__ = [
     "mission_contract_revise",
     "execution_record",
     "evidence_add",
+    "outcome_assess",
+    "outcome_get",
 ]

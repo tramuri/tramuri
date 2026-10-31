@@ -58,6 +58,20 @@ pub enum TramuriError {
     InvalidEvidenceKind,
     #[error("evidence reference is invalid or unsafe: {0}")]
     InvalidEvidenceReference(String),
+    #[error("criterion assessment result must be met, not_met, or unverified")]
+    InvalidAssessmentResult,
+    #[error("criterion assessment verifier kind must be human or mechanism")]
+    InvalidVerifierKind,
+    #[error("criterion assessment verifier reference must not be empty")]
+    EmptyVerifierReference,
+    #[error("a met or not_met criterion assessment requires at least one evidence reference")]
+    MissingAssessmentEvidence,
+    #[error("criterion was not found in the requested Success Contract revision: {0}")]
+    CriterionNotFound(String),
+    #[error(
+        "assessment evidence must belong to the same Mission and Success Contract revision: {0}"
+    )]
+    AssessmentEvidenceNotFound(String),
 }
 
 pub type Result<T> = std::result::Result<T, TramuriError>;

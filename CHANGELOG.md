@@ -8,6 +8,16 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+### Added
+
+- Criterion assessment history and deterministic Mission outcome aggregation.
+- CLI and Python SDK operations for outcome assessment and retrieval.
+
+### Changed
+
+- SQLite schema v5 adds assessment tables through an additive migration; existing Mission,
+  Execution, and Evidence records are preserved.
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

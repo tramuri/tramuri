@@ -2,7 +2,10 @@ use std::fs;
 
 use rusqlite::{Connection, params};
 use tempfile::TempDir;
-use tramuri_core::{SCHEMA_VERSION, init};
+use tramuri_core::{
+    ActorKind, CriterionInput, EvidenceInput, EvidenceKind, ExecutionInput, ExecutionState,
+    MissionInput, SCHEMA_VERSION, evidence_add, execution_record, init, mission_create,
+};
 
 fn create_v1_project() -> TempDir {
     let project = TempDir::new().expect("project directory should be created");
@@ -45,14 +48,14 @@ fn v1_migration_preserves_inventory_and_creates_knowledge_schema() {
     let report = init(project.path()).expect("init should migrate a v1 database");
 
     assert!(report.already_initialized);
-    assert_eq!(report.schema_version, 4);
-    assert_eq!(SCHEMA_VERSION, 4);
+    assert_eq!(report.schema_version, 5);
+    assert_eq!(SCHEMA_VERSION, 5);
     let connection = Connection::open(project.path().join(".tramuri/tramuri.sqlite3"))
         .expect("migrated database should open");
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("schema version should be readable");
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
     let row: (String, i64, Option<i64>, Option<String>, String) = connection
         .query_row(
             "SELECT path, size_bytes, modified_unix_ms, sha256, hash_status
@@ -90,6 +93,8 @@ fn v1_migration_preserves_inventory_and_creates_knowledge_schema() {
         "success_criteria",
         "executions",
         "mission_evidence",
+        "criterion_assessments",
+        "criterion_assessment_evidence",
     ] {
         let count: i64 = connection
             .query_row(
@@ -110,7 +115,10 @@ fn v2_migration_preserves_existing_knowledge_and_inventory() {
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE success_criteria;
+            "DROP TABLE criterion_assessment_evidence;
+             DROP TABLE criterion_assessments;
+             DROP INDEX success_criteria_assessment_identity;
+             DROP TABLE success_criteria;
              DROP TABLE mission_evidence;
              DROP TABLE executions;
              DROP TABLE success_contracts;
@@ -162,7 +170,10 @@ fn failed_v2_migration_rolls_back_new_tables_and_preserves_version() {
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE success_criteria;
+            "DROP TABLE criterion_assessment_evidence;
+             DROP TABLE criterion_assessments;
+             DROP INDEX success_criteria_assessment_identity;
+             DROP TABLE success_criteria;
              DROP TABLE mission_evidence;
              DROP TABLE executions;
              DROP TABLE success_contracts;
@@ -238,25 +249,33 @@ fn failed_v1_migration_rolls_back_version_and_inventory() {
 }
 
 #[test]
-fn v3_migration_adds_execution_evidence_tables_transactionally() {
+fn v3_migration_adds_execution_evidence_and_assessment_tables_transactionally() {
     let project = tempfile::tempdir().expect("project directory should be created");
     init(project.path()).expect("project should initialize");
     let database = project.path().join(".tramuri/tramuri.sqlite3");
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE mission_evidence; DROP TABLE executions; PRAGMA user_version = 3;",
+            "DROP TABLE criterion_assessment_evidence;
+             DROP TABLE criterion_assessments;
+             DROP INDEX success_criteria_assessment_identity;
+             DROP TABLE mission_evidence; DROP TABLE executions; PRAGMA user_version = 3;",
         )
         .unwrap();
     drop(connection);
 
-    init(project.path()).expect("v3 database should migrate to v4");
+    init(project.path()).expect("v3 database should migrate to the current schema");
     let connection = Connection::open(database).unwrap();
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 4);
-    for table in ["executions", "mission_evidence"] {
+    assert_eq!(version, 5);
+    for table in [
+        "executions",
+        "mission_evidence",
+        "criterion_assessments",
+        "criterion_assessment_evidence",
+    ] {
         let exists: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
@@ -279,7 +298,7 @@ fn failed_v3_migration_rolls_back_and_keeps_schema_version() {
     let database = project.path().join(".tramuri/tramuri.sqlite3");
     let connection = Connection::open(&database).expect("database should open");
     connection
-        .execute_batch("DROP TABLE mission_evidence; DROP TABLE executions; CREATE TABLE executions (conflicting INTEGER); PRAGMA user_version = 3;")
+        .execute_batch("DROP TABLE criterion_assessment_evidence; DROP TABLE criterion_assessments; DROP INDEX success_criteria_assessment_identity; DROP TABLE mission_evidence; DROP TABLE executions; CREATE TABLE executions (conflicting INTEGER); PRAGMA user_version = 3;")
         .unwrap();
     drop(connection);
 
@@ -297,4 +316,129 @@ fn failed_v3_migration_rolls_back_and_keeps_schema_version() {
         )
         .unwrap();
     assert_eq!(tables, 0);
+}
+
+#[test]
+fn v4_migration_adds_assessment_tables_and_preserves_existing_mission_data() {
+    let project = tempfile::tempdir().expect("project directory should be created");
+    init(project.path()).expect("project should initialize");
+    let mission = mission_create(
+        project.path(),
+        MissionInput {
+            objective: "Deliver a customer integration".to_owned(),
+            context: None,
+            criteria: vec![CriterionInput {
+                description: "Customer accepts integration".to_owned(),
+                required: true,
+                evidence_expectation: None,
+            }],
+        },
+    )
+    .expect("mission should be created");
+    let execution = execution_record(
+        project.path(),
+        ExecutionInput {
+            mission_id: mission.id.clone(),
+            contract_revision: 1,
+            actor_kind: ActorKind::Human,
+            actor_reference: Some("operator".to_owned()),
+            state: ExecutionState::Completed,
+            notes: None,
+        },
+    )
+    .expect("execution should be recorded");
+    let evidence = evidence_add(
+        project.path(),
+        EvidenceInput {
+            mission_id: mission.id.clone(),
+            execution_id: execution.id.clone(),
+            kind: EvidenceKind::HumanAttestation,
+            locator: "customer-accepted".to_owned(),
+        },
+    )
+    .expect("evidence should be recorded");
+    let database = project.path().join(".tramuri/tramuri.sqlite3");
+    let connection = Connection::open(&database).expect("database should open");
+    connection
+        .execute_batch(
+            "DROP TABLE criterion_assessment_evidence;
+             DROP TABLE criterion_assessments;
+             DROP INDEX success_criteria_assessment_identity;
+             PRAGMA user_version = 4;",
+        )
+        .expect("fixture should represent schema v4");
+    drop(connection);
+
+    init(project.path()).expect("v4 database should migrate to current schema");
+
+    let connection = Connection::open(database).expect("migrated database should open");
+    let version: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .expect("schema version should be readable");
+    assert_eq!(version, 5);
+    let preserved: (i64, i64, i64) = connection
+        .query_row(
+            "SELECT
+               (SELECT COUNT(*) FROM missions WHERE id = ?1),
+               (SELECT COUNT(*) FROM executions WHERE id = ?2),
+               (SELECT COUNT(*) FROM mission_evidence WHERE id = ?3)",
+            rusqlite::params![mission.id, execution.id, evidence.id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("existing domain records should remain queryable");
+    assert_eq!(preserved, (1, 1, 1));
+    let integrity: String = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .expect("integrity check should run");
+    assert_eq!(integrity, "ok");
+    let foreign_key_failures: i64 = connection
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .expect("foreign key check should run");
+    assert_eq!(foreign_key_failures, 0);
+}
+
+#[test]
+fn failed_v4_migration_rolls_back_assessment_schema_and_keeps_version() {
+    let project = tempfile::tempdir().expect("project directory should be created");
+    init(project.path()).expect("project should initialize");
+    let database = project.path().join(".tramuri/tramuri.sqlite3");
+    let connection = Connection::open(&database).expect("database should open");
+    connection
+        .execute_batch(
+            "DROP TABLE criterion_assessment_evidence;
+             DROP TABLE criterion_assessments;
+             DROP INDEX success_criteria_assessment_identity;
+             CREATE TABLE criterion_assessments (conflicting INTEGER);
+             PRAGMA user_version = 4;",
+        )
+        .expect("conflicting fixture should be created");
+    drop(connection);
+
+    assert!(init(project.path()).is_err());
+
+    let connection = Connection::open(database).expect("database should remain open");
+    let version: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .expect("schema version should remain readable");
+    assert_eq!(version, 4);
+    let identity_index: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type='index' AND name='success_criteria_assessment_identity'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("migration index should be queryable");
+    assert_eq!(identity_index, 0);
+    let evidence_table: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type='table' AND name='criterion_assessment_evidence'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("migration table should be queryable");
+    assert_eq!(evidence_table, 0);
 }

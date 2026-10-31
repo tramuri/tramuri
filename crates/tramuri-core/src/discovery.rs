@@ -643,7 +643,7 @@ mod tests {
         assert!(!first.already_initialized);
         assert!(second.already_initialized);
         assert_eq!(first.database_path, second.database_path);
-        assert_eq!(first.schema_version, 4);
+        assert_eq!(first.schema_version, 5);
     }
 
     #[test]

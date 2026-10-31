@@ -180,6 +180,115 @@ pub struct EvidenceInput {
     pub locator: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CriterionAssessmentResult {
+    Met,
+    NotMet,
+    Unverified,
+}
+
+impl CriterionAssessmentResult {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Met => "met",
+            Self::NotMet => "not_met",
+            Self::Unverified => "unverified",
+        }
+    }
+
+    fn from_storage_value(value: &str) -> Option<Self> {
+        match value {
+            "met" => Some(Self::Met),
+            "not_met" => Some(Self::NotMet),
+            "unverified" => Some(Self::Unverified),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VerifierKind {
+    Human,
+    Mechanism,
+}
+
+impl VerifierKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Human => "human",
+            Self::Mechanism => "mechanism",
+        }
+    }
+
+    fn from_storage_value(value: &str) -> Option<Self> {
+        match value {
+            "human" => Some(Self::Human),
+            "mechanism" => Some(Self::Mechanism),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CriterionAssessmentInput {
+    pub mission_id: String,
+    pub contract_revision: u32,
+    pub criterion_id: String,
+    pub result: CriterionAssessmentResult,
+    pub evidence_ids: Vec<String>,
+    pub verifier_kind: VerifierKind,
+    pub verifier_reference: String,
+    pub explanation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CriterionAssessment {
+    pub id: String,
+    pub criterion_id: String,
+    pub contract_revision: u32,
+    pub result: CriterionAssessmentResult,
+    pub evidence_ids: Vec<String>,
+    pub verifier_kind: VerifierKind,
+    pub verifier_reference: String,
+    pub assessed_at_unix_ms: i64,
+    pub explanation: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OutcomeState {
+    Pending,
+    NotAchieved,
+    Verified,
+}
+
+impl std::fmt::Display for OutcomeState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Pending => "pending",
+            Self::NotAchieved => "not_achieved",
+            Self::Verified => "verified",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CriterionOutcome {
+    pub criterion: Criterion,
+    pub assessment_history: Vec<CriterionAssessment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VerifiedOutcome {
+    pub mission_id: String,
+    pub contract_id: String,
+    pub contract_revision: u32,
+    pub state: OutcomeState,
+    pub criteria: Vec<CriterionOutcome>,
+}
+
 pub fn execution_record(path: impl AsRef<Path>, input: ExecutionInput) -> Result<Execution> {
     let workspace = canonical_workspace(path.as_ref())?;
     let connection = open_database(&workspace)?;
@@ -308,6 +417,360 @@ pub fn evidence_add(path: impl AsRef<Path>, input: EvidenceInput) -> Result<Evid
         scan_id,
         captured_at_unix_ms: now,
     })
+}
+
+pub fn outcome_assess(
+    path: impl AsRef<Path>,
+    input: CriterionAssessmentInput,
+) -> Result<CriterionAssessment> {
+    let verifier_reference = input.verifier_reference.trim();
+    if verifier_reference.is_empty() {
+        return Err(TramuriError::EmptyVerifierReference);
+    }
+    if input.result != CriterionAssessmentResult::Unverified && input.evidence_ids.is_empty() {
+        return Err(TramuriError::MissingAssessmentEvidence);
+    }
+    let mut evidence_ids = input.evidence_ids;
+    evidence_ids.sort();
+    evidence_ids.dedup();
+
+    let workspace = canonical_workspace(path.as_ref())?;
+    let mut connection = open_database(&workspace)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let contract_id: Option<String> = transaction
+        .query_row(
+            "SELECT id FROM success_contracts WHERE mission_id = ?1 AND revision = ?2",
+            params![input.mission_id, i64::from(input.contract_revision)],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(contract_id) = contract_id else {
+        let exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM missions WHERE id = ?1)",
+            [&input.mission_id],
+            |row| row.get(0),
+        )?;
+        return if exists {
+            Err(TramuriError::ContractNotFound {
+                mission_id: input.mission_id,
+                revision: input.contract_revision,
+            })
+        } else {
+            Err(TramuriError::MissionNotFound(input.mission_id))
+        };
+    };
+    let criterion_exists: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM success_criteria
+         WHERE id = ?1 AND contract_id = ?2 AND contract_revision = ?3)",
+        params![
+            input.criterion_id,
+            contract_id,
+            i64::from(input.contract_revision)
+        ],
+        |row| row.get(0),
+    )?;
+    if !criterion_exists {
+        return Err(TramuriError::CriterionNotFound(input.criterion_id));
+    }
+    for evidence_id in &evidence_ids {
+        let belongs: bool = transaction.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM mission_evidence AS evidence
+                JOIN executions AS execution ON execution.id = evidence.execution_id
+                WHERE evidence.id = ?1 AND evidence.mission_id = ?2
+                  AND execution.contract_id = ?3 AND execution.contract_revision = ?4
+            )",
+            params![
+                evidence_id,
+                input.mission_id,
+                contract_id,
+                i64::from(input.contract_revision)
+            ],
+            |row| row.get(0),
+        )?;
+        if !belongs {
+            return Err(TramuriError::AssessmentEvidenceNotFound(
+                evidence_id.clone(),
+            ));
+        }
+    }
+
+    let id = Uuid::new_v4().to_string();
+    let assessed_at_unix_ms = now_unix_ms()?;
+    let explanation = input
+        .explanation
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    transaction.execute(
+        "INSERT INTO criterion_assessments
+            (id, contract_id, contract_revision, criterion_id, result, verifier_kind,
+             verifier_reference, assessed_at_unix_ms, explanation)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            id,
+            contract_id,
+            i64::from(input.contract_revision),
+            input.criterion_id,
+            input.result.as_str(),
+            input.verifier_kind.as_str(),
+            verifier_reference,
+            assessed_at_unix_ms,
+            explanation
+        ],
+    )?;
+    for evidence_id in &evidence_ids {
+        transaction.execute(
+            "INSERT INTO criterion_assessment_evidence (assessment_id, evidence_id)
+             VALUES (?1, ?2)",
+            params![id, evidence_id],
+        )?;
+    }
+    transaction.commit()?;
+
+    Ok(CriterionAssessment {
+        id,
+        criterion_id: input.criterion_id,
+        contract_revision: input.contract_revision,
+        result: input.result,
+        evidence_ids,
+        verifier_kind: input.verifier_kind,
+        verifier_reference: verifier_reference.to_owned(),
+        assessed_at_unix_ms,
+        explanation: explanation.map(str::to_owned),
+    })
+}
+
+pub fn outcome_get(
+    path: impl AsRef<Path>,
+    mission_id: &str,
+    contract_revision: Option<u32>,
+) -> Result<VerifiedOutcome> {
+    let workspace = canonical_workspace(path.as_ref())?;
+    let connection = open_database(&workspace)?;
+    let stored_contract: Option<(String, i64)> = connection
+        .query_row(
+            "SELECT id, revision FROM success_contracts
+             WHERE mission_id = ?1 AND (?2 IS NULL OR revision = ?2)
+             ORDER BY revision DESC LIMIT 1",
+            params![mission_id, contract_revision.map(i64::from)],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((contract_id, revision)) = stored_contract else {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM missions WHERE id = ?1)",
+            [mission_id],
+            |row| row.get(0),
+        )?;
+        return if exists {
+            Err(TramuriError::ContractNotFound {
+                mission_id: mission_id.to_owned(),
+                revision: contract_revision.unwrap_or_default(),
+            })
+        } else {
+            Err(TramuriError::MissionNotFound(mission_id.to_owned()))
+        };
+    };
+    let revision = u32::try_from(revision).map_err(|_| TramuriError::ContractRevisionOverflow)?;
+    let mut statement = connection.prepare(
+        "SELECT id, description, required, evidence_expectation, position
+         FROM success_criteria WHERE contract_id = ?1 AND contract_revision = ?2 ORDER BY position",
+    )?;
+    let criteria = statement
+        .query_map(params![contract_id, i64::from(revision)], |row| {
+            let required: i64 = row.get(2)?;
+            let position: i64 = row.get(4)?;
+            Ok(Criterion {
+                id: row.get(0)?,
+                description: row.get(1)?,
+                required: required != 0,
+                evidence_expectation: row.get(3)?,
+                position: u32::try_from(position)
+                    .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(4, position))?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    drop(statement);
+
+    let mut criterion_outcomes = Vec::with_capacity(criteria.len());
+    for criterion in criteria {
+        let mut assessment_statement = connection.prepare(
+            "SELECT id, result, verifier_kind, verifier_reference, assessed_at_unix_ms, explanation
+             FROM criterion_assessments
+             WHERE contract_id = ?1 AND contract_revision = ?2 AND criterion_id = ?3
+             ORDER BY assessed_at_unix_ms, rowid",
+        )?;
+        let stored_assessments = assessment_statement
+            .query_map(
+                params![contract_id, i64::from(revision), criterion.id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )?
+            .collect::<std::result::Result<Vec<StoredAssessment>, _>>()?;
+        drop(assessment_statement);
+
+        let mut assessment_history = Vec::with_capacity(stored_assessments.len());
+        for (id, result, verifier_kind, verifier_reference, assessed_at_unix_ms, explanation) in
+            stored_assessments
+        {
+            let mut evidence_statement = connection.prepare(
+                "SELECT evidence_id FROM criterion_assessment_evidence
+                 WHERE assessment_id = ?1 ORDER BY evidence_id",
+            )?;
+            let evidence_ids = evidence_statement
+                .query_map([&id], |row| row.get(0))?
+                .collect::<std::result::Result<Vec<String>, _>>()?;
+            assessment_history.push(CriterionAssessment {
+                id,
+                criterion_id: criterion.id.clone(),
+                contract_revision: revision,
+                result: CriterionAssessmentResult::from_storage_value(&result).ok_or_else(
+                    || {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            1,
+                            rusqlite::types::Type::Text,
+                            format!("unknown assessment result: {result}").into(),
+                        )
+                    },
+                )?,
+                evidence_ids,
+                verifier_kind: VerifierKind::from_storage_value(&verifier_kind).ok_or_else(
+                    || {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            2,
+                            rusqlite::types::Type::Text,
+                            format!("unknown verifier kind: {verifier_kind}").into(),
+                        )
+                    },
+                )?,
+                verifier_reference,
+                assessed_at_unix_ms,
+                explanation,
+            });
+        }
+        criterion_outcomes.push(CriterionOutcome {
+            criterion,
+            assessment_history,
+        });
+    }
+
+    let mut has_pending_required = false;
+    let mut has_failed_required = false;
+    for criterion in &criterion_outcomes {
+        if !criterion.criterion.required {
+            continue;
+        }
+        match criterion.assessment_history.last() {
+            Some(assessment)
+                if assessment.result == CriterionAssessmentResult::NotMet
+                    && !assessment.evidence_ids.is_empty() =>
+            {
+                has_failed_required = true;
+            }
+            Some(assessment) if assessment.result == CriterionAssessmentResult::Met => {
+                let mut all_evidence_resolves = !assessment.evidence_ids.is_empty();
+                for evidence_id in &assessment.evidence_ids {
+                    all_evidence_resolves &=
+                        evidence_is_resolvable(&connection, &workspace, evidence_id)?;
+                }
+                has_pending_required |= !all_evidence_resolves;
+            }
+            _ => has_pending_required = true,
+        }
+    }
+    let state = if has_failed_required {
+        OutcomeState::NotAchieved
+    } else if has_pending_required {
+        OutcomeState::Pending
+    } else {
+        OutcomeState::Verified
+    };
+
+    Ok(VerifiedOutcome {
+        mission_id: mission_id.to_owned(),
+        contract_id,
+        contract_revision: revision,
+        state,
+        criteria: criterion_outcomes,
+    })
+}
+
+type StoredAssessment = (String, String, String, String, i64, Option<String>);
+type EvidenceResolutionRecord = (String, String, Option<String>, Option<String>, String);
+
+fn evidence_is_resolvable(
+    connection: &rusqlite::Connection,
+    workspace: &Path,
+    evidence_id: &str,
+) -> Result<bool> {
+    let stored: Option<EvidenceResolutionRecord> = connection
+        .query_row(
+            "SELECT kind, locator, sha256, hash_status, availability
+             FROM mission_evidence WHERE id = ?1",
+            [evidence_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((kind, locator, sha256, hash_status, availability)) = stored else {
+        return Ok(false);
+    };
+    if kind != "project_file" {
+        // External references are deliberately never fetched; their persisted, validated locator
+        // remains the evidence, and human attestations are provenance records rather than identity.
+        return Ok(true);
+    }
+    if availability != "observed" || hash_status.as_deref() != Some("hashed") || sha256.is_none() {
+        return Ok(false);
+    }
+    let Some(latest) = latest_scan(connection)? else {
+        return Ok(false);
+    };
+    if !latest.complete {
+        return Ok(false);
+    }
+    let Some(file) = load_inventory_file(connection, &locator)? else {
+        return Ok(false);
+    };
+    if file.last_seen_scan_id != Some(latest.id)
+        || file.hash_status != HashStatus::Hashed
+        || file.sha256 != sha256
+    {
+        return Ok(false);
+    }
+    if !matches!(
+        safe_source_metadata(workspace, &locator),
+        SourceMetadata::Available
+    ) {
+        return Ok(false);
+    }
+    let path = workspace.join(&locator);
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => metadata,
+        _ => return Ok(false),
+    };
+    let modified_unix_ms = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok());
+    Ok(metadata.len() == file.size_bytes && modified_unix_ms == file.modified_unix_ms)
 }
 
 fn validate_external_reference(value: &str) -> Result<()> {

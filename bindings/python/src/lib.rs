@@ -4,10 +4,11 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 use serde::Deserialize;
 use tramuri_core::{
-    ActorKind, CriterionInput, EvidenceInput, EvidenceKind, ExecutionInput, ExecutionState,
-    KnowledgeFilter, KnowledgeInput, KnowledgeType, MissionInput, TramuriError as CoreError,
-    evidence_add, execution_record, init, knowledge_add, knowledge_list, knowledge_withdraw,
-    mission_close, mission_contract_revise, mission_create, mission_get, scan,
+    ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
+    EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType,
+    MissionInput, TramuriError as CoreError, VerifierKind, evidence_add, execution_record, init,
+    knowledge_add, knowledge_list, knowledge_withdraw, mission_close, mission_contract_revise,
+    mission_create, mission_get, outcome_assess, outcome_get, scan,
 };
 
 create_exception!(_native, TramuriError, PyException);
@@ -228,6 +229,69 @@ fn _evidence_add_json(
     serde_json::to_string(&result).map_err(map_serialization_error)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CriterionAssessmentJson {
+    mission_id: String,
+    contract_revision: u32,
+    criterion_id: String,
+    result: String,
+    evidence_ids: Vec<String>,
+    verifier_kind: String,
+    verifier_reference: String,
+    explanation: Option<String>,
+}
+
+#[pyfunction]
+fn _outcome_assess_json(path: &str, input_json: &str) -> PyResult<String> {
+    let input: CriterionAssessmentJson = serde_json::from_str(input_json)
+        .map_err(|error| TramuriError::new_err(format!("invalid assessment JSON: {error}")))?;
+    let result = match input.result.as_str() {
+        "met" => CriterionAssessmentResult::Met,
+        "not_met" => CriterionAssessmentResult::NotMet,
+        "unverified" => CriterionAssessmentResult::Unverified,
+        _ => {
+            return Err(TramuriError::new_err(
+                "result must be met, not_met, or unverified",
+            ));
+        }
+    };
+    let verifier_kind = match input.verifier_kind.as_str() {
+        "human" => VerifierKind::Human,
+        "mechanism" => VerifierKind::Mechanism,
+        _ => {
+            return Err(TramuriError::new_err(
+                "verifier_kind must be human or mechanism",
+            ));
+        }
+    };
+    let assessment = outcome_assess(
+        path,
+        CriterionAssessmentInput {
+            mission_id: input.mission_id,
+            contract_revision: input.contract_revision,
+            criterion_id: input.criterion_id,
+            result,
+            evidence_ids: input.evidence_ids,
+            verifier_kind,
+            verifier_reference: input.verifier_reference,
+            explanation: input.explanation,
+        },
+    )
+    .map_err(map_core_error)?;
+    serde_json::to_string(&assessment).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _outcome_get_json(
+    path: &str,
+    mission_id: &str,
+    contract_revision: Option<u32>,
+) -> PyResult<String> {
+    let outcome = outcome_get(path, mission_id, contract_revision).map_err(map_core_error)?;
+    serde_json::to_string(&outcome).map_err(map_serialization_error)
+}
+
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(_init_json, module)?)?;
@@ -241,6 +305,8 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(_mission_contract_revise_json, module)?)?;
     module.add_function(wrap_pyfunction!(_execution_record_json, module)?)?;
     module.add_function(wrap_pyfunction!(_evidence_add_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_outcome_assess_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_outcome_get_json, module)?)?;
     module.add("TramuriError", module.py().get_type::<TramuriError>())?;
     Ok(())
 }

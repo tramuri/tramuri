@@ -128,17 +128,24 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             }
             create_v3_schema(&mut connection)?;
             migrate_v3_to_v4(&mut connection)?;
+            migrate_v4_to_v5(&mut connection)?;
         }
         1 => {
             migrate_v1_to_v2(&mut connection)?;
             migrate_v2_to_v3(&mut connection)?;
             migrate_v3_to_v4(&mut connection)?;
+            migrate_v4_to_v5(&mut connection)?;
         }
         2 => {
             migrate_v2_to_v3(&mut connection)?;
             migrate_v3_to_v4(&mut connection)?;
+            migrate_v4_to_v5(&mut connection)?;
         }
-        3 => migrate_v3_to_v4(&mut connection)?,
+        3 => {
+            migrate_v3_to_v4(&mut connection)?;
+            migrate_v4_to_v5(&mut connection)?;
+        }
+        4 => migrate_v4_to_v5(&mut connection)?,
         version if version == i64::from(SCHEMA_VERSION) => {}
         found => {
             return Err(TramuriError::UnsupportedSchema {
@@ -162,13 +169,19 @@ fn migrate_schema(connection: &mut Connection) -> Result<()> {
         1 => {
             migrate_v1_to_v2(connection)?;
             migrate_v2_to_v3(connection)?;
-            migrate_v3_to_v4(connection)
+            migrate_v3_to_v4(connection)?;
+            migrate_v4_to_v5(connection)
         }
         2 => {
             migrate_v2_to_v3(connection)?;
-            migrate_v3_to_v4(connection)
+            migrate_v3_to_v4(connection)?;
+            migrate_v4_to_v5(connection)
         }
-        3 => migrate_v3_to_v4(connection),
+        3 => {
+            migrate_v3_to_v4(connection)?;
+            migrate_v4_to_v5(connection)
+        }
+        4 => migrate_v4_to_v5(connection),
         version if version == i64::from(SCHEMA_VERSION) => Ok(()),
         found => Err(TramuriError::UnsupportedSchema {
             found,
@@ -243,6 +256,52 @@ fn migrate_v3_to_v4(connection: &mut Connection) -> Result<()> {
         BEFORE INSERT ON mission_evidence
         WHEN (SELECT mission_id FROM executions WHERE id = NEW.execution_id) != NEW.mission_id
         BEGIN SELECT RAISE(ABORT, 'evidence mission does not match execution mission'); END;",
+    )?;
+    transaction.pragma_update(None, "user_version", 4)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v4_to_v5(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(
+        "CREATE UNIQUE INDEX success_criteria_assessment_identity
+            ON success_criteria(id, contract_id, contract_revision);
+        CREATE TABLE criterion_assessments (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            contract_id TEXT NOT NULL,
+            contract_revision INTEGER NOT NULL CHECK (contract_revision > 0),
+            criterion_id TEXT NOT NULL,
+            result TEXT NOT NULL CHECK (result IN ('met', 'not_met', 'unverified')),
+            verifier_kind TEXT NOT NULL CHECK (verifier_kind IN ('human', 'mechanism')),
+            verifier_reference TEXT NOT NULL CHECK (length(trim(verifier_reference)) > 0),
+            assessed_at_unix_ms INTEGER NOT NULL,
+            explanation TEXT,
+            FOREIGN KEY (contract_id, contract_revision)
+                REFERENCES success_contracts(id, revision),
+            FOREIGN KEY (criterion_id, contract_id, contract_revision)
+                REFERENCES success_criteria(id, contract_id, contract_revision)
+        );
+        CREATE INDEX criterion_assessments_order
+            ON criterion_assessments(contract_id, contract_revision, criterion_id, assessed_at_unix_ms, id);
+        CREATE TABLE criterion_assessment_evidence (
+            assessment_id TEXT NOT NULL REFERENCES criterion_assessments(id),
+            evidence_id TEXT NOT NULL REFERENCES mission_evidence(id),
+            PRIMARY KEY (assessment_id, evidence_id)
+        ) WITHOUT ROWID;
+        CREATE TRIGGER assessment_evidence_revision_insert
+        BEFORE INSERT ON criterion_assessment_evidence
+        WHEN NOT EXISTS (
+            SELECT 1 FROM criterion_assessments AS a
+            JOIN success_contracts AS c ON c.id = a.contract_id AND c.revision = a.contract_revision
+            JOIN mission_evidence AS e ON e.id = NEW.evidence_id
+            JOIN executions AS x ON x.id = e.execution_id
+            WHERE a.id = NEW.assessment_id
+              AND c.mission_id = x.mission_id
+              AND x.contract_id = a.contract_id
+              AND x.contract_revision = a.contract_revision
+        )
+        BEGIN SELECT RAISE(ABORT, 'assessment evidence does not match mission contract revision'); END;",
     )?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;

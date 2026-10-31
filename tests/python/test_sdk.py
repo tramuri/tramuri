@@ -20,6 +20,8 @@ from tramuri import (
     mission_contract_revise,
     mission_create,
     mission_get,
+    outcome_assess,
+    outcome_get,
     scan,
 )
 
@@ -33,7 +35,7 @@ def test_init_is_idempotent_and_scan_returns_inventory(tmp_path: Path) -> None:
     second_init = init(tmp_path)
     report = scan(tmp_path)
 
-    assert first_init["schema_version"] == 4
+    assert first_init["schema_version"] == 5
     assert first_init["already_initialized"] is False
     assert second_init["already_initialized"] is True
     assert report["complete"] is True
@@ -516,3 +518,133 @@ def test_cli_and_sdk_execution_evidence_have_normalized_parity(tmp_path: Path) -
     assert {key: sdk_evidence[key] for key in ("kind", "locator", "availability", "sha256", "hash_status")} == {
         key: cli_evidence[key] for key in ("kind", "locator", "availability", "sha256", "hash_status")
     }
+
+
+def test_outcome_assessment_persists_and_requires_evidence_for_met(tmp_path: Path) -> None:
+    init(tmp_path)
+    mission = mission_create(
+        tmp_path,
+        objective="Validate customer onboarding",
+        criteria=[{"description": "Customer accepts the workflow", "required": True}],
+    )
+    criterion_id = mission["success_contract"]["criteria"][0]["id"]
+    execution = execution_record(
+        tmp_path,
+        mission_id=mission["id"],
+        contract_revision=1,
+        actor_kind="human",
+        state="completed",
+        actor_reference="operator",
+    )
+    assert outcome_get(tmp_path, mission_id=mission["id"])["state"] == "pending"
+
+    with pytest.raises(TramuriError, match="requires at least one evidence"):
+        outcome_assess(
+            tmp_path,
+            mission_id=mission["id"],
+            contract_revision=1,
+            criterion_id=criterion_id,
+            result="met",
+            verifier_kind="human",
+            verifier_reference="product-owner",
+        )
+
+    evidence = evidence_add(
+        tmp_path,
+        mission_id=mission["id"],
+        execution_id=execution["id"],
+        kind="human_attestation",
+        locator="customer-accepted-workflow",
+    )
+    assessment = outcome_assess(
+        tmp_path,
+        mission_id=mission["id"],
+        contract_revision=1,
+        criterion_id=criterion_id,
+        result="met",
+        evidence_ids=[evidence["id"]],
+        verifier_kind="human",
+        verifier_reference="product-owner",
+        explanation="Acceptance reviewed",
+    )
+    outcome = outcome_get(tmp_path, mission_id=mission["id"])
+
+    assert assessment["result"] == "met"
+    assert assessment["evidence_ids"] == [evidence["id"]]
+    assert outcome["state"] == "verified"
+    assert outcome["criteria"][0]["assessment_history"][-1]["id"] == assessment["id"]
+
+
+def test_cli_and_sdk_outcome_assessment_have_normalized_parity(tmp_path: Path) -> None:
+    cli = _cli_executable()
+    if not cli:
+        pytest.skip("Set TRAMURI_CLI to the built native executable to run CLI/SDK parity.")
+
+    sdk_project = tmp_path / "sdk-project"
+    cli_project = tmp_path / "cli-project"
+    for project in (sdk_project, cli_project):
+        project.mkdir()
+        init(project)
+    criteria = [{"description": "Customer accepts the workflow", "required": True}]
+    sdk_mission = mission_create(sdk_project, objective="Validate onboarding", criteria=criteria)
+    criteria_file = tmp_path / "criteria.json"
+    criteria_file.write_text(json.dumps({"criteria": criteria}), encoding="utf-8")
+    cli_mission_result = subprocess.run(
+        [cli, "mission", "create", "--path", str(cli_project), "--objective",
+         "Validate onboarding", "--criteria-file", str(criteria_file), "--json"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    )
+    cli_mission = json.loads(cli_mission_result.stdout)
+
+    sdk_execution = execution_record(
+        sdk_project, mission_id=sdk_mission["id"], contract_revision=1,
+        actor_kind="human", state="completed",
+    )
+    cli_execution_result = subprocess.run(
+        [cli, "execution", "record", "--path", str(cli_project), "--mission",
+         cli_mission["id"], "--contract-revision", "1", "--actor-kind", "human",
+         "--status", "completed", "--json"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    )
+    cli_execution = json.loads(cli_execution_result.stdout)
+    sdk_evidence = evidence_add(
+        sdk_project, mission_id=sdk_mission["id"], execution_id=sdk_execution["id"],
+        kind="human_attestation", locator="customer-approval",
+    )
+    cli_evidence_result = subprocess.run(
+        [cli, "evidence", "add", "--path", str(cli_project), "--mission", cli_mission["id"],
+         "--execution", cli_execution["id"], "--kind", "human_attestation",
+         "--locator", "customer-approval", "--json"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    )
+    cli_evidence = json.loads(cli_evidence_result.stdout)
+    sdk_criterion = sdk_mission["success_contract"]["criteria"][0]["id"]
+    cli_criterion = cli_mission["success_contract"]["criteria"][0]["id"]
+    sdk_assessment = outcome_assess(
+        sdk_project, mission_id=sdk_mission["id"], contract_revision=1,
+        criterion_id=sdk_criterion, result="met", evidence_ids=[sdk_evidence["id"]],
+        verifier_kind="human", verifier_reference="product-owner",
+    )
+    cli_assessment = subprocess.run(
+        [cli, "outcome", "assess", "--path", str(cli_project), "--mission",
+         cli_mission["id"], "--contract-revision", "1", "--criterion", cli_criterion,
+         "--result", "met", "--evidence", cli_evidence["id"], "--verifier-kind", "human",
+         "--verifier", "product-owner", "--json"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    )
+    cli_assessment = json.loads(cli_assessment.stdout)
+    sdk_outcome = outcome_get(sdk_project, mission_id=sdk_mission["id"])
+    cli_outcome_result = subprocess.run(
+        [cli, "outcome", "show", "--path", str(cli_project), "--mission", cli_mission["id"],
+         "--json"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    )
+    cli_outcome = json.loads(cli_outcome_result.stdout)
+
+    assert sdk_assessment["result"] == cli_assessment["result"] == "met"
+    assert sdk_assessment["verifier_reference"] == cli_assessment["verifier_reference"]
+    assert sdk_outcome["state"] == cli_outcome["state"] == "verified"
+    for outcome in (sdk_outcome, cli_outcome):
+        assert outcome["criteria"][0]["criterion"]["description"] == "Customer accepts the workflow"
+        assert outcome["criteria"][0]["assessment_history"][-1]["result"] == "met"
+        assert outcome["criteria"][0]["assessment_history"][-1]["verifier_reference"] == "product-owner"

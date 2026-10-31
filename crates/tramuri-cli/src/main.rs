@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use tramuri_core::{
-    ActorKind, CriterionInput, EvidenceInput, EvidenceKind, ExecutionInput, ExecutionState,
-    KnowledgeFilter, KnowledgeInput, KnowledgeType, MissionInput, evidence_add, execution_record,
-    init, knowledge_add, knowledge_list, knowledge_withdraw, mission_close,
-    mission_contract_revise, mission_create, mission_get, scan,
+    ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
+    EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType,
+    MissionInput, VerifierKind, evidence_add, execution_record, init, knowledge_add,
+    knowledge_list, knowledge_withdraw, mission_close, mission_contract_revise, mission_create,
+    mission_get, outcome_assess, outcome_get, scan,
 };
 
 #[derive(Debug, Parser)]
@@ -58,6 +59,66 @@ enum Command {
         #[command(subcommand)]
         command: EvidenceCommand,
     },
+    /// Record criterion reviews and retrieve the aggregate Mission outcome.
+    Outcome {
+        #[command(subcommand)]
+        command: OutcomeCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum OutcomeCommand {
+    Assess {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        contract_revision: u32,
+        #[arg(long)]
+        criterion: String,
+        #[arg(long)]
+        result: String,
+        #[arg(long, value_delimiter = ',')]
+        evidence: Vec<String>,
+        #[arg(long)]
+        verifier_kind: String,
+        #[arg(long)]
+        verifier: String,
+        #[arg(long)]
+        explanation: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Show {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        contract_revision: Option<u32>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+fn parse_assessment_result(
+    value: &str,
+) -> Result<CriterionAssessmentResult, Box<dyn std::error::Error>> {
+    match value {
+        "met" => Ok(CriterionAssessmentResult::Met),
+        "not_met" => Ok(CriterionAssessmentResult::NotMet),
+        "unverified" => Ok(CriterionAssessmentResult::Unverified),
+        _ => Err("result must be met, not_met, or unverified".into()),
+    }
+}
+
+fn parse_verifier_kind(value: &str) -> Result<VerifierKind, Box<dyn std::error::Error>> {
+    match value {
+        "human" => Ok(VerifierKind::Human),
+        "mechanism" => Ok(VerifierKind::Mechanism),
+        _ => Err("verifier kind must be human or mechanism".into()),
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -542,6 +603,52 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 println!("Recorded evidence reference {}", result.id);
             }
         }
+        Command::Outcome { command } => match command {
+            OutcomeCommand::Assess {
+                path,
+                mission,
+                contract_revision,
+                criterion,
+                result,
+                evidence,
+                verifier_kind,
+                verifier,
+                explanation,
+                json,
+            } => {
+                let assessment = outcome_assess(
+                    path,
+                    CriterionAssessmentInput {
+                        mission_id: mission,
+                        contract_revision,
+                        criterion_id: criterion,
+                        result: parse_assessment_result(&result)?,
+                        evidence_ids: evidence,
+                        verifier_kind: parse_verifier_kind(&verifier_kind)?,
+                        verifier_reference: verifier,
+                        explanation,
+                    },
+                )?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&assessment)?);
+                } else {
+                    println!("Recorded {} assessment {}", result, assessment.id);
+                }
+            }
+            OutcomeCommand::Show {
+                path,
+                mission,
+                contract_revision,
+                json,
+            } => {
+                let outcome = outcome_get(path, &mission, contract_revision)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&outcome)?);
+                } else {
+                    println!("Mission outcome: {}", outcome.state);
+                }
+            }
+        },
     }
     Ok(())
 }

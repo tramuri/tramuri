@@ -215,6 +215,130 @@ fn execution_and_evidence_commands_record_without_verifying_outcome() {
 }
 
 #[test]
+fn outcome_commands_record_assessments_and_report_verified_state() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let criteria = project.path().join("criteria.json");
+    fs::write(
+        &criteria,
+        r#"{"criteria":[{"description":"Customer accepts","required":true}]}"#,
+    )
+    .unwrap();
+    let created = tramuri()
+        .args([
+            "mission",
+            "create",
+            "--path",
+            path,
+            "--objective",
+            "Deliver integration",
+            "--criteria-file",
+            criteria.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+    let mission: Value = serde_json::from_slice(&created.stdout).unwrap();
+    let execution = tramuri()
+        .args([
+            "execution",
+            "record",
+            "--path",
+            path,
+            "--mission",
+            mission["id"].as_str().unwrap(),
+            "--contract-revision",
+            "1",
+            "--actor-kind",
+            "human",
+            "--status",
+            "completed",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let execution: Value = serde_json::from_slice(&execution.stdout).unwrap();
+    let evidence = tramuri()
+        .args([
+            "evidence",
+            "add",
+            "--path",
+            path,
+            "--mission",
+            mission["id"].as_str().unwrap(),
+            "--execution",
+            execution["id"].as_str().unwrap(),
+            "--kind",
+            "human_attestation",
+            "--locator",
+            "reviewer-confirmed",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(evidence.status.success());
+    let evidence: Value = serde_json::from_slice(&evidence.stdout).unwrap();
+    let assessed = tramuri()
+        .args([
+            "outcome",
+            "assess",
+            "--path",
+            path,
+            "--mission",
+            mission["id"].as_str().unwrap(),
+            "--contract-revision",
+            "1",
+            "--criterion",
+            mission["success_contract"]["criteria"][0]["id"]
+                .as_str()
+                .unwrap(),
+            "--result",
+            "met",
+            "--evidence",
+            evidence["id"].as_str().unwrap(),
+            "--verifier-kind",
+            "human",
+            "--verifier",
+            "product-owner",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        assessed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&assessed.stderr)
+    );
+    let assessment: Value = serde_json::from_slice(&assessed.stdout).unwrap();
+    assert_eq!(assessment["result"], "met");
+    let outcome = tramuri()
+        .args([
+            "outcome",
+            "show",
+            "--path",
+            path,
+            "--mission",
+            mission["id"].as_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(outcome.status.success());
+    let outcome: Value = serde_json::from_slice(&outcome.stdout).unwrap();
+    assert_eq!(outcome["state"], "verified");
+}
+
+#[test]
 fn init_and_scan_emit_machine_readable_json() {
     let project = tempdir().expect("project directory should be created");
     fs::write(project.path().join("hello.txt"), "hello\n").expect("fixture should be written");
@@ -229,7 +353,7 @@ fn init_and_scan_emit_machine_readable_json() {
         .expect("CLI should launch");
     assert!(init.status.success());
     let init_json: Value = serde_json::from_slice(&init.stdout).expect("init should emit JSON");
-    assert_eq!(init_json["schema_version"], 4);
+    assert_eq!(init_json["schema_version"], 5);
     assert_eq!(init_json["already_initialized"], false);
 
     let repeated_init = tramuri()

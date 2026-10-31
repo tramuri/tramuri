@@ -16,11 +16,12 @@ pub use knowledge::{
     knowledge_list, knowledge_withdraw,
 };
 pub use mission::{
-    ActorKind, Criterion, CriterionInput, EvidenceInput, EvidenceKind, EvidenceReference,
-    Execution, ExecutionInput, ExecutionState, Mission, MissionInput, MissionState,
-    SuccessContract, evidence_add, execution_record, mission_close, mission_contract_revise,
-    mission_create, mission_get,
+    ActorKind, Criterion, CriterionAssessment, CriterionAssessmentInput, CriterionAssessmentResult,
+    CriterionInput, CriterionOutcome, EvidenceInput, EvidenceKind, EvidenceReference, Execution,
+    ExecutionInput, ExecutionState, Mission, MissionInput, MissionState, OutcomeState,
+    SuccessContract, VerifiedOutcome, VerifierKind, evidence_add, execution_record, mission_close,
+    mission_contract_revise, mission_create, mission_get, outcome_assess, outcome_get,
 };
 
 /// The current on-disk SQLite schema version.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;

@@ -112,7 +112,13 @@ pub fn scan(path: impl AsRef<Path>) -> Result<ScanReport> {
     };
 
     let stored = walked.files.iter().map(to_stored).collect::<Vec<_>>();
-    persist_scan(&mut connection, &stored, &deleted, walked.complete)?;
+    persist_scan(
+        &mut connection,
+        &stored,
+        &deleted,
+        walked.complete,
+        now_unix_ms()?,
+    )?;
 
     Ok(ScanReport {
         project_root: path_to_string(&root)?,
@@ -287,7 +293,7 @@ fn filter_entry(entry: &DirEntry, sensitive_file_count: &AtomicUsize) -> bool {
     true
 }
 
-fn is_sensitive_name(name: &str) -> bool {
+pub(crate) fn is_sensitive_name(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     name == ".env"
         || name.starts_with(".env.")
@@ -566,7 +572,15 @@ fn to_stored(record: &FileRecord) -> StoredFile {
         modified_unix_ms: record.modified_unix_ms,
         sha256: record.sha256.clone(),
         hash_status: record.hash_status.clone(),
+        last_seen_scan_id: None,
     }
+}
+
+fn now_unix_ms() -> Result<i64> {
+    let duration = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| TramuriError::Clock)?;
+    i64::try_from(duration.as_millis()).map_err(|_| TramuriError::Clock)
 }
 
 fn relative_path(root: &Path, path: &Path) -> std::result::Result<String, TramuriError> {
@@ -629,7 +643,7 @@ mod tests {
         assert!(!first.already_initialized);
         assert!(second.already_initialized);
         assert_eq!(first.database_path, second.database_path);
-        assert_eq!(first.schema_version, 1);
+        assert_eq!(first.schema_version, 4);
     }
 
     #[test]

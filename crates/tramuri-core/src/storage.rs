@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::{HashStatus, Result, SCHEMA_VERSION, TramuriError};
 
@@ -14,6 +14,13 @@ pub(crate) struct StoredFile {
     pub modified_unix_ms: Option<i64>,
     pub sha256: Option<String>,
     pub hash_status: HashStatus,
+    pub last_seen_scan_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ScanObservation {
+    pub id: i64,
+    pub complete: bool,
 }
 
 pub(crate) fn database_path(root: &Path) -> PathBuf {
@@ -56,7 +63,9 @@ pub(crate) fn open_database(root: &Path) -> Result<Connection> {
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err(TramuriError::InvalidStatePath(path));
     }
-    let connection = Connection::open(&path)?;
+    let mut connection = Connection::open(&path)?;
+    enable_foreign_keys(&connection)?;
+    migrate_schema(&mut connection)?;
     validate_schema(&connection)?;
     Ok(connection)
 }
@@ -100,6 +109,7 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
         }
     };
     let mut connection = Connection::open(&path)?;
+    enable_foreign_keys(&connection)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     match version {
         0 => {
@@ -116,20 +126,19 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
                     });
                 }
             }
-            let transaction =
-                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS file_inventory (
-                    path TEXT PRIMARY KEY NOT NULL,
-                    size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
-                    modified_unix_ms INTEGER,
-                    sha256 TEXT,
-                    hash_status TEXT NOT NULL CHECK (hash_status IN ('hashed', 'too_large', 'read_error'))
-                ) WITHOUT ROWID;
-                PRAGMA user_version = 1;",
-            )?;
-            transaction.commit()?;
+            create_v3_schema(&mut connection)?;
+            migrate_v3_to_v4(&mut connection)?;
         }
+        1 => {
+            migrate_v1_to_v2(&mut connection)?;
+            migrate_v2_to_v3(&mut connection)?;
+            migrate_v3_to_v4(&mut connection)?;
+        }
+        2 => {
+            migrate_v2_to_v3(&mut connection)?;
+            migrate_v3_to_v4(&mut connection)?;
+        }
+        3 => migrate_v3_to_v4(&mut connection)?,
         version if version == i64::from(SCHEMA_VERSION) => {}
         found => {
             return Err(TramuriError::UnsupportedSchema {
@@ -140,6 +149,212 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
     }
 
     Ok(already_initialized)
+}
+
+fn enable_foreign_keys(connection: &Connection) -> Result<()> {
+    connection.pragma_update(None, "foreign_keys", true)?;
+    Ok(())
+}
+
+fn migrate_schema(connection: &mut Connection) -> Result<()> {
+    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    match version {
+        1 => {
+            migrate_v1_to_v2(connection)?;
+            migrate_v2_to_v3(connection)?;
+            migrate_v3_to_v4(connection)
+        }
+        2 => {
+            migrate_v2_to_v3(connection)?;
+            migrate_v3_to_v4(connection)
+        }
+        3 => migrate_v3_to_v4(connection),
+        version if version == i64::from(SCHEMA_VERSION) => Ok(()),
+        found => Err(TramuriError::UnsupportedSchema {
+            found,
+            supported: SCHEMA_VERSION,
+        }),
+    }
+}
+
+fn create_v3_schema(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    create_v2_tables(&transaction)?;
+    create_mission_tables(&transaction)?;
+    transaction.pragma_update(None, "user_version", 3)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v1_to_v2(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    create_project_and_scan_tables(&transaction)?;
+    transaction.execute(
+        "ALTER TABLE file_inventory ADD COLUMN last_seen_scan_id INTEGER
+         REFERENCES scan_runs(id)",
+        [],
+    )?;
+    create_knowledge_tables(&transaction)?;
+    insert_project_id(&transaction)?;
+    transaction.pragma_update(None, "user_version", 2)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v2_to_v3(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    create_mission_tables(&transaction)?;
+    transaction.pragma_update(None, "user_version", 3)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v3_to_v4(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(
+        "CREATE TABLE executions (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            mission_id TEXT NOT NULL REFERENCES missions(id),
+            contract_id TEXT NOT NULL,
+            contract_revision INTEGER NOT NULL CHECK (contract_revision > 0),
+            actor_kind TEXT NOT NULL CHECK (actor_kind IN ('human', 'agent', 'tool')),
+            actor_reference TEXT,
+            state TEXT NOT NULL CHECK (state IN ('in_progress', 'completed', 'blocked', 'failed', 'cancelled')),
+            started_at_unix_ms INTEGER NOT NULL,
+            ended_at_unix_ms INTEGER,
+            notes TEXT,
+            FOREIGN KEY (contract_id, contract_revision) REFERENCES success_contracts(id, revision)
+        );
+        CREATE INDEX executions_mission_order ON executions(mission_id, started_at_unix_ms, id);
+        CREATE TABLE mission_evidence (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            mission_id TEXT NOT NULL REFERENCES missions(id),
+            execution_id TEXT NOT NULL REFERENCES executions(id),
+            kind TEXT NOT NULL CHECK (kind IN ('project_file', 'external_reference', 'human_attestation')),
+            locator TEXT NOT NULL CHECK (length(trim(locator)) > 0),
+            sha256 TEXT,
+            hash_status TEXT CHECK (hash_status IN ('hashed', 'too_large')),
+            scan_id INTEGER REFERENCES scan_runs(id),
+            availability TEXT NOT NULL CHECK (availability IN ('observed', 'changed', 'missing', 'unverified')),
+            captured_at_unix_ms INTEGER NOT NULL
+        );
+        CREATE INDEX mission_evidence_execution_order ON mission_evidence(execution_id, captured_at_unix_ms, id);
+        CREATE TRIGGER mission_evidence_execution_mission_insert
+        BEFORE INSERT ON mission_evidence
+        WHEN (SELECT mission_id FROM executions WHERE id = NEW.execution_id) != NEW.mission_id
+        BEGIN SELECT RAISE(ABORT, 'evidence mission does not match execution mission'); END;",
+    )?;
+    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn create_mission_tables(transaction: &rusqlite::Transaction<'_>) -> Result<()> {
+    transaction.execute_batch(
+        "CREATE TABLE missions (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            objective TEXT NOT NULL CHECK (length(trim(objective)) > 0),
+            context TEXT,
+            state TEXT NOT NULL CHECK (state IN ('open', 'closed')),
+            created_at_unix_ms INTEGER NOT NULL
+        );
+        CREATE INDEX missions_created_order ON missions(created_at_unix_ms, id);
+        CREATE TABLE success_contracts (
+            id TEXT NOT NULL CHECK (length(id) = 36),
+            mission_id TEXT NOT NULL REFERENCES missions(id),
+            revision INTEGER NOT NULL CHECK (revision > 0),
+            created_at_unix_ms INTEGER NOT NULL,
+            PRIMARY KEY (id, revision),
+            UNIQUE (mission_id, revision)
+        );
+        CREATE TABLE success_criteria (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            contract_id TEXT NOT NULL,
+            contract_revision INTEGER NOT NULL,
+            description TEXT NOT NULL CHECK (length(trim(description)) > 0),
+            required INTEGER NOT NULL CHECK (required IN (0, 1)),
+            evidence_expectation TEXT,
+            position INTEGER NOT NULL CHECK (position >= 0),
+            UNIQUE (contract_id, contract_revision, position),
+            FOREIGN KEY (contract_id, contract_revision)
+                REFERENCES success_contracts(id, revision)
+        );",
+    )?;
+    Ok(())
+}
+
+fn create_v2_tables(transaction: &rusqlite::Transaction<'_>) -> Result<()> {
+    create_project_and_scan_tables(transaction)?;
+    transaction.execute_batch(
+        "CREATE TABLE file_inventory (
+            path TEXT PRIMARY KEY NOT NULL,
+            size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+            modified_unix_ms INTEGER,
+            sha256 TEXT,
+            hash_status TEXT NOT NULL CHECK (hash_status IN ('hashed', 'too_large', 'read_error')),
+            last_seen_scan_id INTEGER REFERENCES scan_runs(id)
+        ) WITHOUT ROWID;",
+    )?;
+    create_knowledge_tables(transaction)?;
+    insert_project_id(transaction)?;
+    Ok(())
+}
+
+fn create_project_and_scan_tables(transaction: &rusqlite::Transaction<'_>) -> Result<()> {
+    transaction.execute_batch(
+        "CREATE TABLE project_metadata (
+            singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+            project_id TEXT NOT NULL UNIQUE CHECK (length(project_id) = 36)
+        );
+        CREATE TABLE scan_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observed_at_unix_ms INTEGER NOT NULL,
+            complete INTEGER NOT NULL CHECK (complete IN (0, 1))
+        );",
+    )?;
+    Ok(())
+}
+
+fn create_knowledge_tables(transaction: &rusqlite::Transaction<'_>) -> Result<()> {
+    transaction.execute_batch(
+        "CREATE TABLE knowledge_records (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            record_type TEXT NOT NULL CHECK (record_type IN ('fact', 'decision', 'inference', 'question')),
+            statement TEXT NOT NULL CHECK (length(trim(statement)) > 0),
+            status TEXT NOT NULL CHECK (status IN ('current', 'superseded', 'withdrawn')),
+            created_at_unix_ms INTEGER NOT NULL,
+            supersedes_id TEXT REFERENCES knowledge_records(id)
+        );
+        CREATE INDEX knowledge_records_order ON knowledge_records(created_at_unix_ms, id);
+        CREATE TABLE evidence_references (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            provenance_kind TEXT NOT NULL CHECK (provenance_kind IN ('project_file', 'human_input')),
+            source_path TEXT,
+            sha256 TEXT,
+            hash_status TEXT CHECK (hash_status IN ('hashed', 'too_large')),
+            captured_at_unix_ms INTEGER NOT NULL,
+            CHECK (
+                (provenance_kind = 'project_file' AND source_path IS NOT NULL)
+                OR (provenance_kind = 'human_input' AND source_path IS NULL AND sha256 IS NULL)
+            )
+        );
+        CREATE TABLE knowledge_evidence (
+            knowledge_id TEXT NOT NULL REFERENCES knowledge_records(id),
+            evidence_id TEXT NOT NULL REFERENCES evidence_references(id),
+            position INTEGER NOT NULL CHECK (position >= 0),
+            PRIMARY KEY (knowledge_id, evidence_id),
+            UNIQUE (knowledge_id, position)
+        );",
+    )?;
+    Ok(())
+}
+
+fn insert_project_id(transaction: &rusqlite::Transaction<'_>) -> Result<()> {
+    transaction.execute(
+        "INSERT INTO project_metadata (singleton_id, project_id) VALUES (1, ?1)",
+        [uuid::Uuid::new_v4().to_string()],
+    )?;
+    Ok(())
 }
 
 fn validate_schema(connection: &Connection) -> Result<()> {
@@ -155,35 +370,69 @@ fn validate_schema(connection: &Connection) -> Result<()> {
 
 pub(crate) fn load_inventory(connection: &Connection) -> Result<Vec<StoredFile>> {
     let mut statement = connection.prepare(
-        "SELECT path, size_bytes, modified_unix_ms, sha256, hash_status
+        "SELECT path, size_bytes, modified_unix_ms, sha256, hash_status, last_seen_scan_id
          FROM file_inventory ORDER BY path",
     )?;
-    let rows = statement.query_map([], |row| {
-        let size_bytes: i64 = row.get(1)?;
-        let hash_status_value: String = row.get(4)?;
-        let hash_status = HashStatus::from_storage_value(&hash_status_value).ok_or_else(|| {
-            rusqlite::Error::FromSqlConversionFailure(
-                4,
-                rusqlite::types::Type::Text,
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("unknown stored hash status: {hash_status_value}"),
-                )
-                .into(),
-            )
-        })?;
-        Ok(StoredFile {
-            path: row.get(0)?,
-            size_bytes: u64::try_from(size_bytes)
-                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, size_bytes))?,
-            modified_unix_ms: row.get(2)?,
-            sha256: row.get(3)?,
-            hash_status,
-        })
-    })?;
+    let rows = statement.query_map([], stored_file_from_row)?;
 
     rows.collect::<std::result::Result<Vec<_>, _>>()
         .map_err(TramuriError::from)
+}
+
+pub(crate) fn load_inventory_file(
+    connection: &Connection,
+    path: &str,
+) -> Result<Option<StoredFile>> {
+    connection
+        .query_row(
+            "SELECT path, size_bytes, modified_unix_ms, sha256, hash_status, last_seen_scan_id
+             FROM file_inventory WHERE path = ?1",
+            [path],
+            stored_file_from_row,
+        )
+        .optional()
+        .map_err(TramuriError::from)
+}
+
+pub(crate) fn latest_scan(connection: &Connection) -> Result<Option<ScanObservation>> {
+    connection
+        .query_row(
+            "SELECT id, complete FROM scan_runs ORDER BY id DESC LIMIT 1",
+            [],
+            |row| {
+                Ok(ScanObservation {
+                    id: row.get(0)?,
+                    complete: row.get::<_, i64>(1)? != 0,
+                })
+            },
+        )
+        .optional()
+        .map_err(TramuriError::from)
+}
+
+fn stored_file_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredFile> {
+    let size_bytes: i64 = row.get(1)?;
+    let hash_status_value: String = row.get(4)?;
+    let hash_status = HashStatus::from_storage_value(&hash_status_value).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            4,
+            rusqlite::types::Type::Text,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown stored hash status: {hash_status_value}"),
+            )
+            .into(),
+        )
+    })?;
+    Ok(StoredFile {
+        path: row.get(0)?,
+        size_bytes: u64::try_from(size_bytes)
+            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, size_bytes))?,
+        modified_unix_ms: row.get(2)?,
+        sha256: row.get(3)?,
+        hash_status,
+        last_seen_scan_id: row.get(5)?,
+    })
 }
 
 pub(crate) fn persist_scan(
@@ -191,8 +440,14 @@ pub(crate) fn persist_scan(
     files: &[StoredFile],
     deleted_paths: &[String],
     complete: bool,
-) -> Result<()> {
+    observed_at_unix_ms: i64,
+) -> Result<i64> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute(
+        "INSERT INTO scan_runs (observed_at_unix_ms, complete) VALUES (?1, ?2)",
+        params![observed_at_unix_ms, if complete { 1_i64 } else { 0_i64 }],
+    )?;
+    let scan_id = transaction.last_insert_rowid();
     if complete {
         transaction.execute("DELETE FROM file_inventory", [])?;
     }
@@ -204,19 +459,22 @@ pub(crate) fn persist_scan(
         let size_bytes = i64::try_from(file.size_bytes)
             .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, i64::MAX))?;
         transaction.execute(
-            "INSERT INTO file_inventory (path, size_bytes, modified_unix_ms, sha256, hash_status)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO file_inventory
+                (path, size_bytes, modified_unix_ms, sha256, hash_status, last_seen_scan_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(path) DO UPDATE SET
                  size_bytes = excluded.size_bytes,
                  modified_unix_ms = excluded.modified_unix_ms,
                  sha256 = excluded.sha256,
-                 hash_status = excluded.hash_status",
+                 hash_status = excluded.hash_status,
+                 last_seen_scan_id = excluded.last_seen_scan_id",
             params![
                 file.path,
                 size_bytes,
                 file.modified_unix_ms,
                 file.sha256,
                 file.hash_status.as_storage_value(),
+                scan_id,
             ],
         )?;
     }
@@ -228,7 +486,7 @@ pub(crate) fn persist_scan(
     }
 
     transaction.commit()?;
-    Ok(())
+    Ok(scan_id)
 }
 
 #[cfg(test)]
@@ -242,12 +500,18 @@ mod tests {
         let connection = Connection::open_in_memory().expect("in-memory database should open");
         connection
             .execute_batch(
-                "CREATE TABLE file_inventory (
+                "CREATE TABLE scan_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    observed_at_unix_ms INTEGER NOT NULL,
+                    complete INTEGER NOT NULL CHECK (complete IN (0, 1))
+                );
+                CREATE TABLE file_inventory (
                     path TEXT PRIMARY KEY NOT NULL,
                     size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
                     modified_unix_ms INTEGER,
                     sha256 TEXT,
-                    hash_status TEXT NOT NULL CHECK (hash_status IN ('hashed', 'too_large', 'read_error'))
+                    hash_status TEXT NOT NULL CHECK (hash_status IN ('hashed', 'too_large', 'read_error')),
+                    last_seen_scan_id INTEGER REFERENCES scan_runs(id)
                 ) WITHOUT ROWID;",
             )
             .expect("inventory table should be created");
@@ -264,6 +528,7 @@ mod tests {
                 modified_unix_ms: Some(1),
                 sha256: Some("abcd".to_owned()),
                 hash_status: HashStatus::Hashed,
+                last_seen_scan_id: None,
             },
             StoredFile {
                 path: "large.bin".to_owned(),
@@ -271,6 +536,7 @@ mod tests {
                 modified_unix_ms: Some(2),
                 sha256: None,
                 hash_status: HashStatus::TooLarge,
+                last_seen_scan_id: None,
             },
             StoredFile {
                 path: "unreadable.txt".to_owned(),
@@ -278,10 +544,12 @@ mod tests {
                 modified_unix_ms: None,
                 sha256: None,
                 hash_status: HashStatus::ReadError,
+                last_seen_scan_id: None,
             },
         ];
 
-        persist_scan(&mut connection, &files, &[], true).expect("scan should persist");
+        persist_scan(&mut connection, &files, &[], true, 1_700_000_000_000)
+            .expect("scan should persist");
         let loaded = load_inventory(&connection).expect("inventory should load");
 
         assert_eq!(loaded.len(), 2);

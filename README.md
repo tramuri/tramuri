@@ -4,9 +4,19 @@
   <img src="assets/logo.png" alt="Tramuri logo" width="220">
 </p>
 
-Tramuri is local-first infrastructure for understanding software projects, preserving their knowledge and context between sessions, and coordinating work between people, agents, and tools.
+**From intent to verified outcomes.**
 
-Tramuri is designed to work independently of any LLM, agent framework, or development harness. Project information stays local by default, with verifiable sources and explicit boundaries around what discovery can claim.
+Tramuri is open-source, local-first, agent-native infrastructure for turning product and business
+objectives into coordinated work and verifiable outcomes. It connects Missions, success criteria,
+persistent knowledge, execution records, people, agents, tools, and evidence.
+
+Tramuri serves Product Engineers, Forward Deployed Engineers, and product teams. It is designed to
+work without a code repository, LLM, agent framework, or development harness. Project Discovery is
+one optional capability; the broader product vision is described in [VISION.md](VISION.md).
+
+The initial product foundation provides local Project Discovery, persistent source-backed
+knowledge, and Missions with versioned Success Contracts. Recording work, assessing evidence, and
+verifying outcomes are planned next capabilities.
 
 ## License
 

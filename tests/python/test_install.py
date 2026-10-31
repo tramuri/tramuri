@@ -44,7 +44,7 @@ from pathlib import Path
 import tramuri._native
 assert Path(tramuri.__file__).with_name("py.typed").is_file()
 report = tramuri.init(project_path)
-assert report["schema_version"] == 1
+assert report["schema_version"] == 4
 scan = tramuri.scan(project_path)
 assert scan["complete"] is True
 assert [item["path"] for item in scan["files"]] == ["hello.txt"]

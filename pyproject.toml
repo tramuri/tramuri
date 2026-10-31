@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "tramuri"
 dynamic = ["version"]
-description = "Local-first project discovery and persistent context infrastructure"
+description = "Local-first, agent-native infrastructure for verified work outcomes"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]

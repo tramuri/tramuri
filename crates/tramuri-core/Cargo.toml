@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Local-first project discovery and knowledge core for Tramuri"
+description = "Local-first mission, project discovery, and knowledge core for Tramuri"
 
 [dependencies]
 hex.workspace = true
@@ -13,6 +13,7 @@ rusqlite.workspace = true
 serde.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

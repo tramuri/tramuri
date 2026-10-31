@@ -22,6 +22,42 @@ pub enum TramuriError {
     },
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("system clock is before the Unix epoch or outside the supported timestamp range")]
+    Clock,
+    #[error("knowledge statement must not be empty")]
+    EmptyKnowledgeStatement,
+    #[error("knowledge requires at least one source or explicit human-input provenance")]
+    MissingKnowledgeProvenance,
+    #[error("invalid knowledge source path: {0}")]
+    InvalidKnowledgeSource(String),
+    #[error("knowledge record was not found: {0}")]
+    KnowledgeNotFound(String),
+    #[error("knowledge record cannot be superseded because it is not current: {0}")]
+    InvalidSupersession(String),
+    #[error("knowledge record cannot be withdrawn because it is not current: {0}")]
+    InvalidWithdrawal(String),
+    #[error("mission objective must not be empty")]
+    EmptyMissionObjective,
+    #[error("a success contract must contain at least one required criterion")]
+    NoRequiredCriterion,
+    #[error("success criterion description must not be empty")]
+    EmptySuccessCriterion,
+    #[error("mission was not found: {0}")]
+    MissionNotFound(String),
+    #[error("success contract revision {revision} was not found for mission {mission_id}")]
+    ContractNotFound { mission_id: String, revision: u32 },
+    #[error("success contract revision is outside the supported range")]
+    ContractRevisionOverflow,
+    #[error("execution actor kind must be human, agent, or tool")]
+    InvalidActorKind,
+    #[error("execution state must be in_progress, completed, blocked, failed, or cancelled")]
+    InvalidExecutionState,
+    #[error("execution was not found: {0}")]
+    ExecutionNotFound(String),
+    #[error("evidence kind must be project_file, external_reference, or human_attestation")]
+    InvalidEvidenceKind,
+    #[error("evidence reference is invalid or unsafe: {0}")]
+    InvalidEvidenceReference(String),
 }
 
 pub type Result<T> = std::result::Result<T, TramuriError>;

@@ -1,7 +1,7 @@
 # Tramuri
 
 <p align="center">
-  <img src="assets/logo.png" alt="Tramuri logo" width="220">
+  <img src="https://raw.githubusercontent.com/tramuri/tramuri/main/assets/logo.png" alt="Tramuri logo" width="220">
 </p>
 
 **From intent to verified outcomes.**

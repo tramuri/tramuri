@@ -31,48 +31,84 @@ It works without requiring a source-code repository, an LLM, or a particular age
   repository files and excludes sensitive paths by default.
 - A native Rust CLI and a Python SDK backed by the same Rust core.
 
-The PyPI package provides the prebuilt Python SDK. Standalone prebuilt installers for the native
-CLI are not yet provided.
+The published Python SDK includes a prebuilt Rust extension on supported platforms; users do not
+need a Rust toolchain.
 
-Tramuri stores local project state in SQLite. Evidence is recorded as references; Tramuri does not
-fetch external resources or store scanned file contents as evidence.
+Tramuri stores its local project state under `.tramuri/`, with SQLite at
+`.tramuri/database/tramuri.sqlite3` and the latest scan report under `.tramuri/discovery/`.
+Evidence is recorded as references; Tramuri does not fetch external resources or store scanned file
+contents as evidence.
 
-## Get started with Python
+## Prerequisites
 
-The Python SDK requires Python 3.11 or newer. Install the prebuilt package:
+| Requirement | Version | Check | Install |
+| --- | --- | --- | --- |
+| Python | 3.11 or newer | `python --version` | [python.org](https://www.python.org/downloads/) |
+| `uv` (recommended) | Any current version | `uv --version` | [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/) |
+
+PyPI installations use prebuilt wheels on supported platforms. You do not need Rust installed.
+
+## Install
+
+### Python SDK
+
+Install Tramuri into an existing Python project:
+
+```bash
+uv add tramuri
+```
+
+Or use pip:
 
 ```bash
 python -m pip install tramuri
 ```
 
-The wheel includes the compiled Rust core. Users installing a compatible wheel do not need to
-install Rust.
+### CLI and assistant integrations
 
-```python
-from pathlib import Path
+Tramuri 0.3.0 includes the CLI distribution and project integration installer. Install the CLI in
+an isolated tool environment:
 
-import tramuri
-
-workspace = Path("customer-onboarding")
-workspace.mkdir(exist_ok=True)
-tramuri.init(workspace)
-
-mission = tramuri.mission_create(
-    workspace,
-    objective="Validate the customer onboarding flow",
-    criteria=[
-        {
-            "description": "The customer can complete onboarding",
-            "required": True,
-            "evidence_expectation": "Customer acceptance or observed completion",
-        }
-    ],
-)
-
-print(mission["id"])
+```bash
+uv tool install tramuri
+tramuri --version
+tramuri init .
+tramuri scan .
 ```
 
-Mission creation does not require a Git repository or a project scan. See the
+`pipx install tramuri` is also available as an isolated-install alternative.
+If the `tramuri` command is not found after installation, run `uv tool update-shell` and reopen
+your terminal.
+
+To add Tramuri guidance to a project, choose a supported assistant platform:
+
+```bash
+tramuri install --project --platform codex
+tramuri install --project --platform copilot
+tramuri install --project --platform claude
+tramuri install --project --platform gemini
+tramuri integrations status
+```
+
+The installer adds platform instructions, a Tramuri skill, and its on-demand references. It
+preserves existing user content and does not install hooks. These integrations are optional; Tramuri
+does not require an assistant to use its CLI or SDK.
+
+### How an assistant can use Tramuri
+
+The project installer is intended to give a supported assistant persistent, platform-native
+guidance for when Tramuri is useful. The skill explains the workflow; the CLI performs Tramuri
+operations against local project state. Both are optional, and the assistant remains free to use
+other tools.
+
+| Interface | Use |
+| --- | --- |
+| CLI | Run local discovery, knowledge, and mission workflows. |
+| Assistant skill and instructions | Help an installed assistant choose and use Tramuri's CLI. |
+| Python SDK | Call the same Rust-backed capabilities from Python applications. |
+| MCP | No Tramuri MCP server is available currently; use the CLI or SDK. |
+
+Mission creation does not require a Git repository or project scan. See the
 [product vision](VISION.md) for Tramuri's scope and principles, and the
 [changelog](CHANGELOG.md) for release history.
 

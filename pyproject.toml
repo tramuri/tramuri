@@ -23,6 +23,9 @@ classifiers = [
     "Programming Language :: Rust",
 ]
 
+[project.scripts]
+tramuri = "tramuri._cli:main"
+
 [dependency-groups]
 dev = [
     "maturin>=1.13,<2.0",
@@ -30,12 +33,16 @@ dev = [
 ]
 
 [tool.maturin]
-manifest-path = "bindings/python/Cargo.toml"
+manifest-path = "tramuri/bindings/python/Cargo.toml"
 bindings = "pyo3"
-python-source = "python"
+python-source = "tramuri/python"
 module-name = "tramuri._native"
-include = [{ path = "LICENSE", format = "sdist" }]
+include = [
+    { path = "LICENSE", format = "sdist" },
+    { path = "tramuri/always_on/*.md", format = "sdist" },
+]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/python"]
+testpaths = ["tramuri/tests/python"]
 addopts = ["-ra"]
+pythonpath = ["tramuri/python"]

@@ -730,7 +730,7 @@ dependencies = [
 
 [[package]]
 name = "tramuri-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "serde",
@@ -741,7 +741,7 @@ dependencies = [
 
 [[package]]
 name = "tramuri-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "hex",
  "ignore",
@@ -756,11 +756,12 @@ dependencies = [
 
 [[package]]
 name = "tramuri-python"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "pyo3",
  "serde",
  "serde_json",
+ "tramuri-cli",
  "tramuri-core",
 ]
 

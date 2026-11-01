@@ -46,7 +46,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --package tramuri-cli
       - run: uv sync --locked --no-install-project --python ${{ matrix.python-version }}
-      - run: uv run --no-sync maturin develop --locked --manifest-path bindings/python/Cargo.toml
+      - run: uv run --no-sync maturin develop --locked --manifest-path tramuri/bindings/python/Cargo.toml
       - name: Run Python SDK and mandatory CLI parity tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

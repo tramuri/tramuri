@@ -33,45 +33,83 @@ produto. Ele não exige um repositório de código, um LLM nem um framework espe
   não executa arquivos do repositório e exclui caminhos sensíveis por padrão.
 - Uma CLI nativa em Rust e um SDK Python apoiados pelo mesmo core Rust.
 
-O pacote no PyPI oferece o SDK Python pré-compilado. Ainda não há instaladores independentes
-pré-compilados para a CLI nativa.
+O SDK Python publicado inclui uma extensão Rust pré-compilada nas plataformas suportadas; o usuário
+não precisa instalar Rust.
 
-O Tramuri mantém os dados locais do projeto em SQLite. Evidências são registradas como referências;
-o Tramuri não busca recursos externos nem armazena o conteúdo dos arquivos analisados como evidência.
+O Tramuri mantém o estado local em `.tramuri/`, com o SQLite em
+`.tramuri/database/tramuri.sqlite3` e o relatório da análise mais recente em
+`.tramuri/discovery/`. Evidências são registradas como referências; o Tramuri não busca recursos
+externos nem armazena o conteúdo dos arquivos analisados como evidência.
 
-## Comece com Python
+## Pré-requisitos
 
-O SDK Python requer Python 3.11 ou mais recente. Instale o pacote pré-compilado:
+| Requisito | Versão | Verificação | Instalação |
+| --- | --- | --- | --- |
+| Python | 3.11 ou mais recente | `python --version` | [python.org](https://www.python.org/downloads/) |
+| `uv` (recomendado) | Qualquer versão atual | `uv --version` | [guia de instalação do uv](https://docs.astral.sh/uv/getting-started/installation/) |
+
+Instalações pelo PyPI usam wheels pré-compiladas nas plataformas suportadas. Não é necessário
+instalar Rust.
+
+## Instalação
+
+### SDK Python
+
+Adicione o Tramuri a um projeto Python existente:
+
+```bash
+uv add tramuri
+```
+
+Ou use pip:
 
 ```bash
 python -m pip install tramuri
 ```
 
-A wheel inclui o core Rust compilado. Quem instala uma wheel compatível não precisa instalar Rust.
+### CLI e integrações com assistentes
 
-```python
-from pathlib import Path
+O Tramuri 0.3.0 inclui a distribuição da CLI e o instalador das integrações com assistentes.
+Instale a CLI em um ambiente isolado:
 
-import tramuri
-
-workspace = Path("onboarding-de-clientes")
-workspace.mkdir(exist_ok=True)
-tramuri.init(workspace)
-
-mission = tramuri.mission_create(
-    workspace,
-    objective="Validar o fluxo de onboarding de clientes",
-    criteria=[
-        {
-            "description": "O cliente consegue concluir o onboarding",
-            "required": True,
-            "evidence_expectation": "Aceite do cliente ou conclusão observada",
-        }
-    ],
-)
-
-print(mission["id"])
+```bash
+uv tool install tramuri
+tramuri --version
+tramuri init .
+tramuri scan .
 ```
+
+`pipx install tramuri` também está disponível como alternativa para uma instalação isolada.
+Se o comando `tramuri` não for encontrado após a instalação, execute `uv tool update-shell` e
+abra um novo terminal.
+
+Para adicionar as instruções do Tramuri ao projeto, escolha uma plataforma de assistente:
+
+```bash
+tramuri install --project --platform codex
+tramuri install --project --platform copilot
+tramuri install --project --platform claude
+tramuri install --project --platform gemini
+tramuri integrations status
+```
+
+O instalador adiciona instruções da plataforma, uma skill do Tramuri e suas referências sob demanda.
+Ele preserva o conteúdo existente e não instala hooks. Essas integrações são opcionais: o Tramuri
+não exige um assistente para usar a CLI ou o SDK.
+
+### Como um assistente pode usar o Tramuri
+
+O instalador do projeto foi pensado para fornecer instruções persistentes e nativas da plataforma
+ao assistente sobre quando o Tramuri é útil. A skill explica o fluxo; a CLI executa operações do
+Tramuri sobre o estado local do projeto. Ambos são opcionais, e o assistente continua livre para
+usar outras ferramentas.
+
+| Interface | Uso |
+| --- | --- |
+| CLI | Executar descoberta local e fluxos de conhecimento e missões. |
+| Skill e instruções do assistente | Ajudar um assistente configurado a escolher e usar a CLI do Tramuri. |
+| SDK Python | Chamar os mesmos recursos apoiados pelo core Rust a partir de aplicações Python. |
+| MCP | O Tramuri ainda não oferece um servidor MCP; use a CLI ou o SDK. |
 
 Criar uma missão não exige um repositório Git nem uma análise do projeto. Consulte a
 [visão do produto](VISION.md) para conhecer o escopo e os princípios do Tramuri, e o

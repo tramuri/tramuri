@@ -21,7 +21,7 @@ build tools. Install the locked development environment and build the CLI and Py
 ```bash
 uv sync --locked --no-install-project
 cargo build --locked --package tramuri-cli
-uv run maturin develop --locked --manifest-path bindings/python/Cargo.toml
+uv run maturin develop --locked --manifest-path tramuri/bindings/python/Cargo.toml
 ```
 
 Run the checks used by CI:

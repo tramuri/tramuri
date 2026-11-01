@@ -40,7 +40,7 @@ jobs:
           PY
       - run: uv sync --locked --no-install-project --python 3.11
       - run: cargo build --locked --package tramuri-cli
-      - run: uv run --no-sync maturin develop --locked --manifest-path bindings/python/Cargo.toml
+      - run: uv run --no-sync maturin develop --locked --manifest-path tramuri/bindings/python/Cargo.toml
       - name: Run Rust and Python tests with CLI/SDK parity
         env:
           TRAMURI_CLI: ${{ github.workspace }}/target/debug/tramuri
@@ -75,12 +75,12 @@ jobs:
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1
         with:
           command: build
-          args: --locked --release --manifest-path bindings/python/Cargo.toml --interpreter python3.11 --out dist
+          args: --locked --release --manifest-path tramuri/bindings/python/Cargo.toml --interpreter python3.11 --out dist
           maturin-version: 1.15.0
           manylinux: 2014
       - name: Build Windows or macOS wheel
         if: runner.os != 'Linux'
-        run: uv run --no-sync maturin build --locked --release --manifest-path bindings/python/Cargo.toml --interpreter python --out dist
+        run: uv run --no-sync maturin build --locked --release --manifest-path tramuri/bindings/python/Cargo.toml --interpreter python --out dist
       - name: Select wheel for isolated installation test
         shell: python {0}
         run: |
@@ -91,7 +91,7 @@ jobs:
               raise SystemExit(f"expected one wheel, found: {wheels}")
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
               env_file.write(f"TRAMURI_WHEEL={wheels[0].resolve()}\n")
-      - run: uv run --no-sync pytest tests/python/test_install.py
+      - run: uv run --no-sync pytest tramuri/tests/python/test_install.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-${{ matrix.os }}
@@ -114,7 +114,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --no-install-project --python 3.11
-      - run: uv run --no-sync maturin sdist --manifest-path bindings/python/Cargo.toml --out dist
+      - run: uv run --no-sync maturin sdist --manifest-path tramuri/bindings/python/Cargo.toml --out dist
       - name: Verify source distribution contents and Cargo workspace
         shell: python {0}
         run: |
@@ -128,9 +128,18 @@ jobs:
               names = archive.getnames()
           required = (
               "Cargo.toml", "Cargo.lock", "pyproject.toml", "LICENSE",
-              "bindings/python/Cargo.toml", "crates/tramuri-core/src/discovery.rs",
-              "crates/tramuri-core/src/hash_status.rs", "python/tramuri/__init__.py",
-              "python/tramuri/py.typed",
+              "tramuri/bindings/python/Cargo.toml", "tramuri/crates/tramuri-core/src/discovery.rs",
+              "tramuri/crates/tramuri-core/src/hash_status.rs", "tramuri/python/tramuri/__init__.py",
+              "tramuri/python/tramuri/py.typed", "tramuri/python/tramuri/_cli.py", "tramuri/python/tramuri/skills/tramuri/SKILL.md",
+              "tramuri/python/tramuri/skills/tramuri/references/project-discovery.md",
+              "tramuri/python/tramuri/skills/tramuri/references/knowledge.md",
+              "tramuri/python/tramuri/skills/tramuri/references/missions-and-outcomes.md",
+              "tramuri/python/tramuri/skills/tramuri/references/context-and-evidence.md",
+              "tramuri/python/tramuri/skills/tramuri/references/platform-integrations.md",
+              "tramuri/always_on/agents-md.md",
+              "tramuri/always_on/copilot-instructions.md",
+              "tramuri/always_on/claude-md.md",
+              "tramuri/always_on/gemini-md.md",
           )
           missing = [path for path in required if not any(name.endswith(path) for name in names)]
           if missing:
@@ -140,7 +149,7 @@ jobs:
           subprocess.run(["tar", "-xzf", str(archives[0]), "-C", str(destination)], check=True)
           source_root = destination / archives[0].name.removesuffix(".tar.gz")
           subprocess.run(["cargo", "metadata", "--no-deps", "--format-version", "1",
-                          "--manifest-path", str(source_root / "bindings/python/Cargo.toml")],
+                          "--manifest-path", str(source_root / "tramuri/bindings/python/Cargo.toml")],
                          check=True, capture_output=True, text=True)
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -212,13 +221,23 @@ jobs:
           done
           .venv-testpypi/bin/python - <<'PY'
           import tempfile
+          import subprocess
+          import json
           from pathlib import Path
           import tramuri
 
           workspace = Path(tempfile.mkdtemp())
           report = tramuri.init(workspace)
           assert report["schema_version"] == 5
+          assert Path(report["database_path"]).parent.name == "database"
           assert tramuri.__version__
+          command = Path(".venv-testpypi/bin/tramuri")
+          version = subprocess.run([command, "--version"], check=True, capture_output=True, text=True)
+          assert version.stdout.strip().startswith("tramuri ")
+          scan = subprocess.run(
+              [command, "scan", str(workspace), "--json"], check=True, capture_output=True, text=True
+          )
+          assert json.loads(scan.stdout)["complete"] is True
           print(f"Imported Tramuri {tramuri.__version__} from TestPyPI")
           PY
 

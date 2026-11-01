@@ -370,6 +370,68 @@ pub fn knowledge_list(
     Ok(records)
 }
 
+pub(crate) fn knowledge_record_by_id(
+    connection: &rusqlite::Connection,
+    project_root: &Path,
+    id: &str,
+) -> Result<KnowledgeRecord> {
+    let project_id: String = connection.query_row(
+        "SELECT project_id FROM project_metadata WHERE singleton_id = 1",
+        [],
+        |row| row.get(0),
+    )?;
+    let stored: Option<(KnowledgeType, String, KnowledgeStatus, i64, Option<String>)> = connection
+        .query_row(
+            "SELECT record_type, statement, status, created_at_unix_ms, supersedes_id
+             FROM knowledge_records WHERE id = ?1",
+            [id],
+            |row| {
+                let kind: String = row.get(0)?;
+                let kind = KnowledgeType::from_storage_value(&kind).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("unknown stored knowledge type: {kind}"),
+                        )
+                        .into(),
+                    )
+                })?;
+                let status: String = row.get(2)?;
+                let status = KnowledgeStatus::from_storage_value(&status).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        2,
+                        rusqlite::types::Type::Text,
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("unknown stored knowledge status: {status}"),
+                        )
+                        .into(),
+                    )
+                })?;
+                Ok((kind, row.get(1)?, status, row.get(3)?, row.get(4)?))
+            },
+        )
+        .optional()?;
+    let Some((kind, statement, status, created_at_unix_ms, supersedes)) = stored else {
+        return Err(TramuriError::KnowledgeNotFound(id.to_owned()));
+    };
+    let provenance = load_provenance(connection, project_root, id)?;
+    let freshness = aggregate_freshness(&provenance);
+    Ok(KnowledgeRecord {
+        id: id.to_owned(),
+        project_id,
+        kind,
+        statement,
+        status,
+        created_at_unix_ms,
+        supersedes,
+        provenance,
+        freshness,
+    })
+}
+
 pub fn knowledge_withdraw(path: impl AsRef<Path>, id: &str) -> Result<KnowledgeRecord> {
     let project_root = fs::canonicalize(path.as_ref()).map_err(|source| TramuriError::Io {
         operation: "resolve project directory",

@@ -8,11 +8,23 @@ const START: &str = "<!-- tramuri:managed:start -->";
 const END: &str = "<!-- tramuri:managed:end -->";
 const SKILL_MARKER: &str = "<!-- tramuri:managed-skill:v1 -->";
 const REFERENCE_MARKER: &str = "<!-- tramuri:managed-reference:v1 -->";
+const CODEX_HOOK_FILE: &str = ".codex/hooks.json";
+const CODEX_HOOK_COMMAND: &str = "tramuri status --hint";
+const CODEX_HOOK_STATUS: &str = "Checking Tramuri availability";
+const CLAUDE_HOOK_FILE: &str = ".claude/settings.json";
+const CLAUDE_HOOK_COMMAND: &str = "tramuri status --hint --hook-format claude";
+const CURSOR_HOOK_FILE: &str = ".cursor/hooks.json";
+const CURSOR_HOOK_COMMAND: &str = "tramuri status --hint --hook-format cursor";
+const GEMINI_HOOK_FILE: &str = ".gemini/settings.json";
+const GEMINI_HOOK_COMMAND: &str = "tramuri status --hint --hook-format gemini";
+const CURSOR_RULE_FRONTMATTER: &str =
+    "---\ndescription: Tramuri project guidance\nalwaysApply: true\n---\n\n";
 const SKILL: &str = include_str!("../../../python/tramuri/skills/tramuri/SKILL.md");
 const CODEX_INSTRUCTIONS: &str = include_str!("../../../always_on/agents-md.md");
 const COPILOT_INSTRUCTIONS: &str = include_str!("../../../always_on/copilot-instructions.md");
 const CLAUDE_INSTRUCTIONS: &str = include_str!("../../../always_on/claude-md.md");
 const GEMINI_INSTRUCTIONS: &str = include_str!("../../../always_on/gemini-md.md");
+const CURSOR_INSTRUCTIONS: &str = include_str!("../../../always_on/cursor-rules.md");
 const REFERENCES: [(&str, &str); 5] = [
     (
         "project-discovery.md",
@@ -41,15 +53,21 @@ pub enum Platform {
     Codex,
     Copilot,
     Claude,
+    Cursor,
     Gemini,
 }
 
 impl Platform {
+    pub fn has_hook(self) -> bool {
+        hook_file(self).is_some()
+    }
+
     fn name(self) -> &'static str {
         match self {
             Self::Codex => "codex",
             Self::Copilot => "copilot",
             Self::Claude => "claude",
+            Self::Cursor => "cursor",
             Self::Gemini => "gemini",
         }
     }
@@ -59,6 +77,7 @@ impl Platform {
             Self::Codex => "AGENTS.md",
             Self::Copilot => ".github/copilot-instructions.md",
             Self::Claude => "CLAUDE.md",
+            Self::Cursor => ".cursor/rules/tramuri.mdc",
             Self::Gemini => "GEMINI.md",
         }
     }
@@ -68,6 +87,7 @@ impl Platform {
             Self::Codex => ".agents/skills/tramuri/SKILL.md",
             Self::Copilot => ".github/skills/tramuri/SKILL.md",
             Self::Claude => ".claude/skills/tramuri/SKILL.md",
+            Self::Cursor => ".cursor/skills/tramuri/SKILL.md",
             Self::Gemini => ".gemini/skills/tramuri/SKILL.md",
         }
     }
@@ -77,6 +97,7 @@ impl Platform {
             Self::Codex => CODEX_INSTRUCTIONS,
             Self::Copilot => COPILOT_INSTRUCTIONS,
             Self::Claude => CLAUDE_INSTRUCTIONS,
+            Self::Cursor => CURSOR_INSTRUCTIONS,
             Self::Gemini => GEMINI_INSTRUCTIONS,
         }
     }
@@ -95,7 +116,15 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     let reference_paths = reference_paths(platform);
     let block = format!("{START}\n## Tramuri\n{}\n{END}", platform.instructions());
 
-    let _ = ensure_parent(&root, instruction_path)?;
+    validate_existing_parent(&root, instruction_path)?;
+    if matches!(platform, Platform::Cursor) {
+        validate_cursor_rule(&root.join(instruction_path))?;
+    }
+    if let Some(hook_file) = hook_file(platform) {
+        validate_existing_parent(&root, Path::new(hook_file))?;
+        validate_native_hook(&root.join(hook_file), platform)?;
+    }
+
     let skill_target = ensure_parent(&root, skill_path)?;
     validate_managed_target(&skill_target, |text| {
         has_front_matter(text) && text.contains(SKILL_MARKER)
@@ -106,11 +135,17 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
         validate_managed_target(&target, |text| text.starts_with(REFERENCE_MARKER))?;
         reference_targets.push(target);
     }
-
-    write_managed_instruction(&root, instruction_path, &block)?;
+    if matches!(platform, Platform::Cursor) {
+        write_cursor_rule(&root, instruction_path, &block)?;
+    } else {
+        write_managed_instruction(&root, instruction_path, &block)?;
+    }
     write_managed_skill(&root, skill_path)?;
     for ((_, content), target) in REFERENCES.iter().zip(reference_targets) {
         fs::write(target, content)?;
+    }
+    if hook_file(platform).is_some() {
+        install_native_hook(&root, platform)?;
     }
     let mut installed = vec![
         platform.instruction_file().to_owned(),
@@ -121,6 +156,9 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
             .iter()
             .map(|(path, _)| path.to_string_lossy().into_owned()),
     );
+    if let Some(hook_file) = hook_file(platform) {
+        installed.push(hook_file.to_owned());
+    }
     Ok(installed)
 }
 
@@ -134,8 +172,17 @@ pub fn uninstall(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     for (path, _) in &reference_paths {
         validate_existing_parent(&root, path)?;
     }
+    if let Some(hook_file) = hook_file(platform) {
+        validate_existing_parent(&root, Path::new(hook_file))?;
+        validate_native_hook(&root.join(hook_file), platform)?;
+    }
     let mut removed = Vec::new();
-    if remove_managed_instruction(&root, instruction)? {
+    let removed_instruction = if matches!(platform, Platform::Cursor) {
+        remove_cursor_rule(&root, instruction)?
+    } else {
+        remove_managed_instruction(&root, instruction)?
+    };
+    if removed_instruction {
         removed.push(platform.instruction_file().to_owned());
     }
     for (path, _) in &reference_paths {
@@ -150,20 +197,26 @@ pub fn uninstall(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     if remove_managed_skill(&root, skill)? {
         removed.push(platform.skill_file().to_owned());
     }
+    if let Some(hook_file) = hook_file(platform) {
+        if remove_native_hook(&root, platform)? {
+            removed.push(hook_file.to_owned());
+        }
+    }
     let _ = fs::remove_dir(skill_dir);
     Ok(removed)
 }
 
 pub fn status(root: &Path) -> io::Result<Vec<(Platform, bool)>> {
     let root = canonical_root(root)?;
-    Ok([
+    [
         Platform::Codex,
         Platform::Copilot,
         Platform::Claude,
+        Platform::Cursor,
         Platform::Gemini,
     ]
     .into_iter()
-    .map(|platform| {
+    .map(|platform| -> io::Result<(Platform, bool)> {
         let instructions = root.join(platform.instruction_file());
         let skill = root.join(platform.skill_file());
         let references_installed = reference_paths(platform).iter().all(|(path, _)| {
@@ -173,9 +226,305 @@ pub fn status(root: &Path) -> io::Result<Vec<(Platform, bool)>> {
             && read_if_regular(&skill)
                 .is_ok_and(|text| has_front_matter(&text) && text.contains(SKILL_MARKER))
             && references_installed;
-        (platform, installed)
+        let installed = if hook_file(platform).is_some() {
+            installed && native_hook_installed(&root, platform)?
+        } else {
+            installed
+        };
+        Ok((platform, installed))
     })
-    .collect())
+    .collect()
+}
+
+fn hook_file(platform: Platform) -> Option<&'static str> {
+    match platform {
+        Platform::Codex => Some(CODEX_HOOK_FILE),
+        Platform::Claude => Some(CLAUDE_HOOK_FILE),
+        Platform::Cursor => Some(CURSOR_HOOK_FILE),
+        Platform::Gemini => Some(GEMINI_HOOK_FILE),
+        Platform::Copilot => None,
+    }
+}
+
+fn hook_command(platform: Platform) -> Option<&'static str> {
+    match platform {
+        Platform::Codex => Some(CODEX_HOOK_COMMAND),
+        Platform::Claude => Some(CLAUDE_HOOK_COMMAND),
+        Platform::Cursor => Some(CURSOR_HOOK_COMMAND),
+        Platform::Gemini => Some(GEMINI_HOOK_COMMAND),
+        Platform::Copilot => None,
+    }
+}
+
+fn hook_event(platform: Platform) -> Option<&'static str> {
+    match platform {
+        Platform::Codex | Platform::Claude | Platform::Gemini => Some("SessionStart"),
+        Platform::Cursor => Some("sessionStart"),
+        Platform::Copilot => None,
+    }
+}
+
+fn validate_native_hook(path: &Path, platform: Platform) -> io::Result<()> {
+    let Some(text) = read_optional_regular(path)? else {
+        return Ok(());
+    };
+    let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "cannot merge {} hooks because {} is invalid JSON: {error}",
+                platform,
+                path.display()
+            ),
+        )
+    })?;
+    if !value.is_object() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "hook settings file must contain a JSON object",
+        ));
+    }
+    if matches!(platform, Platform::Cursor)
+        && value
+            .get("version")
+            .is_some_and(|version| version.as_u64() != Some(1))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Cursor hooks version must be 1",
+        ));
+    }
+    let Some(hooks) = value.get("hooks") else {
+        return Ok(());
+    };
+    if !hooks.is_object() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "hooks must be an object",
+        ));
+    }
+    let event = hook_event(platform).expect("platform with hook has event");
+    if hooks.get(event).is_some_and(|entries| !entries.is_array()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{event} hooks must be an array"),
+        ));
+    }
+    Ok(())
+}
+
+fn read_optional_regular(path: &Path) -> io::Result<Option<String>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "refusing to access a symlink or non-file: {}",
+                    path.display()
+                ),
+            ))
+        }
+        Ok(_) => fs::read_to_string(path).map(Some),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn hook_entry(platform: Platform) -> serde_json::Value {
+    let command = hook_command(platform).expect("platform with hook has command");
+    match platform {
+        Platform::Codex => serde_json::json!({
+            "type": "command",
+            "command": command,
+            "commandWindows": "tramuri.exe status --hint",
+            "statusMessage": CODEX_HOOK_STATUS,
+            "timeout": 10,
+            "additionalContextLimit": 2500
+        }),
+        Platform::Claude => serde_json::json!({
+            "type": "command",
+            "command": command,
+            "timeout": 10
+        }),
+        Platform::Cursor => serde_json::json!({"command": command}),
+        Platform::Gemini => serde_json::json!({
+            "name": "tramuri-session-start",
+            "type": "command",
+            "command": command,
+            "timeout": 10000,
+            "description": "Print a static Tramuri reminder without reading workspace records"
+        }),
+        Platform::Copilot => unreachable!("Copilot does not install hooks"),
+    }
+}
+
+fn hook_group(platform: Platform) -> serde_json::Value {
+    let entry = hook_entry(platform);
+    match platform {
+        Platform::Codex => serde_json::json!({
+            "matcher": "startup|resume",
+            "hooks": [entry]
+        }),
+        Platform::Claude => serde_json::json!({
+            "matcher": "startup|resume",
+            "hooks": [entry]
+        }),
+        Platform::Gemini => serde_json::json!({"hooks": [entry]}),
+        Platform::Cursor | Platform::Copilot => unreachable!("hook is not grouped"),
+    }
+}
+
+fn is_managed_hook(value: &serde_json::Value, platform: Platform) -> bool {
+    value.get("command").and_then(serde_json::Value::as_str) == hook_command(platform)
+}
+
+fn contains_managed_hook(group: &serde_json::Value, platform: Platform) -> bool {
+    if matches!(platform, Platform::Cursor) {
+        return is_managed_hook(group, platform);
+    }
+    group
+        .get("hooks")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|entries| entries.iter().any(|entry| is_managed_hook(entry, platform)))
+}
+
+fn read_hook_config(path: &Path) -> io::Result<Option<serde_json::Value>> {
+    let Some(text) = read_optional_regular(path)? else {
+        return Ok(None);
+    };
+    let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid hook JSON: {error}"),
+        )
+    })?;
+    Ok(Some(value))
+}
+
+fn hook_entries_mut(
+    value: &mut serde_json::Value,
+    platform: Platform,
+) -> io::Result<&mut Vec<serde_json::Value>> {
+    let event = hook_event(platform).expect("platform with hook has event");
+    value
+        .as_object_mut()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "hook settings must be an object",
+            )
+        })?
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "hooks must be an object"))?
+        .entry(event)
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{event} hooks must be an array"),
+            )
+        })
+}
+
+fn native_hook_installed(root: &Path, platform: Platform) -> io::Result<bool> {
+    let path = root.join(hook_file(platform).expect("platform with hook has file"));
+    let Some(value) = read_hook_config(&path)? else {
+        return Ok(false);
+    };
+    let event = hook_event(platform).expect("platform with hook has event");
+    Ok(value
+        .get("hooks")
+        .and_then(|hooks| hooks.get(event))
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|groups| {
+            groups
+                .iter()
+                .any(|group| contains_managed_hook(group, platform))
+        }))
+}
+
+fn install_native_hook(root: &Path, platform: Platform) -> io::Result<()> {
+    let relative = Path::new(hook_file(platform).expect("platform with hook has file"));
+    let path = ensure_parent(root, relative)?;
+    let mut value = match read_hook_config(&path)? {
+        Some(value) => value,
+        None if matches!(platform, Platform::Cursor) => {
+            serde_json::json!({"version": 1, "hooks": {}})
+        }
+        None => serde_json::json!({"hooks": {}}),
+    };
+    if matches!(platform, Platform::Cursor) {
+        value
+            .as_object_mut()
+            .expect("validated Cursor settings object")
+            .entry("version")
+            .or_insert(serde_json::json!(1));
+    }
+    let entries = hook_entries_mut(&mut value, platform)?;
+    if !entries
+        .iter()
+        .any(|item| contains_managed_hook(item, platform))
+    {
+        if matches!(platform, Platform::Cursor) {
+            entries.push(hook_entry(platform));
+        } else {
+            entries.push(hook_group(platform));
+        }
+    }
+    let encoded = serde_json::to_vec_pretty(&value)
+        .map_err(|error| io::Error::other(format!("failed to serialize hook settings: {error}")))?;
+    fs::write(path, encoded)
+}
+
+fn remove_native_hook(root: &Path, platform: Platform) -> io::Result<bool> {
+    let path = root.join(hook_file(platform).expect("platform with hook has file"));
+    let Some(mut value) = read_hook_config(&path)? else {
+        return Ok(false);
+    };
+    let event = hook_event(platform).expect("platform with hook has event");
+    let Some(groups) = value
+        .get_mut("hooks")
+        .and_then(|hooks| hooks.get_mut(event))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(false);
+    };
+    let mut removed = false;
+    if matches!(platform, Platform::Cursor) {
+        let previous = groups.len();
+        groups.retain(|entry| !is_managed_hook(entry, platform));
+        removed = previous != groups.len();
+    } else {
+        let mut retained = Vec::with_capacity(groups.len());
+        for group in groups.iter_mut() {
+            if let Some(handlers) = group
+                .get_mut("hooks")
+                .and_then(serde_json::Value::as_array_mut)
+            {
+                let old_len = handlers.len();
+                handlers.retain(|entry| !is_managed_hook(entry, platform));
+                let removed_from_group = old_len != handlers.len();
+                removed |= removed_from_group;
+                if removed_from_group && handlers.is_empty() {
+                    continue;
+                }
+            }
+            retained.push(group.clone());
+        }
+        *groups = retained;
+    }
+    if removed {
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(&value).map_err(|error| {
+                io::Error::other(format!("failed to serialize hook settings: {error}"))
+            })?,
+        )?;
+    }
+    Ok(removed)
 }
 
 fn reference_paths(platform: Platform) -> Vec<(PathBuf, &'static str)> {
@@ -186,6 +535,47 @@ fn reference_paths(platform: Platform) -> Vec<(PathBuf, &'static str)> {
         .iter()
         .map(|(name, content)| (skill_dir.join("references").join(name), *content))
         .collect()
+}
+
+fn validate_cursor_rule(path: &Path) -> io::Result<()> {
+    match read_optional_regular(path)? {
+        Some(text) if has_front_matter(&text) && has_managed_block(&text) => Ok(()),
+        Some(_) => Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "{} already exists and is not managed by Tramuri",
+                path.display()
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
+fn write_cursor_rule(root: &Path, relative: &Path, block: &str) -> io::Result<()> {
+    let path = ensure_parent(root, relative)?;
+    let content = match read_optional_regular(&path)? {
+        Some(original) => replace_managed_block(&original, block)?,
+        None => format!("{CURSOR_RULE_FRONTMATTER}{block}\n"),
+    };
+    fs::write(path, content)
+}
+
+fn remove_cursor_rule(root: &Path, relative: &Path) -> io::Result<bool> {
+    let path = root.join(relative);
+    let original = match read_optional_regular(&path)? {
+        Some(text) => text,
+        None => return Ok(false),
+    };
+    if !has_front_matter(&original) || !has_managed_block(&original) {
+        return Ok(false);
+    }
+    let updated = replace_managed_block(&original, "")?;
+    if updated.trim() == CURSOR_RULE_FRONTMATTER.trim() {
+        fs::remove_file(path)?;
+    } else {
+        fs::write(path, updated)?;
+    }
+    Ok(true)
 }
 
 fn validate_managed_target(path: &Path, is_managed: impl FnOnce(&str) -> bool) -> io::Result<()> {
@@ -443,6 +833,155 @@ mod tests {
                 .unwrap()
                 .contains(&(Platform::Codex, true))
         );
+    }
+
+    #[test]
+    fn codex_hook_merges_with_user_hooks_and_uninstall_preserves_them() {
+        let project = tempdir().unwrap();
+        let hooks = project.path().join(CODEX_HOOK_FILE);
+        fs::create_dir_all(hooks.parent().unwrap()).unwrap();
+        fs::write(
+            &hooks,
+            r#"{"description":"user config","hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"user-command"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"user-end"}]}]}}"#,
+        )
+        .unwrap();
+
+        install(project.path(), Platform::Codex).unwrap();
+        install(project.path(), Platform::Codex).unwrap();
+
+        let installed: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&hooks).unwrap()).unwrap();
+        let starts = installed["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(starts.len(), 2);
+        assert!(installed["hooks"]["SessionEnd"][0]["hooks"][0]["command"] == "user-end");
+        assert!(installed["description"] == "user config");
+        assert!(native_hook_installed(project.path(), Platform::Codex).unwrap());
+
+        uninstall(project.path(), Platform::Codex).unwrap();
+
+        let after: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&hooks).unwrap()).unwrap();
+        assert_eq!(after["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        assert!(after["hooks"]["SessionStart"][0]["hooks"][0]["command"] == "user-command");
+        assert!(after["hooks"]["SessionEnd"][0]["hooks"][0]["command"] == "user-end");
+    }
+
+    #[test]
+    fn native_session_hooks_merge_idempotently_and_uninstall_only_tramuri_entries() {
+        for platform in [
+            Platform::Codex,
+            Platform::Claude,
+            Platform::Cursor,
+            Platform::Gemini,
+        ] {
+            let project = tempdir().unwrap();
+            let hook_file = project.path().join(hook_file(platform).unwrap());
+            fs::create_dir_all(hook_file.parent().unwrap()).unwrap();
+            let seed = match platform {
+                Platform::Codex => {
+                    r#"{"owner":"user","hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"user-hook"}]}]}}"#
+                }
+                Platform::Claude => {
+                    r#"{"model":"user-model","hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"user-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"user-stop"}]}]}}"#
+                }
+                Platform::Cursor => {
+                    r#"{"version":1,"userSetting":true,"hooks":{"sessionStart":[{"command":"user-hook"}],"afterFileEdit":[{"command":"user-edit"}]}}"#
+                }
+                Platform::Gemini => {
+                    r#"{"theme":"user-theme","hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"user-hook"}]}],"BeforeAgent":[{"hooks":[{"type":"command","command":"user-agent"}]}]}}"#
+                }
+                Platform::Copilot => unreachable!(),
+            };
+            fs::write(&hook_file, seed).unwrap();
+
+            install(project.path(), platform).unwrap();
+            install(project.path(), platform).unwrap();
+
+            assert!(status(project.path()).unwrap().contains(&(platform, true)));
+            let installed: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&hook_file).unwrap()).unwrap();
+            assert!(installed.to_string().contains("user-hook"));
+            assert!(
+                installed
+                    .to_string()
+                    .contains(hook_command(platform).unwrap())
+            );
+            match platform {
+                Platform::Codex | Platform::Claude => {
+                    let groups = installed["hooks"]["SessionStart"].as_array().unwrap();
+                    assert_eq!(groups.len(), 2);
+                    assert!(
+                        groups
+                            .iter()
+                            .any(|group| contains_managed_hook(group, platform))
+                    );
+                }
+                Platform::Cursor => {
+                    let hooks = installed["hooks"]["sessionStart"].as_array().unwrap();
+                    assert_eq!(hooks.len(), 2);
+                    assert_eq!(installed["version"], 1);
+                }
+                Platform::Gemini => {
+                    let groups = installed["hooks"]["SessionStart"].as_array().unwrap();
+                    assert_eq!(groups.len(), 2);
+                    assert!(
+                        groups
+                            .iter()
+                            .any(|group| contains_managed_hook(group, platform))
+                    );
+                }
+                Platform::Copilot => unreachable!(),
+            }
+
+            uninstall(project.path(), platform).unwrap();
+
+            let remaining: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&hook_file).unwrap()).unwrap();
+            assert!(remaining.to_string().contains("user-hook"));
+            assert!(
+                !remaining
+                    .to_string()
+                    .contains(hook_command(platform).unwrap())
+            );
+            assert!(!status(project.path()).unwrap().contains(&(platform, true)));
+        }
+    }
+
+    #[test]
+    fn invalid_native_hook_settings_are_rejected_before_any_project_files_change() {
+        for platform in [Platform::Claude, Platform::Cursor, Platform::Gemini] {
+            let project = tempdir().unwrap();
+            let hook_file = project.path().join(hook_file(platform).unwrap());
+            fs::create_dir_all(hook_file.parent().unwrap()).unwrap();
+            let event = hook_event(platform).unwrap();
+            let malformed = format!(r#"{{"hooks":{{"{event}":"invalid"}}}}"#);
+            fs::write(&hook_file, &malformed).unwrap();
+
+            let error = install(project.path(), platform).unwrap_err();
+
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert_eq!(fs::read_to_string(&hook_file).unwrap(), malformed);
+            assert!(!project.path().join(platform.instruction_file()).exists());
+            assert!(!project.path().join(platform.skill_file()).exists());
+        }
+    }
+
+    #[test]
+    fn invalid_codex_hook_file_refuses_install_without_modifying_instructions() {
+        let project = tempdir().unwrap();
+        fs::write(project.path().join("AGENTS.md"), "# User instructions\n").unwrap();
+        let hook_file = project.path().join(CODEX_HOOK_FILE);
+        fs::create_dir_all(hook_file.parent().unwrap()).unwrap();
+        fs::write(&hook_file, "not-json").unwrap();
+
+        let error = install(project.path(), Platform::Codex).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            fs::read_to_string(project.path().join("AGENTS.md")).unwrap(),
+            "# User instructions\n"
+        );
+        assert_eq!(fs::read_to_string(hook_file).unwrap(), "not-json");
     }
 
     #[test]

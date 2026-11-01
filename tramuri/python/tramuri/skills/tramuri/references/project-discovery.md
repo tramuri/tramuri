@@ -6,6 +6,10 @@ Use `tramuri init <path>` to initialize Tramuri's local project state, then `tra
 to inspect the project. Use `--json` for machine-readable CLI output. The Python SDK exposes the
 same Rust-backed operations as `tramuri.init(path)` and `tramuri.scan(path)`.
 
+`tramuri scan` also refreshes a bounded, declarative Capability Registry. Run `tramuri capabilities`
+to inspect recognized project-local resources, or `tramuri capabilities --type skill --json` to
+filter the catalog. The Python SDK exposes the same snapshot as `tramuri.capabilities(path)`.
+
 Discovery is optional to the Tramuri domain. A Mission can describe product, customer, deployment,
 or other work without a source repository or Git checkout.
 

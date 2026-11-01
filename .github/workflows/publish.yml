@@ -228,7 +228,7 @@ jobs:
 
           workspace = Path(tempfile.mkdtemp())
           report = tramuri.init(workspace)
-          assert report["schema_version"] == 5
+          assert report["schema_version"] == 6
           assert Path(report["database_path"]).parent.name == "database"
           assert tramuri.__version__
           command = Path(".venv-testpypi/bin/tramuri")

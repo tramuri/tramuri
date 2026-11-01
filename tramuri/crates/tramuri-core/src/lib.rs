@@ -1,12 +1,19 @@
 //! Shared domain API for Tramuri's local-first missions, knowledge, and project discovery.
 
+mod capability;
 mod discovery;
 mod error;
 mod hash_status;
 mod knowledge;
 mod mission;
+mod relationships;
+mod status;
 mod storage;
 
+pub use capability::{
+    Capability, CapabilityKind, CapabilityRelationship, CapabilitySnapshot, CapabilityState,
+    CapabilitySummary, capability_list, capability_snapshot,
+};
 pub use discovery::{FileRecord, InitReport, ScanReport, ScanWarning, init, scan};
 pub use error::{Result, TramuriError};
 pub use hash_status::HashStatus;
@@ -23,6 +30,16 @@ pub use mission::{
     execution_get, execution_list, execution_record, mission_close, mission_contract_revise,
     mission_create, mission_get, outcome_assess, outcome_get,
 };
+pub use relationships::{
+    MissionCapabilityRelationship, MissionKnowledgeRelationship, MissionRelationships,
+    RelationshipFreshness, RelationshipProvenance, mission_capability_link,
+    mission_capability_unlink, mission_knowledge_link, mission_knowledge_unlink,
+    mission_relationships,
+};
+pub use status::{
+    MissionListItem, MissionResume, MissionStatus, OutcomeSummary, RecentActivity, StatusSnapshot,
+    WorkspaceSummary, mission_list, mission_resume, status_snapshot,
+};
 
 /// The current on-disk SQLite schema version.
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;

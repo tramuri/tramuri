@@ -105,17 +105,35 @@ assert callable(tramuri.execution_list)
 assert callable(tramuri.execution_get)
 assert callable(tramuri.evidence_list)
 assert callable(tramuri.evidence_get)
+assert callable(tramuri.mission_relationships)
+assert callable(tramuri.mission_resume)
 assert Path(tramuri.__file__).with_name("py.typed").is_file()
 report = tramuri.init(project_path)
-assert report["schema_version"] == 5
+assert report["schema_version"] == 6
 assert Path(report["database_path"]).parent.name == "database"
+skill = Path(project_path) / ".agents" / "skills" / "release" / "SKILL.md"
+skill.parent.mkdir(parents=True)
+skill.write_text("---\\nname: release\\ndescription: Verify a release\\n---\\n", encoding="utf-8")
 scan = tramuri.scan(project_path)
 assert scan["complete"] is True
-assert [item["path"] for item in scan["files"]] == ["hello.txt"]
+assert [item["path"] for item in scan["files"]] == [".agents/skills/release/SKILL.md", "hello.txt"]
+capability = tramuri.capabilities(project_path, type="skill")["capabilities"][0]
 mission = tramuri.mission_create(
     project_path,
     objective="Installed wheel recovery smoke test",
     criteria=[{"description": "Reference is recorded", "required": True}],
+)
+knowledge = tramuri.knowledge_add(
+    project_path,
+    type="decision",
+    statement="Use synthetic customer data only",
+    human_input=True,
+)
+tramuri.mission_knowledge_link(
+    project_path, mission_id=mission["id"], knowledge_id=knowledge["id"], actor_reference="wheel-smoke"
+)
+tramuri.mission_capability_link(
+    project_path, mission_id=mission["id"], capability_id=capability["id"], actor_reference="wheel-smoke"
 )
 execution = tramuri.execution_record(
     project_path,
@@ -136,6 +154,9 @@ assert tramuri.execution_list(project_path, mission_id=mission["id"]) == [execut
 assert tramuri.execution_get(project_path, execution_id=execution["id"]) == execution
 assert tramuri.evidence_list(project_path, mission_id=mission["id"]) == [evidence]
 assert tramuri.evidence_get(project_path, evidence_id=evidence["id"]) == evidence
+resumed = tramuri.mission_resume(project_path, mission_id=mission["id"])
+assert resumed["relationships"]["knowledge"][0]["knowledge"]["id"] == knowledge["id"]
+assert resumed["relationships"]["capabilities"][0]["capability_id"] == capability["id"]
 print(json.dumps({"mission_id": mission["id"], "execution": execution, "evidence": evidence}))
 """
     smoke_result = subprocess.run(
@@ -185,7 +206,7 @@ print(json.dumps({"mission_id": mission["id"], "execution": execution, "evidence
     )
     scan_report = json.loads(scan_cli.stdout)
     assert scan_report["complete"] is True
-    assert [entry["path"] for entry in scan_report["files"]] == ["hello.txt"]
+    assert [entry["path"] for entry in scan_report["files"]] == [".agents/skills/release/SKILL.md", "hello.txt"]
 
     integration_project = tmp_path / "integration-project"
     integration_project.mkdir()

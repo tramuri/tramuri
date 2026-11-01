@@ -8,6 +8,20 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-01
+
+### Added
+
+- Declarative discovery of agent capabilities in the authorized workspace, including supported agent, skill, instruction, hook, and MCP configuration formats. Discovery records provenance and does not execute discovered resources.
+- Workspace status and local HTML, Markdown, and JSON reports, plus capability queries through the Rust Core, CLI, and Python SDK.
+- Explicit Mission links to Knowledge and declared Capabilities, with provenance and freshness information available during Mission resume.
+
+### Changed
+
+- SQLite schema v6 adds transactional Mission–Knowledge and Mission–Capability link tables while preserving existing records.
+- Mission resume JSON now includes explicitly linked context. Workspace status does not expose linked Knowledge content.
+- The public Rust error enum adds Capability relationship errors; downstream exhaustive matches may need to handle the new variants.
+
 ## [0.3.1] - 2026-10-31
 
 ### Fixed

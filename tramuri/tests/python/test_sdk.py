@@ -21,12 +21,21 @@ from tramuri import (
     knowledge_list,
     knowledge_withdraw,
     mission_close,
+    mission_capability_link,
+    mission_capability_unlink,
     mission_contract_revise,
     mission_create,
     mission_get,
+    mission_knowledge_link,
+    mission_knowledge_unlink,
+    mission_list,
+    mission_relationships,
+    mission_resume,
     outcome_assess,
     outcome_get,
     scan,
+    status,
+    capabilities,
 )
 
 
@@ -39,7 +48,7 @@ def test_init_is_idempotent_and_scan_returns_inventory(tmp_path: Path) -> None:
     second_init = init(tmp_path)
     report = scan(tmp_path)
 
-    assert first_init["schema_version"] == 5
+    assert first_init["schema_version"] == 6
     assert first_init["already_initialized"] is False
     assert second_init["already_initialized"] is True
     assert report["complete"] is True
@@ -50,6 +59,50 @@ def test_init_is_idempotent_and_scan_returns_inventory(tmp_path: Path) -> None:
 def test_scan_requires_init(tmp_path: Path) -> None:
     with pytest.raises(TramuriError, match="init"):
         scan(tmp_path)
+
+
+def test_mission_list_and_status_are_privacy_minimized(tmp_path: Path) -> None:
+    init(tmp_path)
+    mission = mission_create(
+        tmp_path,
+        objective="Synthetic product objective",
+        context="private-context-marker",
+        criteria=[{"description": "Confirm local workflow", "required": True}],
+    )
+
+    listed = mission_list(tmp_path)
+    snapshot = status(tmp_path)
+
+    assert listed[0]["id"] == mission["id"]
+    assert snapshot["schema"] == "tramuri.status.v1"
+    assert snapshot["missions"][0]["outcome"]["state"] == "pending"
+    assert "context" not in snapshot["missions"][0]
+    assert "private-context-marker" not in json.dumps(snapshot)
+
+
+def test_cli_and_sdk_status_json_have_normalized_parity(tmp_path: Path) -> None:
+    cli = _cli_executable()
+    if not cli:
+        pytest.skip("Set TRAMURI_CLI to the built native executable to run CLI/SDK parity.")
+    init(tmp_path)
+    mission_create(
+        tmp_path,
+        objective="Synthetic parity objective",
+        criteria=[{"description": "Review parity", "required": True}],
+    )
+
+    sdk_snapshot = status(tmp_path)
+    result = subprocess.run(
+        [cli, "status", "--path", str(tmp_path), "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    cli_snapshot = json.loads(result.stdout)
+    sdk_snapshot.pop("generated_at_unix_ms")
+    cli_snapshot.pop("generated_at_unix_ms")
+    assert cli_snapshot == sdk_snapshot
 
 
 def _cli_executable() -> str | None:
@@ -818,3 +871,120 @@ def test_cli_and_sdk_outcome_assessment_have_normalized_parity(tmp_path: Path) -
         assert outcome["criteria"][0]["criterion"]["description"] == "Customer accepts the workflow"
         assert outcome["criteria"][0]["assessment_history"][-1]["result"] == "met"
         assert outcome["criteria"][0]["assessment_history"][-1]["verifier_reference"] == "product-owner"
+
+
+def test_cli_and_sdk_capabilities_have_normalized_parity(tmp_path: Path) -> None:
+    cli = _cli_executable()
+    if not cli:
+        pytest.skip("Set TRAMURI_CLI to the built native executable to run CLI/SDK parity.")
+    init(tmp_path)
+    skill = tmp_path / ".agents" / "skills" / "triage" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "---\nname: triage\ndescription: Prepare a safe handoff\n---\nprivate body\n",
+        encoding="utf-8",
+    )
+    mcp = tmp_path / ".gemini" / "settings.json"
+    mcp.parent.mkdir()
+    mcp.write_text(
+        '{"mcpServers":{"private":{"command":"must-not-export","env":{"KEY":"secret"}}}}',
+        encoding="utf-8",
+    )
+    scan(tmp_path)
+
+    sdk_snapshot = capabilities(tmp_path)
+    result = subprocess.run(
+        [cli, "capabilities", "--path", str(tmp_path), "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    cli_snapshot = json.loads(result.stdout)
+    assert cli_snapshot == sdk_snapshot
+    assert "must-not-export" not in json.dumps(sdk_snapshot)
+    assert '"secret"' not in json.dumps(sdk_snapshot)
+    assert "private body" not in json.dumps(sdk_snapshot)
+
+    sdk_skills = capabilities(tmp_path, type="skill")
+    result = subprocess.run(
+        [cli, "capabilities", "--path", str(tmp_path), "--type", "skill", "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert json.loads(result.stdout) == sdk_skills
+
+
+def test_explicit_mission_relationships_have_cli_sdk_parity_and_resume_context(
+    tmp_path: Path,
+) -> None:
+    cli = _cli_executable()
+    if not cli:
+        pytest.skip("Set TRAMURI_CLI to the built native executable to run CLI/SDK parity.")
+    init(tmp_path)
+    mission = mission_create(
+        tmp_path,
+        objective="Synthetic customer onboarding",
+        criteria=[{"description": "Customer confirms the workflow", "required": True}],
+    )
+    knowledge = knowledge_add(
+        tmp_path,
+        type="decision",
+        statement="Use a synthetic tenant and no real credentials",
+        human_input=True,
+    )
+    skill = tmp_path / ".agents" / "skills" / "handoff" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: handoff\ndescription: Record a safe handoff\n---\n", encoding="utf-8")
+    scan(tmp_path)
+    capability = capabilities(tmp_path, type="skill")["capabilities"][0]
+
+    sdk_relationships = mission_knowledge_link(
+        tmp_path,
+        mission_id=mission["id"],
+        knowledge_id=knowledge["id"],
+        actor_kind="human",
+        actor_reference="fde-one",
+    )
+    sdk_relationships = mission_capability_link(
+        tmp_path,
+        mission_id=mission["id"],
+        capability_id=capability["id"],
+        actor_kind="agent",
+        actor_reference="agent-session",
+    )
+    cli_relationships_result = subprocess.run(
+        [cli, "mission", "relationships", "--path", str(tmp_path), "--mission", mission["id"], "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    cli_relationships = json.loads(cli_relationships_result.stdout)
+    assert cli_relationships == mission_relationships(tmp_path, mission_id=mission["id"])
+    assert cli_relationships == sdk_relationships
+
+    cli_resume_result = subprocess.run(
+        [cli, "resume", "--path", str(tmp_path), "--mission", mission["id"], "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    cli_resume = json.loads(cli_resume_result.stdout)
+    sdk_resume = mission_resume(tmp_path, mission_id=mission["id"])
+    assert cli_resume == sdk_resume
+    assert cli_resume["relationships"]["knowledge"][0]["knowledge"]["statement"] == knowledge[
+        "statement"
+    ]
+    assert cli_resume["outcome"]["state"] == "pending"
+    assert "Use a synthetic tenant" not in json.dumps(status(tmp_path))
+
+    assert mission_knowledge_unlink(
+        tmp_path, mission_id=mission["id"], knowledge_id=knowledge["id"]
+    ) is True
+    assert mission_capability_unlink(
+        tmp_path, mission_id=mission["id"], capability_id=capability["id"]
+    ) is True

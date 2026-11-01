@@ -41,6 +41,12 @@ pub enum TramuriError {
     InvalidKnowledgeSource(String),
     #[error("knowledge record was not found: {0}")]
     KnowledgeNotFound(String),
+    #[error("declared capability was not found in the latest workspace scan: {0}")]
+    CapabilityNotFound(String),
+    #[error("declared capability cannot be linked in its current state: {0}")]
+    InvalidCapabilityLink(String),
+    #[error("capability source was not hashed and observed in the latest scan: {0}")]
+    CapabilityNotFresh(String),
     #[error("knowledge record cannot be superseded because it is not current: {0}")]
     InvalidSupersession(String),
     #[error("knowledge record cannot be withdrawn because it is not current: {0}")]
@@ -59,6 +65,8 @@ pub enum TramuriError {
     ContractRevisionOverflow,
     #[error("execution actor kind must be human, agent, or tool")]
     InvalidActorKind,
+    #[error("actor reference must be 1 to 256 characters without control characters")]
+    InvalidActorReference,
     #[error("execution state must be in_progress, completed, blocked, failed, or cancelled")]
     InvalidExecutionState,
     #[error("execution was not found: {0}")]

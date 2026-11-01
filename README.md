@@ -29,6 +29,8 @@ It works without requiring a source-code repository, an LLM, or a particular age
   mark a Mission as achieved.
 - **Project Discovery** as an optional way to inventory a code project. Scanning does not execute
   repository files and excludes sensitive paths by default.
+- **Capability Discovery** to catalog supported project-local skills, instructions, agents, hooks,
+  and MCP declarations without executing or connecting to them.
 - A native Rust CLI and a Python SDK backed by the same Rust core.
 
 The published Python SDK includes a prebuilt Rust extension on supported platforms; users do not
@@ -37,7 +39,8 @@ need a Rust toolchain.
 Tramuri stores its local project state under `.tramuri/`, with SQLite at
 `.tramuri/database/tramuri.sqlite3` and the latest scan report under `.tramuri/discovery/`.
 Evidence is recorded as references; Tramuri does not fetch external resources or store scanned file
-contents as evidence.
+contents as evidence. The capability catalog is a derived snapshot; declared MCP servers and hooks
+are not considered operationally verified.
 
 ## Prerequisites
 
@@ -66,33 +69,61 @@ python -m pip install tramuri
 
 ### CLI and assistant integrations
 
-Tramuri 0.3.0 includes the CLI distribution and project integration installer. Install the CLI in
+The Tramuri package includes the CLI distribution and project integration installer. Install the CLI in
 an isolated tool environment:
 
 ```bash
 uv tool install tramuri
 tramuri --version
-tramuri init .
-tramuri scan .
 ```
 
 `pipx install tramuri` is also available as an isolated-install alternative.
 If the `tramuri` command is not found after installation, run `uv tool update-shell` and reopen
 your terminal.
 
-To add Tramuri guidance to a project, choose a supported assistant platform:
+Install Tramuri into the project for the assistant you use, preserving existing instructions and hooks:
 
 ```bash
-tramuri install --project --platform codex
-tramuri install --project --platform copilot
-tramuri install --project --platform claude
-tramuri install --project --platform gemini
-tramuri integrations status
+tramuri install --platform codex --project
+tramuri init .
+tramuri scan .
+tramuri capabilities
+tramuri status --open
 ```
 
-The installer adds platform instructions, a Tramuri skill, and its on-demand references. It
-preserves existing user content and does not install hooks. These integrations are optional; Tramuri
-does not require an assistant to use its CLI or SDK.
+`tramuri capabilities --type skill --json` filters the latest declarative catalog. Scanning honors
+project ignore rules and sensitive-path exclusions; it does not read global agent settings, execute
+hooks, start MCP servers, or make network connections.
+
+Codex, Claude Code, Cursor, and Gemini CLI receive native project instructions, a discoverable
+Tramuri skill, and a project-local session-start hook. Hooks emit only a static reminder; they do
+not read the database or attach Mission data. The assistant must explicitly run Tramuri commands
+when it needs workspace context. Hooks follow each host's project trust settings, and installation
+preserves unrelated instructions and hook entries. Cursor uses `.cursor/rules/tramuri.mdc`,
+`.cursor/skills/tramuri/`, and `.cursor/hooks.json`; the other hosts use their native instruction,
+skill, and hook locations.
+
+Copilot project instructions and skills remain supported; Copilot hooks are not installed by Tramuri.
+
+```bash
+tramuri install --project --platform copilot
+tramuri install --project --platform claude
+tramuri install --project --platform cursor
+tramuri install --project --platform gemini
+```
+
+`tramuri status` summarizes the workspace, `tramuri status --open` generates and opens the local
+report, and `tramuri resume --mission <id>` reconstructs recorded work. `tramuri mission list`
+discovers Missions. The report files are `.tramuri/reports/tramauri.html`, `tramauri.md`, and
+`tramauri.json`. Opening an older supported database can apply its existing schema migrations;
+status reads do not change Mission, execution, evidence, or outcome records. These commands work
+without an assistant; integrations are optional.
+
+Knowledge and discovered Capabilities can be explicitly associated with a Mission using
+`tramuri mission link-knowledge` and `tramuri mission link-capability`. `tramuri resume --mission <id>`
+includes only those recorded associations. Tramuri does not infer Mission relevance; capability
+links retain the observed source hash and become changed, missing, or unverified after later scans.
+Actor attribution is caller supplied and is not authenticated.
 
 ### How an assistant can use Tramuri
 
@@ -114,8 +145,11 @@ Mission creation does not require a Git repository or project scan. See the
 
 ## Project status
 
-Tramuri is in active early development. Project Discovery, persistent knowledge, Missions, manual
-Execution and Evidence records, and criterion assessments are part of the current product. Versioned
+Tramuri is in active early development. Project and Capability Discovery, persistent knowledge,
+Missions, explicit Knowledge/Capability links, manual Execution and Evidence records, and criterion
+assessments are part of the current product. Capability formats are platform-specific; only
+documented project paths are recognized.
+Versioned
 Context Pack and Evidence Pack export is planned; it will use explicit selection and authorization
 and will be safe by default.
 

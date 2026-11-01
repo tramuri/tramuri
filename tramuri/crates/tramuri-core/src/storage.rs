@@ -145,23 +145,31 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             create_v3_schema(&mut connection)?;
             migrate_v3_to_v4(&mut connection)?;
             migrate_v4_to_v5(&mut connection)?;
+            migrate_v5_to_v6(&mut connection)?;
         }
         1 => {
             migrate_v1_to_v2(&mut connection)?;
             migrate_v2_to_v3(&mut connection)?;
             migrate_v3_to_v4(&mut connection)?;
             migrate_v4_to_v5(&mut connection)?;
+            migrate_v5_to_v6(&mut connection)?;
         }
         2 => {
             migrate_v2_to_v3(&mut connection)?;
             migrate_v3_to_v4(&mut connection)?;
             migrate_v4_to_v5(&mut connection)?;
+            migrate_v5_to_v6(&mut connection)?;
         }
         3 => {
             migrate_v3_to_v4(&mut connection)?;
             migrate_v4_to_v5(&mut connection)?;
+            migrate_v5_to_v6(&mut connection)?;
         }
-        4 => migrate_v4_to_v5(&mut connection)?,
+        4 => {
+            migrate_v4_to_v5(&mut connection)?;
+            migrate_v5_to_v6(&mut connection)?;
+        }
+        5 => migrate_v5_to_v6(&mut connection)?,
         version if version == i64::from(SCHEMA_VERSION) => {}
         found => {
             return Err(TramuriError::UnsupportedSchema {
@@ -325,18 +333,25 @@ fn migrate_schema(connection: &mut Connection) -> Result<()> {
             migrate_v1_to_v2(connection)?;
             migrate_v2_to_v3(connection)?;
             migrate_v3_to_v4(connection)?;
-            migrate_v4_to_v5(connection)
+            migrate_v4_to_v5(connection)?;
+            migrate_v5_to_v6(connection)
         }
         2 => {
             migrate_v2_to_v3(connection)?;
             migrate_v3_to_v4(connection)?;
-            migrate_v4_to_v5(connection)
+            migrate_v4_to_v5(connection)?;
+            migrate_v5_to_v6(connection)
         }
         3 => {
             migrate_v3_to_v4(connection)?;
-            migrate_v4_to_v5(connection)
+            migrate_v4_to_v5(connection)?;
+            migrate_v5_to_v6(connection)
         }
-        4 => migrate_v4_to_v5(connection),
+        4 => {
+            migrate_v4_to_v5(connection)?;
+            migrate_v5_to_v6(connection)
+        }
+        5 => migrate_v5_to_v6(connection),
         version if version == i64::from(SCHEMA_VERSION) => Ok(()),
         found => Err(TramuriError::UnsupportedSchema {
             found,
@@ -458,7 +473,41 @@ fn migrate_v4_to_v5(connection: &mut Connection) -> Result<()> {
         )
         BEGIN SELECT RAISE(ABORT, 'assessment evidence does not match mission contract revision'); END;",
     )?;
-    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    transaction.pragma_update(None, "user_version", 5)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v5_to_v6(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(
+        "CREATE TABLE mission_knowledge_links (
+            mission_id TEXT NOT NULL REFERENCES missions(id),
+            knowledge_id TEXT NOT NULL REFERENCES knowledge_records(id),
+            actor_kind TEXT NOT NULL CHECK (actor_kind IN ('human', 'agent', 'tool')),
+            actor_reference TEXT,
+            created_at_unix_ms INTEGER NOT NULL,
+            PRIMARY KEY (mission_id, knowledge_id)
+        ) WITHOUT ROWID;
+        CREATE INDEX mission_knowledge_links_order
+            ON mission_knowledge_links(mission_id, created_at_unix_ms, knowledge_id);
+        CREATE TABLE mission_capability_links (
+            mission_id TEXT NOT NULL REFERENCES missions(id),
+            capability_id TEXT NOT NULL CHECK (length(trim(capability_id)) > 0),
+            capability_name TEXT NOT NULL CHECK (length(trim(capability_name)) > 0),
+            ecosystem TEXT NOT NULL CHECK (length(trim(ecosystem)) > 0),
+            source_path TEXT NOT NULL CHECK (length(trim(source_path)) > 0),
+            source_sha256 TEXT NOT NULL CHECK (length(source_sha256) = 64),
+            adapter_version TEXT NOT NULL CHECK (length(trim(adapter_version)) > 0),
+            actor_kind TEXT NOT NULL CHECK (actor_kind IN ('human', 'agent', 'tool')),
+            actor_reference TEXT,
+            created_at_unix_ms INTEGER NOT NULL,
+            PRIMARY KEY (mission_id, capability_id)
+        ) WITHOUT ROWID;
+        CREATE INDEX mission_capability_links_order
+            ON mission_capability_links(mission_id, created_at_unix_ms, capability_id);",
+    )?;
+    transaction.pragma_update(None, "user_version", 6)?;
     transaction.commit()?;
     Ok(())
 }

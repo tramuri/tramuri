@@ -31,6 +31,8 @@ produto. Ele não exige um repositório de código, um LLM nem um framework espe
   não marca uma missão como alcançada.
 - **Descoberta de projetos** como recurso opcional para inventariar um projeto de código. A análise
   não executa arquivos do repositório e exclui caminhos sensíveis por padrão.
+- **Descoberta de capacidades** para catalogar skills, instruções, agentes, hooks e declarações MCP
+  locais compatíveis, sem executá-los nem se conectar a eles.
 - Uma CLI nativa em Rust e um SDK Python apoiados pelo mesmo core Rust.
 
 O SDK Python publicado inclui uma extensão Rust pré-compilada nas plataformas suportadas; o usuário
@@ -40,6 +42,8 @@ O Tramuri mantém o estado local em `.tramuri/`, com o SQLite em
 `.tramuri/database/tramuri.sqlite3` e o relatório da análise mais recente em
 `.tramuri/discovery/`. Evidências são registradas como referências; o Tramuri não busca recursos
 externos nem armazena o conteúdo dos arquivos analisados como evidência.
+O catálogo de capacidades é um snapshot derivado; servidores MCP e hooks declarados não são
+considerados operacionalmente verificados.
 
 ## Pré-requisitos
 
@@ -69,33 +73,61 @@ python -m pip install tramuri
 
 ### CLI e integrações com assistentes
 
-O Tramuri 0.3.0 inclui a distribuição da CLI e o instalador das integrações com assistentes.
+O pacote Tramuri inclui a distribuição da CLI e o instalador das integrações com assistentes.
 Instale a CLI em um ambiente isolado:
 
 ```bash
 uv tool install tramuri
 tramuri --version
-tramuri init .
-tramuri scan .
 ```
 
 `pipx install tramuri` também está disponível como alternativa para uma instalação isolada.
 Se o comando `tramuri` não for encontrado após a instalação, execute `uv tool update-shell` e
 abra um novo terminal.
 
-Para adicionar as instruções do Tramuri ao projeto, escolha uma plataforma de assistente:
+Instale o Tramuri no projeto para o assistente utilizado, preservando instruções e hooks existentes:
 
 ```bash
-tramuri install --project --platform codex
-tramuri install --project --platform copilot
-tramuri install --project --platform claude
-tramuri install --project --platform gemini
-tramuri integrations status
+tramuri install --platform codex --project
+tramuri init .
+tramuri scan .
+tramuri capabilities
+tramuri status --open
 ```
 
-O instalador adiciona instruções da plataforma, uma skill do Tramuri e suas referências sob demanda.
-Ele preserva o conteúdo existente e não instala hooks. Essas integrações são opcionais: o Tramuri
-não exige um assistente para usar a CLI ou o SDK.
+`tramuri capabilities --type skill --json` filtra o catálogo declarativo mais recente. A varredura
+respeita as regras de exclusão do projeto e de arquivos sensíveis; não lê configurações globais de
+agentes, não executa hooks, não inicia servidores MCP nem acessa a rede.
+
+Codex, Claude Code, Cursor e Gemini CLI recebem instruções nativas do projeto, uma skill descobrível
+do Tramuri e um hook local de início de sessão. Os hooks emitem apenas um lembrete estático: não leem
+o banco nem anexam dados das Missions. O agente executa comandos Tramuri explicitamente quando
+precisar de contexto do workspace. Os hooks respeitam as configurações de confiança da plataforma,
+e a instalação preserva instruções e hooks não relacionados. Cursor usa `.cursor/rules/tramuri.mdc`,
+`.cursor/skills/tramuri/` e `.cursor/hooks.json`; os demais hosts usam seus caminhos nativos.
+
+As instruções e skills do Copilot continuam disponíveis; o Tramuri não instala hooks do Copilot.
+
+```bash
+tramuri install --project --platform copilot
+tramuri install --project --platform claude
+tramuri install --project --platform cursor
+tramuri install --project --platform gemini
+```
+
+`tramuri status` resume o workspace, `tramuri status --open` gera e abre o relatório local, e
+`tramuri resume --mission <id>` recupera o trabalho registrado. `tramuri mission list` descobre as
+Missions existentes. Os arquivos são `.tramuri/reports/tramauri.html`, `tramauri.md` e
+`tramauri.json`. Ao abrir um banco antigo compatível, o Tramuri pode aplicar as migrações de schema
+existentes; a leitura de status não altera Missions, execuções, evidências ou outcomes. Esses
+comandos funcionam sem assistentes; as integrações são opcionais.
+
+Conhecimentos e capacidades descobertas podem ser associados explicitamente a uma Mission com
+`tramuri mission link-knowledge` e `tramuri mission link-capability`. O comando
+`tramuri resume --mission <id>` inclui somente essas associações registradas. O Tramuri não infere
+relevância para Missions; vínculos de capacidades guardam o hash observado e podem ficar alterados,
+ausentes ou não verificados após novas varreduras. A atribuição do ator é informada pelo chamador e
+não é autenticada.
 
 ### Como um assistente pode usar o Tramuri
 
@@ -118,7 +150,7 @@ Criar uma missão não exige um repositório Git nem uma análise do projeto. Co
 ## Estado do projeto
 
 O Tramuri está em desenvolvimento inicial. Descoberta de projetos, conhecimento persistente,
-missões, registros manuais de execução e evidências, e avaliações de critérios fazem parte do
+descoberta de capacidades, missões, registros manuais de execução e evidências, e avaliações de critérios fazem parte do
 produto atual. A exportação versionada de Context Packs e Evidence Packs está planejada e usará
 seleção e autorização explícitas, com proteção segura por padrão.
 

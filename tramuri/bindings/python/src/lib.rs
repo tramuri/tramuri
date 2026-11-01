@@ -6,10 +6,12 @@ use serde::Deserialize;
 use tramuri_core::{
     ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
     EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType,
-    MissionInput, TramuriError as CoreError, VerifierKind, evidence_add, evidence_get,
-    evidence_list, execution_get, execution_list, execution_record, init, knowledge_add,
-    knowledge_list, knowledge_withdraw, mission_close, mission_contract_revise, mission_create,
-    mission_get, outcome_assess, outcome_get, scan,
+    MissionInput, TramuriError as CoreError, VerifierKind, capability_list, evidence_add,
+    evidence_get, evidence_list, execution_get, execution_list, execution_record, init,
+    knowledge_add, knowledge_list, knowledge_withdraw, mission_capability_link,
+    mission_capability_unlink, mission_close, mission_contract_revise, mission_create, mission_get,
+    mission_knowledge_link, mission_knowledge_unlink, mission_list, mission_relationships,
+    mission_resume, outcome_assess, outcome_get, scan, status_snapshot,
 };
 
 create_exception!(_native, TramuriError, PyException);
@@ -37,6 +39,25 @@ fn _init_json(path: &str) -> PyResult<String> {
 fn _scan_json(path: &str) -> PyResult<String> {
     let report = scan(path).map_err(map_core_error)?;
     serde_json::to_string(&report).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _capability_snapshot_json(path: &str, kind: Option<&str>) -> PyResult<String> {
+    let kind = match kind {
+        Some("agent") => Some(tramuri_core::CapabilityKind::Agent),
+        Some("skill") => Some(tramuri_core::CapabilityKind::Skill),
+        Some("rule") => Some(tramuri_core::CapabilityKind::Rule),
+        Some("hook") => Some(tramuri_core::CapabilityKind::Hook),
+        Some("mcp_server") | Some("mcp-server") => Some(tramuri_core::CapabilityKind::McpServer),
+        Some(value) => {
+            return Err(TramuriError::new_err(format!(
+                "unknown capability type: {value}"
+            )));
+        }
+        None => None,
+    };
+    let snapshot = capability_list(path, kind).map_err(map_core_error)?;
+    serde_json::to_string(&snapshot).map_err(map_serialization_error)
 }
 
 fn parse_knowledge_type(value: &str) -> PyResult<KnowledgeType> {
@@ -145,6 +166,103 @@ fn _mission_create_json(
 fn _mission_get_json(path: &str, mission_id: &str) -> PyResult<String> {
     let mission = mission_get(path, mission_id).map_err(map_core_error)?;
     serde_json::to_string(&mission).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _mission_list_json(path: &str) -> PyResult<String> {
+    let missions = mission_list(path).map_err(map_core_error)?;
+    serde_json::to_string(&missions).map_err(map_serialization_error)
+}
+
+fn parse_link_actor_kind(value: &str) -> PyResult<ActorKind> {
+    match value {
+        "human" => Ok(ActorKind::Human),
+        "agent" => Ok(ActorKind::Agent),
+        "tool" => Ok(ActorKind::Tool),
+        _ => Err(TramuriError::new_err(
+            "actor_kind must be human, agent, or tool",
+        )),
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (path, mission_id, knowledge_id, actor_kind="human", actor_reference=None))]
+fn _mission_knowledge_link_json(
+    path: &str,
+    mission_id: &str,
+    knowledge_id: &str,
+    actor_kind: &str,
+    actor_reference: Option<&str>,
+) -> PyResult<String> {
+    let relationships = mission_knowledge_link(
+        path,
+        mission_id,
+        knowledge_id,
+        parse_link_actor_kind(actor_kind)?,
+        actor_reference,
+    )
+    .map_err(map_core_error)?;
+    serde_json::to_string(&relationships).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _mission_knowledge_unlink_json(
+    path: &str,
+    mission_id: &str,
+    knowledge_id: &str,
+) -> PyResult<String> {
+    let removed =
+        mission_knowledge_unlink(path, mission_id, knowledge_id).map_err(map_core_error)?;
+    serde_json::to_string(&removed).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+#[pyo3(signature = (path, mission_id, capability_id, actor_kind="human", actor_reference=None))]
+fn _mission_capability_link_json(
+    path: &str,
+    mission_id: &str,
+    capability_id: &str,
+    actor_kind: &str,
+    actor_reference: Option<&str>,
+) -> PyResult<String> {
+    let relationships = mission_capability_link(
+        path,
+        mission_id,
+        capability_id,
+        parse_link_actor_kind(actor_kind)?,
+        actor_reference,
+    )
+    .map_err(map_core_error)?;
+    serde_json::to_string(&relationships).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _mission_capability_unlink_json(
+    path: &str,
+    mission_id: &str,
+    capability_id: &str,
+) -> PyResult<String> {
+    let removed =
+        mission_capability_unlink(path, mission_id, capability_id).map_err(map_core_error)?;
+    serde_json::to_string(&removed).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _mission_relationships_json(path: &str, mission_id: &str) -> PyResult<String> {
+    let relationships = mission_relationships(path, mission_id).map_err(map_core_error)?;
+    serde_json::to_string(&relationships).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _mission_resume_json(path: &str, mission_id: &str) -> PyResult<String> {
+    let result = mission_resume(path, mission_id).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _status_json(path: &str) -> PyResult<String> {
+    let status = status_snapshot(path).map_err(map_core_error)?;
+    serde_json::to_string(&status).map_err(map_serialization_error)
 }
 
 #[pyfunction]
@@ -327,11 +445,20 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(_cli_main, module)?)?;
     module.add_function(wrap_pyfunction!(_init_json, module)?)?;
     module.add_function(wrap_pyfunction!(_scan_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_capability_snapshot_json, module)?)?;
     module.add_function(wrap_pyfunction!(_knowledge_add_json, module)?)?;
     module.add_function(wrap_pyfunction!(_knowledge_list_json, module)?)?;
     module.add_function(wrap_pyfunction!(_knowledge_withdraw_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_create_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_get_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_list_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_knowledge_link_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_knowledge_unlink_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_capability_link_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_capability_unlink_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_relationships_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_resume_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_status_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_close_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_contract_revise_json, module)?)?;
     module.add_function(wrap_pyfunction!(_execution_record_json, module)?)?;

@@ -78,8 +78,10 @@ systems remain outside the MVP.
 - SQLite is the initial local store; schema changes require compatibility analysis and an additive
   migration plan.
 - Local state and generated artifacts are grouped under `.tramuri/`; SQLite is stored in
-  `.tramuri/database/`, with derived reports and explicitly exported packs in purpose-specific
-  subdirectories.
+  `.tramuri/database/`, with derived reports at `.tramuri/reports/tramauri.html`,
+  `.tramuri/reports/tramauri.md`, and `.tramuri/reports/tramauri.json`, and explicitly exported
+  packs in purpose-specific subdirectories. Reports are read-only projections, not a source of
+  domain truth.
 - CLI, SDK, and pack behavior must stay compatible through shared core operations and versioned
   contracts.
 - The core does not require an LLM, agent framework, Codex, AI-DLC, Spec Kit, Graphify, or another

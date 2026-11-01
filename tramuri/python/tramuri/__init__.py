@@ -23,9 +23,18 @@ from ._native import (
     _mission_close_json,
     _mission_create_json,
     _mission_get_json,
+    _mission_list_json,
+    _mission_knowledge_link_json,
+    _mission_knowledge_unlink_json,
+    _mission_capability_link_json,
+    _mission_capability_unlink_json,
+    _mission_relationships_json,
+    _mission_resume_json,
     _outcome_assess_json,
     _outcome_get_json,
     _scan_json,
+    _capability_snapshot_json,
+    _status_json,
 )
 
 PathLike = str | os.PathLike[str]
@@ -41,6 +50,17 @@ def scan(path: PathLike = ".") -> dict[str, Any]:
     """Inventory *path* using the Rust core and return a normalized report."""
     encoded_path = os.fsdecode(os.fspath(path))
     return json.loads(_scan_json(encoded_path))
+
+
+def capabilities(path: PathLike = ".", *, type: str | None = None) -> dict[str, Any]:
+    """Return the latest declarative capability snapshot created by ``scan``.
+
+    ``type`` may be ``agent``, ``skill``, ``rule``, ``hook``, or ``mcp_server``.
+    This reads declarations only; it never executes or connects to a capability.
+    """
+    encoded_path = os.fsdecode(os.fspath(path))
+    normalized = type.replace("-", "_") if type is not None else None
+    return json.loads(_capability_snapshot_json(encoded_path, normalized))
 
 
 def knowledge_add(
@@ -91,6 +111,72 @@ def mission_get(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
     """Retrieve a Mission with its latest Success Contract."""
     encoded_path = os.fsdecode(os.fspath(path))
     return json.loads(_mission_get_json(encoded_path, mission_id))
+
+
+def mission_list(path: PathLike = ".") -> list[dict[str, Any]]:
+    """List Missions without requiring their IDs in advance."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_mission_list_json(encoded_path))
+
+
+def mission_knowledge_link(
+    path: PathLike = ".", *, mission_id: str, knowledge_id: str,
+    actor_kind: str = "human", actor_reference: str | None = None,
+) -> dict[str, Any]:
+    """Explicitly link a Knowledge record to a Mission, recording caller-supplied attribution."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(
+        _mission_knowledge_link_json(
+            encoded_path, mission_id, knowledge_id, actor_kind, actor_reference
+        )
+    )
+
+
+def mission_knowledge_unlink(
+    path: PathLike = ".", *, mission_id: str, knowledge_id: str
+) -> bool:
+    """Remove a Mission–Knowledge link without deleting the Knowledge record."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_mission_knowledge_unlink_json(encoded_path, mission_id, knowledge_id))
+
+
+def mission_capability_link(
+    path: PathLike = ".", *, mission_id: str, capability_id: str,
+    actor_kind: str = "human", actor_reference: str | None = None,
+) -> dict[str, Any]:
+    """Explicitly link a scanned Capability; its observed source hash is retained."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(
+        _mission_capability_link_json(
+            encoded_path, mission_id, capability_id, actor_kind, actor_reference
+        )
+    )
+
+
+def mission_capability_unlink(
+    path: PathLike = ".", *, mission_id: str, capability_id: str
+) -> bool:
+    """Remove a Mission–Capability link without deleting the discovered declaration."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_mission_capability_unlink_json(encoded_path, mission_id, capability_id))
+
+
+def mission_relationships(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
+    """Read only the Knowledge and Capabilities explicitly associated with a Mission."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_mission_relationships_json(encoded_path, mission_id))
+
+
+def mission_resume(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
+    """Resume a Mission with its recorded activity and explicitly linked context."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_mission_resume_json(encoded_path, mission_id))
+
+
+def status(path: PathLike = ".") -> dict[str, Any]:
+    """Return a privacy-minimized, versioned workspace status snapshot."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_status_json(encoded_path))
 
 
 def mission_close(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
@@ -219,11 +305,20 @@ __all__ = [
     "__version__",
     "init",
     "scan",
+    "capabilities",
     "knowledge_add",
     "knowledge_list",
     "knowledge_withdraw",
     "mission_create",
     "mission_get",
+    "mission_list",
+    "mission_knowledge_link",
+    "mission_knowledge_unlink",
+    "mission_capability_link",
+    "mission_capability_unlink",
+    "mission_relationships",
+    "mission_resume",
+    "status",
     "mission_close",
     "mission_contract_revise",
     "execution_record",

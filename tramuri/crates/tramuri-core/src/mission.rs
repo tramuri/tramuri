@@ -85,7 +85,7 @@ pub enum ActorKind {
 }
 
 impl ActorKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Human => "human",
             Self::Agent => "agent",
@@ -93,7 +93,7 @@ impl ActorKind {
         }
     }
 
-    fn from_storage_value(value: &str) -> Option<Self> {
+    pub(crate) fn from_storage_value(value: &str) -> Option<Self> {
         match value {
             "human" => Some(Self::Human),
             "agent" => Some(Self::Agent),

@@ -21,6 +21,94 @@ fn help_is_available() {
 }
 
 #[test]
+fn session_hook_hint_uses_each_hosts_native_output_contract_without_workspace_data() {
+    for (platform, expected_key) in [
+        ("claude", "hookSpecificOutput"),
+        ("cursor", "additional_context"),
+        ("gemini", "hookSpecificOutput"),
+    ] {
+        let output = tramuri()
+            .args(["status", "--hint", "--hook-format", platform])
+            .output()
+            .expect("CLI should launch");
+        assert!(output.status.success());
+        let value: Value =
+            serde_json::from_slice(&output.stdout).expect("hook output should be JSON");
+        let context = if platform == "cursor" {
+            value[expected_key]
+                .as_str()
+                .expect("Cursor context should be text")
+        } else {
+            assert_eq!(value[expected_key]["hookEventName"], "SessionStart");
+            value[expected_key]["additionalContext"]
+                .as_str()
+                .expect("native context should be text")
+        };
+        assert!(context.contains("static Tramuri reminder"));
+        assert!(!context.contains("Mission ID"));
+    }
+
+    let codex = tramuri()
+        .args(["status", "--hint"])
+        .output()
+        .expect("CLI should launch");
+    assert!(codex.status.success());
+    assert!(String::from_utf8_lossy(&codex.stdout).contains("Tramuri is available"));
+}
+
+#[test]
+fn install_and_uninstall_cli_support_claude_cursor_and_gemini_project_hooks() {
+    for platform in ["claude", "cursor", "gemini"] {
+        let project = tempdir().expect("project should be created");
+        let path = project.path().to_str().expect("path should be UTF-8");
+        let install = tramuri()
+            .args([
+                "install",
+                "--project",
+                "--platform",
+                platform,
+                "--path",
+                path,
+            ])
+            .output()
+            .expect("CLI should launch");
+        assert!(
+            install.status.success(),
+            "{}",
+            String::from_utf8_lossy(&install.stderr)
+        );
+        assert!(String::from_utf8_lossy(&install.stdout).contains("session hook"));
+
+        let status = tramuri()
+            .args(["integrations", "status", "--path", path])
+            .output()
+            .expect("CLI should launch");
+        assert!(status.status.success());
+        assert!(
+            String::from_utf8_lossy(&status.stdout).contains(&format!("{platform}: installed"))
+        );
+
+        let uninstall = tramuri()
+            .args([
+                "uninstall",
+                "--project",
+                "--platform",
+                platform,
+                "--path",
+                path,
+            ])
+            .output()
+            .expect("CLI should launch");
+        assert!(
+            uninstall.status.success(),
+            "{}",
+            String::from_utf8_lossy(&uninstall.stderr)
+        );
+        assert!(!String::from_utf8_lossy(&uninstall.stdout).is_empty());
+    }
+}
+
+#[test]
 fn install_status_and_uninstall_manage_only_tramuri_content() {
     let project = tempdir().expect("project directory should be created");
     fs::write(
@@ -61,6 +149,22 @@ fn install_status_and_uninstall_manage_only_tramuri_content() {
             .join(".agents/skills/tramuri/references/project-discovery.md")
             .is_file()
     );
+    assert!(project.path().join(".codex/hooks.json").is_file());
+    let install_output = String::from_utf8_lossy(&install.stdout);
+    assert!(install_output.contains("TRAMURI"));
+    assert!(install_output.contains("session hook"));
+    assert!(install_output.contains("static Tramuri reminder"));
+    assert!(install_output.contains("AGENTS.md"));
+
+    let hook: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.path().join(".codex/hooks.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        hook["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+        "tramuri status --hint"
+    );
+    assert!(instructions.contains("static reminder"));
+    assert!(!instructions.contains("may provide a compact"));
 
     let status = tramuri()
         .args(["integrations", "status", "--path", path])
@@ -94,6 +198,15 @@ fn install_status_and_uninstall_manage_only_tramuri_content() {
             .path()
             .join(".agents/skills/tramuri/references/project-discovery.md")
             .exists()
+    );
+    let hooks: Value =
+        serde_json::from_slice(&fs::read(project.path().join(".codex/hooks.json")).unwrap())
+            .unwrap();
+    assert!(
+        hooks["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .is_empty()
     );
 }
 
@@ -203,6 +316,400 @@ fn mission_create_show_and_contract_revision_work_without_scan() {
     let closed: Value = serde_json::from_slice(&close.stdout).expect("close should emit JSON");
     assert_eq!(closed["state"], "closed");
     assert!(closed.get("outcome").is_none());
+}
+
+#[test]
+fn mission_list_status_and_resume_share_safe_workspace_state() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let criteria = project.path().join("criteria.json");
+    fs::write(
+        &criteria,
+        r#"{"criteria":[{"description":"Review acceptance","required":true}]}"#,
+    )
+    .unwrap();
+    let create = tramuri()
+        .args([
+            "mission",
+            "create",
+            "--path",
+            path,
+            "--objective",
+            "Synthetic workflow",
+            "--context",
+            "private-context",
+            "--criteria-file",
+            criteria.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(create.status.success());
+    let mission: Value = serde_json::from_slice(&create.stdout).unwrap();
+    let mission_id = mission["id"].as_str().unwrap();
+
+    let listed = tramuri()
+        .args(["mission", "list", "--path", path, "--json"])
+        .output()
+        .unwrap();
+    assert!(listed.status.success());
+    let list: Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(list[0]["id"], mission_id);
+
+    let status = tramuri()
+        .args(["status", "--path", path, "--json"])
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    let status: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["schema"], "tramuri.status.v1");
+    assert_eq!(status["missions"][0]["outcome"]["state"], "pending");
+    assert!(status["missions"][0].get("context").is_none());
+    assert!(!status.to_string().contains("private-context"));
+
+    let resumed = tramuri().args(["resume", "--path", path]).output().unwrap();
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stderr)
+    );
+    assert!(String::from_utf8_lossy(&resumed.stdout).contains("Synthetic workflow"));
+
+    let second = tramuri()
+        .args([
+            "mission",
+            "create",
+            "--path",
+            path,
+            "--objective",
+            "Another workflow",
+            "--criteria-file",
+            criteria.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(second.status.success());
+    let ambiguous = tramuri().args(["resume", "--path", path]).output().unwrap();
+    assert!(!ambiguous.status.success());
+    assert!(String::from_utf8_lossy(&ambiguous.stderr).contains("multiple open Missions"));
+}
+
+#[test]
+fn explicit_mission_relationships_appear_in_resume_without_leaking_to_workspace_status() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let criteria = project.path().join("criteria.json");
+    fs::write(
+        &criteria,
+        r#"{"criteria":[{"description":"Customer confirms the workflow","required":true}]}"#,
+    )
+    .unwrap();
+    let created = tramuri()
+        .args([
+            "mission",
+            "create",
+            "--path",
+            path,
+            "--objective",
+            "Synthetic customer workflow",
+            "--criteria-file",
+            criteria.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+    let mission: Value = serde_json::from_slice(&created.stdout).unwrap();
+    let mission_id = mission["id"].as_str().unwrap();
+
+    let knowledge = tramuri()
+        .args([
+            "knowledge",
+            "add",
+            path,
+            "--type",
+            "decision",
+            "--statement",
+            "Use the synthetic customer sandbox",
+            "--human-input",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(knowledge.status.success());
+    let knowledge: Value = serde_json::from_slice(&knowledge.stdout).unwrap();
+    let knowledge_id = knowledge["id"].as_str().unwrap();
+
+    let skill = project.path().join(".agents/skills/sandbox/SKILL.md");
+    fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    fs::write(
+        &skill,
+        "---\nname: sandbox\ndescription: Use a mock tenant\n---\n",
+    )
+    .unwrap();
+    assert!(
+        tramuri()
+            .args(["scan", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let capabilities = tramuri()
+        .args(["capabilities", "--path", path, "--type", "skill", "--json"])
+        .output()
+        .unwrap();
+    assert!(capabilities.status.success());
+    let capabilities: Value = serde_json::from_slice(&capabilities.stdout).unwrap();
+    let capability_id = capabilities["capabilities"][0]["id"].as_str().unwrap();
+
+    for args in [
+        vec![
+            "mission",
+            "link-knowledge",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--knowledge",
+            knowledge_id,
+            "--actor-kind",
+            "human",
+            "--actor",
+            "fde-one",
+            "--json",
+        ],
+        vec![
+            "mission",
+            "link-capability",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--capability",
+            capability_id,
+            "--actor-kind",
+            "agent",
+            "--actor",
+            "agent-session",
+            "--json",
+        ],
+    ] {
+        let linked = tramuri().args(args).output().unwrap();
+        assert!(
+            linked.status.success(),
+            "{}",
+            String::from_utf8_lossy(&linked.stderr)
+        );
+    }
+
+    let relationships = tramuri()
+        .args([
+            "mission",
+            "relationships",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(relationships.status.success());
+    let relationships: Value = serde_json::from_slice(&relationships.stdout).unwrap();
+    assert_eq!(
+        relationships["knowledge"][0]["knowledge"]["id"],
+        knowledge_id
+    );
+    assert_eq!(
+        relationships["knowledge"][0]["provenance"]["actor_reference"],
+        "fde-one"
+    );
+    assert_eq!(
+        relationships["capabilities"][0]["capability_id"],
+        capability_id
+    );
+    assert_eq!(relationships["capabilities"][0]["freshness"], "current");
+
+    let resume = tramuri()
+        .args(["resume", "--path", path, "--mission", mission_id, "--json"])
+        .output()
+        .unwrap();
+    assert!(resume.status.success());
+    let resume: Value = serde_json::from_slice(&resume.stdout).unwrap();
+    assert_eq!(resume["id"], mission_id);
+    assert_eq!(
+        resume["relationships"]["knowledge"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        resume["relationships"]["capabilities"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let status = tramuri()
+        .args(["status", "--path", path, "--json"])
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    assert!(
+        !String::from_utf8_lossy(&status.stdout).contains("Use the synthetic customer sandbox")
+    );
+
+    let unlinked = tramuri()
+        .args([
+            "mission",
+            "unlink-knowledge",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--knowledge",
+            knowledge_id,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(unlinked.status.success());
+    assert_eq!(String::from_utf8_lossy(&unlinked.stdout).trim(), "true");
+}
+
+#[test]
+fn capabilities_cli_lists_filtered_declarations_after_scan_without_exposing_config_values() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let skill = project.path().join(".agents/skills/review/SKILL.md");
+    fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    fs::write(
+        &skill,
+        "---\nname: review\ndescription: Review requirements\n---\nprivate skill body\n",
+    )
+    .unwrap();
+    let mcp = project.path().join(".cursor/mcp.json");
+    fs::create_dir_all(mcp.parent().unwrap()).unwrap();
+    fs::write(
+        &mcp,
+        r#"{"mcpServers":{"internal":{"command":"secret-command","env":{"TOKEN":"secret-value"}}}}"#,
+    )
+    .unwrap();
+    let scan = tramuri().args(["scan", path]).output().unwrap();
+    assert!(scan.status.success());
+
+    let all = tramuri()
+        .args(["capabilities", "--path", path, "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        all.status.success(),
+        "{}",
+        String::from_utf8_lossy(&all.stderr)
+    );
+    let all: Value = serde_json::from_slice(&all.stdout).unwrap();
+    assert_eq!(all["schema"], "tramuri.capabilities.v1");
+    assert_eq!(all["capabilities"].as_array().unwrap().len(), 2);
+    assert!(!all.to_string().contains("secret-command"));
+    assert!(!all.to_string().contains("secret-value"));
+    assert!(!all.to_string().contains("private skill body"));
+
+    let skills = tramuri()
+        .args(["capabilities", "--path", path, "--type", "skill", "--json"])
+        .output()
+        .unwrap();
+    assert!(skills.status.success());
+    let skills: Value = serde_json::from_slice(&skills.stdout).unwrap();
+    assert_eq!(skills["capabilities"].as_array().unwrap().len(), 1);
+    assert_eq!(skills["capabilities"][0]["name"], "review");
+}
+
+#[test]
+fn explicit_agent_snapshot_is_silent_for_uninitialized_project() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+
+    let result = tramuri()
+        .args(["status", "--path", path, "--agent"])
+        .output()
+        .unwrap();
+
+    assert!(result.status.success());
+    assert!(result.stdout.is_empty());
+}
+
+#[test]
+fn status_hint_never_emits_workspace_records() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let criteria = project.path().join("criteria.json");
+    fs::write(
+        &criteria,
+        r#"{"criteria":[{"description":"private criterion","required":true}]}"#,
+    )
+    .unwrap();
+    assert!(
+        tramuri()
+            .args([
+                "mission",
+                "create",
+                "--path",
+                path,
+                "--objective",
+                "private objective",
+                "--criteria-file",
+                criteria.to_str().unwrap()
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+
+    let result = tramuri()
+        .args(["status", "--path", path, "--hint"])
+        .output()
+        .unwrap();
+    let output = String::from_utf8_lossy(&result.stdout);
+    assert!(result.status.success());
+    assert!(output.contains("Tramuri is available"));
+    assert!(!output.contains("private objective"));
+    assert!(!output.contains("private criterion"));
 }
 
 #[test]
@@ -630,7 +1137,7 @@ fn init_and_scan_emit_machine_readable_json() {
         .expect("CLI should launch");
     assert!(init.status.success());
     let init_json: Value = serde_json::from_slice(&init.stdout).expect("init should emit JSON");
-    assert_eq!(init_json["schema_version"], 5);
+    assert_eq!(init_json["schema_version"], 6);
     assert_eq!(init_json["already_initialized"], false);
 
     let repeated_init = tramuri()

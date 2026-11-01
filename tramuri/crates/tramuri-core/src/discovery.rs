@@ -152,6 +152,7 @@ pub fn scan(path: impl AsRef<Path>) -> Result<ScanReport> {
         warnings: walked.warnings,
     };
     persist_scan_artifact(&root, &report, scan_id, observed_at_unix_ms)?;
+    crate::capability::update_capability_artifact(&root, &report)?;
     Ok(report)
 }
 
@@ -264,7 +265,7 @@ fn persist_scan_artifact(
     Ok(())
 }
 
-fn canonical_project_root(path: &Path) -> Result<PathBuf> {
+pub(crate) fn canonical_project_root(path: &Path) -> Result<PathBuf> {
     let canonical = fs::canonicalize(path).map_err(|source| TramuriError::Io {
         operation: "resolve project directory",
         path: path.to_path_buf(),
@@ -773,7 +774,7 @@ mod tests {
         assert!(!first.already_initialized);
         assert!(second.already_initialized);
         assert_eq!(first.database_path, second.database_path);
-        assert_eq!(first.schema_version, 5);
+        assert_eq!(first.schema_version, SCHEMA_VERSION);
     }
 
     #[test]

@@ -98,7 +98,7 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     let _ = ensure_parent(&root, instruction_path)?;
     let skill_target = ensure_parent(&root, skill_path)?;
     validate_managed_target(&skill_target, |text| {
-        text.starts_with("---\n") && text.contains(SKILL_MARKER)
+        has_front_matter(text) && text.contains(SKILL_MARKER)
     })?;
     let mut reference_targets = Vec::with_capacity(reference_paths.len());
     for (relative, _) in &reference_paths {
@@ -171,7 +171,7 @@ pub fn status(root: &Path) -> io::Result<Vec<(Platform, bool)>> {
         });
         let installed = read_if_regular(&instructions).is_ok_and(|text| has_managed_block(&text))
             && read_if_regular(&skill)
-                .is_ok_and(|text| text.starts_with("---\n") && text.contains(SKILL_MARKER))
+                .is_ok_and(|text| has_front_matter(&text) && text.contains(SKILL_MARKER))
             && references_installed;
         (platform, installed)
     })
@@ -364,10 +364,14 @@ fn has_managed_block(text: &str) -> bool {
     text.matches(START).count() == 1 && text.matches(END).count() == 1
 }
 
+fn has_front_matter(text: &str) -> bool {
+    text.lines().next() == Some("---")
+}
+
 fn write_managed_skill(root: &Path, relative: &Path) -> io::Result<()> {
     let path = ensure_parent(root, relative)?;
     match read_if_regular(&path) {
-        Ok(text) if text.starts_with("---\n") && text.contains(SKILL_MARKER) => {
+        Ok(text) if has_front_matter(&text) && text.contains(SKILL_MARKER) => {
             fs::write(path, SKILL)
         }
         Ok(_) => Err(io::Error::new(
@@ -403,7 +407,7 @@ fn remove_managed_skill(root: &Path, relative: &Path) -> io::Result<bool> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
     };
-    if !text.starts_with("---\n") || !text.contains(SKILL_MARKER) {
+    if !has_front_matter(&text) || !text.contains(SKILL_MARKER) {
         return Ok(false);
     }
     fs::remove_file(&path)?;
@@ -459,7 +463,10 @@ mod tests {
             assert!(instructions.contains("verified outcome"));
             assert!(instructions.contains("explicit item"));
             let skill = fs::read_to_string(skill).unwrap();
-            assert!(skill.starts_with("---\nname: tramuri\n"));
+            assert_eq!(
+                skill.lines().take(2).collect::<Vec<_>>(),
+                ["---", "name: tramuri"]
+            );
             assert!(skill.contains(SKILL_MARKER));
             for (relative, _) in reference_paths(platform) {
                 let reference = fs::read_to_string(project.path().join(&relative)).unwrap();
@@ -469,6 +476,13 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn managed_skill_front_matter_accepts_lf_and_crlf() {
+        assert!(has_front_matter("---\nname: tramuri\n"));
+        assert!(has_front_matter("---\r\nname: tramuri\r\n"));
+        assert!(!has_front_matter("----\r\nname: tramuri\r\n"));
     }
 
     #[test]

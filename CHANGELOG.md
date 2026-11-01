@@ -8,6 +8,13 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-31
+
+### Fixed
+
+- Assistant integration install, status, and uninstall now recognize managed skill front matter with
+  either LF or CRLF line endings, including Windows checkouts.
+
 ## [0.3.0] - 2026-10-31
 
 ### Added

@@ -8,6 +8,28 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
+### Added
+
+- Activity-based Mission context readiness with append-only assessments, explicit applied checks, gaps, blockers, accepted uncertainties, and freshness detection.
+- Exploratory Missions without a Success Contract criteria list; their outcomes remain pending until criteria are added and reviewed.
+- Focused assistant skills for Tramuri setup, discovery, Missions, and data integrity.
+- A guided first-use flow that lets users describe outcomes and select a Product Engineer, FDE, or other work perspective in natural language.
+- Assistant guidance that starts an exploratory Mission from a natural-language objective and refines criteria during Discovery, plus end-to-end Product Engineer and FDE tutorials in English and Brazilian Portuguese.
+- End-of-session refresh and opening of local reports after coherent Mission updates, with an explicit `tramuri status --open` fallback.
+- A bilingual, responsive, offline workspace report in English and Brazilian Portuguese, with clearer Mission, criterion, execution, evidence, capability, and outcome sections.
+- Optional per-Execution work perspective (`product_engineer`, `fde`, or `other`), displayed separately from the recorded actor in local reports.
+- README guidance for updating Tramuri with `uv tool upgrade` or `pipx upgrade` after a release.
+
+### Changed
+
+- Assistant integrations now guide the complete Mission workflow, distinguish work perspective from execution actor attribution, and clarify that project scans are optional.
+- Installation instructions explain what to do next without requiring users to memorize Tramuri commands.
+- SQLite schema v7 adds an optional Execution work perspective through an additive migration; existing Execution history is preserved.
+- SQLite schema v8 adds append-only readiness assessments. Status and report JSON contracts advance to v2; the public Rust `MissionStatus` gains a readiness field, so downstream struct literals must supply it.
+- The public Rust `Execution` and `ExecutionInput` structs gain `work_perspective`; downstream Rust struct literals must supply this field. The Python SDK parameter is optional and appended to preserve existing calls.
+
 ## [0.4.0] - 2026-11-01
 
 ### Added

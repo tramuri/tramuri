@@ -109,8 +109,23 @@ assert callable(tramuri.mission_relationships)
 assert callable(tramuri.mission_resume)
 assert Path(tramuri.__file__).with_name("py.typed").is_file()
 report = tramuri.init(project_path)
-assert report["schema_version"] == 6
+assert report["schema_version"] == 8
 assert Path(report["database_path"]).parent.name == "database"
+exploratory = tramuri.mission_create(
+    project_path,
+    objective="Installed wheel exploratory Mission",
+)
+assert exploratory["success_contract"]["criteria"] == []
+assert tramuri.outcome_get(project_path, mission_id=exploratory["id"])["state"] == "pending"
+assessment = tramuri.readiness_assess(
+    project_path,
+    mission_id=exploratory["id"],
+    activity="discover",
+    state="ready",
+    criteria_applied=["The investigation objective is clear"],
+)
+assert tramuri.readiness_get(project_path, mission_id=exploratory["id"])["assessment"] == assessment
+assert len(tramuri.readiness_history(project_path, mission_id=exploratory["id"])) == 1
 skill = Path(project_path) / ".agents" / "skills" / "release" / "SKILL.md"
 skill.parent.mkdir(parents=True)
 skill.write_text("---\\nname: release\\ndescription: Verify a release\\n---\\n", encoding="utf-8")
@@ -229,6 +244,15 @@ print(json.dumps({"mission_id": mission["id"], "execution": execution, "evidence
     installed_skill = integration_project / ".gemini" / "skills" / "tramuri" / "SKILL.md"
     assert installed_skill.is_file()
     assert "name: tramuri" in installed_skill.read_text(encoding="utf-8")
+    for skill_name in (
+        "tramuri-start",
+        "tramuri-discovery",
+        "tramuri-missions",
+        "tramuri-integrity",
+    ):
+        focused_skill = integration_project / ".gemini" / "skills" / skill_name / "SKILL.md"
+        assert focused_skill.is_file()
+        assert f"name: {skill_name}" in focused_skill.read_text(encoding="utf-8")
     installed_reference = (
         integration_project
         / ".gemini"

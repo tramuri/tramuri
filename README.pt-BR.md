@@ -85,22 +85,40 @@ tramuri --version
 Se o comando `tramuri` não for encontrado após a instalação, execute `uv tool update-shell` e
 abra um novo terminal.
 
+Quando uma nova versão do Tramuri for publicada, atualize usando o mesmo gerenciador da instalação:
+
+```bash
+uv tool upgrade tramuri
+# Se instalou com pipx:
+pipx upgrade tramuri
+tramuri --version
+```
+
 Instale o Tramuri no projeto para o assistente utilizado, preservando instruções e hooks existentes:
 
 ```bash
 tramuri install --platform codex --project
 tramuri init .
-tramuri scan .
-tramuri capabilities
-tramuri status --open
 ```
+
+Depois, descreva o resultado desejado no chat do assistente, por exemplo: “Quero atuar como Product
+Engineer para melhorar o onboarding” ou “Vou assumir esta integração como FDE”. As skills do Tramuri
+orientam a criação da Mission e do Success Contract, registram a perspectiva escolhida e conduzem o
+trabalho; a varredura do projeto é opcional. Ao final de uma sessão coerente que altere registros da
+Mission, o assistente atualiza e abre o relatório local uma vez. Você também pode pedir “abra o
+relatório do Tramuri” ou executar `tramuri status --open`.
+
+O relatório local pode ser lido em inglês ou português brasileiro e mostra a perspectiva de trabalho
+(Product Engineer/FDE) separada do executor registrado. O nome do executor é informado por quem faz
+o registro e não é autenticado; o Tramuri não presume quem é o responsável atual pela Mission.
 
 `tramuri capabilities --type skill --json` filtra o catálogo declarativo mais recente. A varredura
 respeita as regras de exclusão do projeto e de arquivos sensíveis; não lê configurações globais de
 agentes, não executa hooks, não inicia servidores MCP nem acessa a rede.
 
-Codex, Claude Code, Cursor e Gemini CLI recebem instruções nativas do projeto, uma skill descobrível
-do Tramuri e um hook local de início de sessão. Os hooks emitem apenas um lembrete estático: não leem
+Codex, Claude Code, Cursor e Gemini CLI recebem instruções nativas do projeto, uma skill geral do
+Tramuri e skills específicas para configuração, descoberta, Missions e integridade, além de um hook
+local de início de sessão. Os hooks emitem apenas um lembrete estático: não leem
 o banco nem anexam dados das Missions. O agente executa comandos Tramuri explicitamente quando
 precisar de contexto do workspace. Os hooks respeitam as configurações de confiança da plataforma,
 e a instalação preserva instruções e hooks não relacionados. Cursor usa `.cursor/rules/tramuri.mdc`,
@@ -116,7 +134,21 @@ tramuri install --project --platform gemini
 ```
 
 `tramuri status` resume o workspace, `tramuri status --open` gera e abre o relatório local, e
-`tramuri resume --mission <id>` recupera o trabalho registrado. `tramuri mission list` descobre as
+`tramuri resume --mission <id>` recupera o trabalho registrado e a prontidão para a próxima
+atividade escolhida. Uma Mission pode começar sem critérios; o Outcome permanece pendente até que
+critérios obrigatórios sejam definidos e avaliados. A prontidão é consultiva e nunca bloqueia a
+execução:
+
+```bash
+tramuri mission create --objective "Investigar abandono no onboarding"
+tramuri readiness assess --mission <id> --activity discover --state needs_review \
+  --gap "Os dados das entrevistas ainda não estão disponíveis"
+tramuri status --open
+```
+
+Use `tramuri readiness show --mission <id>` para consultar a avaliação atual e o histórico.
+Mudanças no objetivo, Success Contract ou Knowledge/Capabilities associados explicitamente marcam
+a avaliação mais recente como desatualizada, sem apagar seu registro. `tramuri mission list` descobre as
 Missions existentes. Os arquivos são `.tramuri/reports/tramauri.html`, `tramauri.md` e
 `tramauri.json`. Ao abrir um banco antigo compatível, o Tramuri pode aplicar as migrações de schema
 existentes; a leitura de status não altera Missions, execuções, evidências ou outcomes. Esses
@@ -128,6 +160,9 @@ Conhecimentos e capacidades descobertas podem ser associados explicitamente a um
 relevância para Missions; vínculos de capacidades guardam o hash observado e podem ficar alterados,
 ausentes ou não verificados após novas varreduras. A atribuição do ator é informada pelo chamador e
 não é autenticada.
+
+Siga os tutoriais com projetos sintéticos, da configuração ao handoff, para [Product Engineer e
+FDE](docs/examples/README.pt-BR.md).
 
 ### Como um assistente pode usar o Tramuri
 

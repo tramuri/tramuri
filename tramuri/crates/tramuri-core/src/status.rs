@@ -35,6 +35,11 @@ pub struct ExecutionSummary {
     pub id: String,
     pub state: ExecutionState,
     pub actor_kind: crate::ActorKind,
+    /// Caller-supplied label for the actor. Kept out of status JSON by default;
+    /// the local report may include it because the report is an explicit local artifact.
+    #[serde(skip)]
+    pub actor_reference: Option<String>,
+    pub work_perspective: Option<crate::WorkPerspective>,
     pub contract_revision: u32,
     pub started_at_unix_ms: i64,
     pub ended_at_unix_ms: Option<i64>,
@@ -84,6 +89,7 @@ pub struct MissionStatus {
     pub executions: Vec<ExecutionSummary>,
     pub evidence: Vec<EvidenceSummary>,
     pub outcome: OutcomeSummary,
+    pub readiness: crate::MissionReadiness,
 }
 
 /// Explicit, Mission-scoped context for a deliberate resume operation.
@@ -245,6 +251,8 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
                 id: execution.id,
                 state: execution.state,
                 actor_kind: execution.actor_kind,
+                actor_reference: execution.actor_reference,
+                work_perspective: execution.work_perspective,
                 contract_revision: execution.contract_revision,
                 started_at_unix_ms: execution.started_at_unix_ms,
                 ended_at_unix_ms: execution.ended_at_unix_ms,
@@ -262,6 +270,7 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
             .collect();
         let outcome_summary = summarize_outcome(outcome);
         let contract_history = outcomes.iter().map(summarize_outcome).collect();
+        let readiness = crate::readiness_get(&workspace, &mission.id)?;
         missions.push(MissionStatus {
             id: mission.id,
             objective: mission.objective,
@@ -272,6 +281,7 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
             evidence,
             outcome: outcome_summary,
             contract_history,
+            readiness,
         });
     }
 
@@ -289,7 +299,7 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
     let mission_count = missions.len();
 
     Ok(StatusSnapshot {
-        schema: "tramuri.status.v1".to_owned(),
+        schema: "tramuri.status.v2".to_owned(),
         generated_at_unix_ms,
         workspace: WorkspaceSummary {
             mission_count,
@@ -361,7 +371,7 @@ mod tests {
 
         let snapshot = status_snapshot(project.path()).unwrap();
 
-        assert_eq!(snapshot.schema, "tramuri.status.v1");
+        assert_eq!(snapshot.schema, "tramuri.status.v2");
         assert_eq!(snapshot.workspace.mission_count, 0);
         assert_eq!(snapshot.workspace.open_mission_count, 0);
         assert_eq!(snapshot.workspace.closed_mission_count, 0);
@@ -392,6 +402,7 @@ mod tests {
                 contract_revision: 1,
                 actor_kind: ActorKind::Human,
                 actor_reference: Some("actor-secret-947".to_owned()),
+                work_perspective: None,
                 state: ExecutionState::Completed,
                 notes: Some("notes-secret-947".to_owned()),
             },

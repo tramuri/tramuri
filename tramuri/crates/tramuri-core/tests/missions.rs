@@ -5,8 +5,8 @@ use tempfile::tempdir;
 use tramuri_core::{
     ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
     EvidenceKind, ExecutionInput, ExecutionState, MissionInput, MissionState, OutcomeState,
-    VerifierKind, evidence_add, execution_record, init, mission_close, mission_contract_revise,
-    mission_create, mission_get, outcome_assess, outcome_get, scan,
+    VerifierKind, WorkPerspective, evidence_add, execution_record, init, mission_close,
+    mission_contract_revise, mission_create, mission_get, outcome_assess, outcome_get, scan,
 };
 
 fn criteria(descriptions: &[&str]) -> Vec<CriterionInput> {
@@ -40,6 +40,38 @@ fn mission_can_be_created_and_retrieved_without_git_or_scan() {
     assert_eq!(mission.success_contract.revision, 1);
     assert_eq!(mission.success_contract.criteria.len(), 1);
     assert_eq!(mission_get(workspace.path(), &mission.id).unwrap(), mission);
+}
+
+#[test]
+fn execution_perspective_is_persisted_separately_from_actor_identity() {
+    let workspace = tempdir().expect("workspace should be created");
+    init(workspace.path()).expect("workspace should initialize");
+    let mission = mission_create(
+        workspace.path(),
+        MissionInput {
+            objective: "Validate a customer integration".to_owned(),
+            context: None,
+            criteria: criteria(&["Customer acceptance recorded"]),
+        },
+    )
+    .expect("Mission should be created");
+    let execution = execution_record(
+        workspace.path(),
+        ExecutionInput {
+            mission_id: mission.id,
+            contract_revision: 1,
+            actor_kind: ActorKind::Agent,
+            actor_reference: Some("Codex".to_owned()),
+            work_perspective: Some(WorkPerspective::Fde),
+            state: ExecutionState::Completed,
+            notes: None,
+        },
+    )
+    .expect("execution should be recorded");
+
+    assert_eq!(execution.actor_kind, ActorKind::Agent);
+    assert_eq!(execution.actor_reference.as_deref(), Some("Codex"));
+    assert_eq!(execution.work_perspective, Some(WorkPerspective::Fde));
 }
 
 #[test]
@@ -114,6 +146,30 @@ fn mission_rejects_blank_objective_and_contract_without_required_criterion() {
 }
 
 #[test]
+fn exploratory_mission_without_criteria_stays_pending_until_reviewed() {
+    let workspace = tempdir().expect("workspace should be created");
+    init(workspace.path()).expect("workspace should initialize");
+    let mission = mission_create(
+        workspace.path(),
+        MissionInput {
+            objective: "Understand why trial users abandon setup".to_owned(),
+            context: None,
+            criteria: Vec::new(),
+        },
+    )
+    .expect("discovery should start before success criteria are complete");
+
+    assert!(mission.success_contract.criteria.is_empty());
+    assert_eq!(
+        outcome_get(workspace.path(), &mission.id, None)
+            .unwrap()
+            .state,
+        OutcomeState::Pending,
+        "a contract with no criteria must never be vacuously verified"
+    );
+}
+
+#[test]
 fn closing_a_mission_changes_only_its_lifecycle_state() {
     let workspace = tempdir().expect("workspace should be created");
     init(workspace.path()).expect("workspace should initialize");
@@ -153,6 +209,7 @@ fn completed_execution_stays_pending_until_required_criteria_are_assessed() {
             contract_revision: 1,
             actor_kind: ActorKind::Human,
             actor_reference: Some("operator".to_owned()),
+            work_perspective: None,
             state: ExecutionState::Completed,
             notes: None,
         },
@@ -186,6 +243,7 @@ fn met_assessment_with_same_revision_evidence_verifies_and_preserves_history() {
             contract_revision: 1,
             actor_kind: ActorKind::Human,
             actor_reference: Some("operator".to_owned()),
+            work_perspective: None,
             state: ExecutionState::Completed,
             notes: None,
         },
@@ -272,6 +330,7 @@ fn failed_required_criterion_takes_precedence_over_other_pending_criteria() {
             contract_revision: 1,
             actor_kind: ActorKind::Human,
             actor_reference: None,
+            work_perspective: None,
             state: ExecutionState::Completed,
             notes: None,
         },
@@ -382,6 +441,7 @@ fn assessment_rejects_evidence_from_a_different_contract_revision() {
             contract_revision: 2,
             actor_kind: ActorKind::Human,
             actor_reference: None,
+            work_perspective: None,
             state: ExecutionState::Completed,
             notes: None,
         },
@@ -435,6 +495,7 @@ fn a_later_assessment_becomes_current_without_erasing_prior_assessment() {
             contract_revision: 1,
             actor_kind: ActorKind::Human,
             actor_reference: None,
+            work_perspective: None,
             state: ExecutionState::Completed,
             notes: None,
         },
@@ -531,6 +592,7 @@ fn changed_file_evidence_no_longer_supports_a_verified_outcome() {
             contract_revision: 1,
             actor_kind: ActorKind::Human,
             actor_reference: None,
+            work_perspective: None,
             state: ExecutionState::Completed,
             notes: None,
         },
@@ -614,6 +676,7 @@ fn optional_criteria_do_not_block_a_verified_outcome() {
             contract_revision: 1,
             actor_kind: ActorKind::Human,
             actor_reference: None,
+            work_perspective: None,
             state: ExecutionState::Completed,
             notes: None,
         },

@@ -8,12 +8,25 @@ description: Use Tramuri to discover projects, preserve local knowledge, coordin
 # Tramuri
 
 Use the installed Tramuri CLI or SDK when available. Tramuri is local-first and independent of
-LLMs and agent frameworks. Project Discovery is optional: missions do not require a code repository.
+LLMs and agent frameworks. Project Discovery is optional: Missions do not require a code repository.
 
-Before resuming work in an initialized workspace, consult `tramuri status` or `tramuri mission list`.
-Use `tramuri resume --mission <id>` for the selected Mission. Project session hooks provide only a
-static reminder; they do not read or attach Mission data. Do not run a scan or generate HTML just to
-retrieve status.
+For focused workflows, invoke the matching installed skill:
+
+- First-time setup or an uninitialized workspace: `$tramuri-start`
+- Safe file and capability discovery: `$tramuri-discovery`
+- Defining or resuming a Mission: `$tramuri-missions`
+- Knowledge, provenance, evidence, and outcome integrity: `$tramuri-integrity`
+
+If the user asks a general Tramuri question, answer from the relevant CLI and installed references.
+For substantive work with an objective, multiple steps, acceptance criteria, or a handoff—or when
+the user explicitly asks to use Tramuri—follow the focused start or Mission skill and carry out the
+whole authorized sequence; do not leave them to discover each next command. Do not force a Mission
+for a one-shot question. Before resuming, inspect `tramuri status` or `tramuri mission list`, select
+the relevant Mission safely, then use `tramuri resume --mission <id>`. If uninitialized, an explicit
+request to start tracking work authorizes `tramuri init`; otherwise ask once. Project hooks provide
+only a static reminder and do not read or attach Mission data. Use `tramuri status --open` at the end
+of a coherent session that changed Mission records, unless the user asks not to. Use
+`tramuri status` for a read-only status check. Do not scan unless discovery was requested.
 
 When a task depends on project-declared agent resources, consult `tramuri capabilities` after the
 workspace has been scanned. Treat results as declarations with source paths, not proof that a hook

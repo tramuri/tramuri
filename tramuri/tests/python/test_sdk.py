@@ -33,6 +33,9 @@ from tramuri import (
     mission_resume,
     outcome_assess,
     outcome_get,
+    readiness_assess,
+    readiness_get,
+    readiness_history,
     scan,
     status,
     capabilities,
@@ -48,7 +51,7 @@ def test_init_is_idempotent_and_scan_returns_inventory(tmp_path: Path) -> None:
     second_init = init(tmp_path)
     report = scan(tmp_path)
 
-    assert first_init["schema_version"] == 6
+    assert first_init["schema_version"] == 8
     assert first_init["already_initialized"] is False
     assert second_init["already_initialized"] is True
     assert report["complete"] is True
@@ -74,10 +77,61 @@ def test_mission_list_and_status_are_privacy_minimized(tmp_path: Path) -> None:
     snapshot = status(tmp_path)
 
     assert listed[0]["id"] == mission["id"]
-    assert snapshot["schema"] == "tramuri.status.v1"
+    assert snapshot["schema"] == "tramuri.status.v2"
     assert snapshot["missions"][0]["outcome"]["state"] == "pending"
     assert "context" not in snapshot["missions"][0]
     assert "private-context-marker" not in json.dumps(snapshot)
+
+
+def test_exploratory_mission_and_readiness_round_trip(tmp_path: Path) -> None:
+    init(tmp_path)
+    mission = mission_create(
+        tmp_path,
+        objective="Understand where onboarding fails",
+    )
+    assert mission["success_contract"]["criteria"] == []
+    assert outcome_get(tmp_path, mission_id=mission["id"])["state"] == "pending"
+    assert readiness_get(tmp_path, mission_id=mission["id"])["state"] == "not_assessed"
+
+    assessment = readiness_assess(
+        tmp_path,
+        mission_id=mission["id"],
+        activity="discover",
+        state="ready",
+        criteria_applied=["Investigation objective is understood"],
+        accepted_uncertainties=["Interview availability is not confirmed"],
+        actor_reference="researcher",
+    )
+    readiness = readiness_get(tmp_path, mission_id=mission["id"])
+    assert readiness["state"] == "ready"
+    assert readiness["activity"] == "discover"
+    assert readiness["assessment"]["id"] == assessment["id"]
+    assert readiness["assessment"]["policy_version"] == "tramuri.activity-readiness.v1"
+    assert readiness["assessment"]["criteria_applied"] == ["Investigation objective is understood"]
+    assert readiness["assessment"]["context_references"] == []
+    assert len(readiness_history(tmp_path, mission_id=mission["id"])) == 1
+    assert status(tmp_path)["missions"][0]["readiness"]["state"] == "ready"
+
+
+def test_readiness_reports_stale_after_success_contract_revision(tmp_path: Path) -> None:
+    init(tmp_path)
+    mission = mission_create(tmp_path, objective="Prototype a new flow")
+    readiness_assess(
+        tmp_path,
+        mission_id=mission["id"],
+        activity="prototype",
+        state="ready",
+        criteria_applied=["Prototype goal is understood"],
+    )
+    mission_contract_revise(
+        tmp_path,
+        mission_id=mission["id"],
+        criteria=[{"description": "Prototype validates the hypothesis", "required": True}],
+    )
+    current = readiness_get(tmp_path, mission_id=mission["id"])
+    assert current["state"] == "stale"
+    assert current["assessed_state"] == "ready"
+    assert len(readiness_history(tmp_path, mission_id=mission["id"])) == 1
 
 
 def test_cli_and_sdk_status_json_have_normalized_parity(tmp_path: Path) -> None:
@@ -89,6 +143,16 @@ def test_cli_and_sdk_status_json_have_normalized_parity(tmp_path: Path) -> None:
         tmp_path,
         objective="Synthetic parity objective",
         criteria=[{"description": "Review parity", "required": True}],
+    )
+
+    mission = mission_list(tmp_path)[0]
+    sdk_assessment = readiness_assess(
+        tmp_path,
+        mission_id=mission["id"],
+        activity="prototype",
+        state="needs_review",
+        gaps=["Independent validation is still needed"],
+        actor_reference="parity-reviewer",
     )
 
     sdk_snapshot = status(tmp_path)
@@ -103,6 +167,18 @@ def test_cli_and_sdk_status_json_have_normalized_parity(tmp_path: Path) -> None:
     sdk_snapshot.pop("generated_at_unix_ms")
     cli_snapshot.pop("generated_at_unix_ms")
     assert cli_snapshot == sdk_snapshot
+
+    cli_readiness = subprocess.run(
+        [cli, "readiness", "show", "--path", str(tmp_path), "--mission", mission["id"], "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    cli_readiness_value = json.loads(cli_readiness.stdout)
+    assert cli_readiness_value["current"] == readiness_get(tmp_path, mission_id=mission["id"])
+    assert cli_readiness_value["history"] == readiness_history(tmp_path, mission_id=mission["id"])
+    assert cli_readiness_value["current"]["assessment"]["id"] == sdk_assessment["id"]
 
 
 def _cli_executable() -> str | None:
@@ -504,8 +580,12 @@ def test_execution_and_external_evidence_use_rust_core(tmp_path: Path) -> None:
         actor_kind="human",
         state="completed",
         actor_reference="operator",
+        work_perspective="fde",
     )
     assert execution["state"] == "completed"
+    assert execution["actor_kind"] == "human"
+    assert execution["actor_reference"] == "operator"
+    assert execution["work_perspective"] == "fde"
     assert execution["ended_at_unix_ms"] is not None
     assert "outcome" not in execution
 
@@ -716,17 +796,20 @@ def test_cli_and_sdk_execution_evidence_have_normalized_parity(tmp_path: Path) -
     cli_mission = json.loads(cli_mission_result.stdout)
 
     sdk_execution = execution_record(sdk_project, mission_id=sdk_mission["id"], contract_revision=1,
-        actor_kind="human", state="completed", actor_reference="reviewer", notes="Reviewed")
+        actor_kind="human", state="completed", actor_reference="reviewer", notes="Reviewed",
+        work_perspective="fde")
     cli_execution_result = subprocess.run(
         [cli, "execution", "record", "--path", str(cli_project), "--mission", cli_mission["id"],
          "--contract-revision", "1", "--actor-kind", "human", "--status", "completed",
-         "--actor", "reviewer", "--notes", "Reviewed", "--json"],
+         "--actor", "reviewer", "--work-perspective", "fde", "--notes", "Reviewed", "--json"],
         check=True, capture_output=True, text=True, encoding="utf-8",
     )
     cli_execution = json.loads(cli_execution_result.stdout)
     for result in (sdk_execution, cli_execution):
         assert result["state"] == "completed"
         assert result["actor_kind"] == "human"
+        assert result["actor_reference"] == "reviewer"
+        assert result["work_perspective"] == "fde"
         assert result["notes"] == "Reviewed"
         assert "outcome" not in result
 

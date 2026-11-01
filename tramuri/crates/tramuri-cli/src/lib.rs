@@ -7,12 +7,13 @@ use serde::Deserialize;
 use tramuri_core::{
     ActorKind, CapabilityKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput,
     EvidenceInput, EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput,
-    KnowledgeType, MissionInput, VerifierKind, evidence_add, evidence_get, evidence_list,
-    execution_get, execution_list, execution_record, init, knowledge_add, knowledge_list,
-    knowledge_withdraw, mission_capability_link, mission_capability_unlink, mission_close,
-    mission_contract_revise, mission_create, mission_get, mission_knowledge_link,
-    mission_knowledge_unlink, mission_list, mission_relationships, mission_resume, outcome_assess,
-    outcome_get, scan, status_snapshot,
+    KnowledgeType, MissionInput, ReadinessAssessmentInput, ReadinessDecision, VerifierKind,
+    WorkPerspective, evidence_add, evidence_get, evidence_list, execution_get, execution_list,
+    execution_record, init, knowledge_add, knowledge_list, knowledge_withdraw,
+    mission_capability_link, mission_capability_unlink, mission_close, mission_contract_revise,
+    mission_create, mission_get, mission_knowledge_link, mission_knowledge_unlink, mission_list,
+    mission_relationships, mission_resume, outcome_assess, outcome_get, readiness_assess,
+    readiness_get, readiness_history, scan, status_snapshot,
 };
 
 mod integrations;
@@ -111,6 +112,11 @@ enum Command {
     Outcome {
         #[command(subcommand)]
         command: OutcomeCommand,
+    },
+    /// Assess whether a Mission has context for its explicitly selected next activity.
+    Readiness {
+        #[command(subcommand)]
+        command: ReadinessCommand,
     },
     /// Install Tramuri's project instructions, skill, and supported session hooks.
     Install {
@@ -213,6 +219,56 @@ enum OutcomeCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum ReadinessCommand {
+    /// Record a consultative readiness assessment; this never blocks Mission work.
+    Assess {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        /// Activity key, such as discover, prototype, implement, deploy, verify, or a custom value.
+        #[arg(long)]
+        activity: String,
+        /// preparing, needs_review, ready, or blocked.
+        #[arg(long)]
+        state: String,
+        /// Human-readable checks considered for this assessment; may be repeated.
+        #[arg(long = "criterion-applied")]
+        criteria_applied: Vec<String>,
+        #[arg(long = "gap")]
+        gaps: Vec<String>,
+        #[arg(long = "blocker")]
+        blockers: Vec<String>,
+        #[arg(long = "accept-uncertainty")]
+        accepted_uncertainties: Vec<String>,
+        /// Caller-supplied reviewer label; not authenticated.
+        #[arg(long)]
+        actor: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the current readiness and its preserved assessment history.
+    Show {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+fn parse_readiness_decision(value: &str) -> Result<ReadinessDecision, Box<dyn std::error::Error>> {
+    match value {
+        "preparing" => Ok(ReadinessDecision::Preparing),
+        "needs_review" => Ok(ReadinessDecision::NeedsReview),
+        "ready" => Ok(ReadinessDecision::Ready),
+        "blocked" => Ok(ReadinessDecision::Blocked),
+        _ => Err("state must be preparing, needs_review, ready, or blocked".into()),
+    }
+}
+
 fn parse_assessment_result(
     value: &str,
 ) -> Result<CriterionAssessmentResult, Box<dyn std::error::Error>> {
@@ -247,6 +303,9 @@ enum ExecutionCommand {
         status: String,
         #[arg(long)]
         actor: Option<String>,
+        /// Work perspective for this Execution: product_engineer, fde, or other.
+        #[arg(long)]
+        work_perspective: Option<String>,
         #[arg(long)]
         notes: Option<String>,
         #[arg(long)]
@@ -317,6 +376,26 @@ fn parse_actor_kind(value: &str) -> Result<ActorKind, Box<dyn std::error::Error>
     }
 }
 
+fn parse_work_perspective(
+    value: Option<&str>,
+) -> Result<Option<WorkPerspective>, Box<dyn std::error::Error>> {
+    match value {
+        None => Ok(None),
+        Some("product_engineer") => Ok(Some(WorkPerspective::ProductEngineer)),
+        Some("fde") => Ok(Some(WorkPerspective::Fde)),
+        Some("other") => Ok(Some(WorkPerspective::Other)),
+        Some(_) => Err("work perspective must be product_engineer, fde, or other".into()),
+    }
+}
+
+fn perspective_name(value: WorkPerspective) -> &'static str {
+    match value {
+        WorkPerspective::ProductEngineer => "Product Engineer",
+        WorkPerspective::Fde => "FDE",
+        WorkPerspective::Other => "Other",
+    }
+}
+
 fn parse_execution_state(value: &str) -> Result<ExecutionState, Box<dyn std::error::Error>> {
     match value {
         "in_progress" => Ok(ExecutionState::InProgress),
@@ -357,9 +436,9 @@ enum MissionCommand {
         /// Optional context for the objective.
         #[arg(long)]
         context: Option<String>,
-        /// JSON file containing a `criteria` array.
+        /// Optional JSON file containing a `criteria` array; omission starts exploratory work.
         #[arg(long)]
-        criteria_file: PathBuf,
+        criteria_file: Option<PathBuf>,
         /// Print the result as JSON.
         #[arg(long)]
         json: bool,
@@ -824,7 +903,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     MissionInput {
                         objective,
                         context,
-                        criteria: read_criteria(&criteria_file)?,
+                        criteria: criteria_file
+                            .as_deref()
+                            .map(read_criteria)
+                            .transpose()?
+                            .unwrap_or_default(),
                     },
                 )?;
                 if json {
@@ -970,6 +1053,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     actor_kind,
                     status,
                     actor,
+                    work_perspective,
                     notes,
                     json,
                 },
@@ -981,6 +1065,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     contract_revision,
                     actor_kind: parse_actor_kind(&actor_kind)?,
                     actor_reference: actor,
+                    work_perspective: parse_work_perspective(work_perspective.as_deref())?,
                     state: parse_execution_state(&status)?,
                     notes,
                 },
@@ -989,6 +1074,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {
                 println!("Recorded {} execution {}", status, result.id);
+                if let Some(perspective) = result.work_perspective {
+                    println!("Work perspective: {}", perspective_name(perspective));
+                }
             }
         }
         Command::Execution {
@@ -1031,6 +1119,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "Actor: {:?} ({})",
                     result.actor_kind,
                     result.actor_reference.as_deref().unwrap_or("unspecified")
+                );
+                println!(
+                    "Work perspective: {}",
+                    result
+                        .work_perspective
+                        .map(perspective_name)
+                        .unwrap_or("not recorded")
                 );
                 println!("State: {:?}", result.state);
                 println!("Started: {}", result.started_at_unix_ms);
@@ -1155,6 +1250,68 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         },
+        Command::Readiness { command } => match command {
+            ReadinessCommand::Assess {
+                path,
+                mission,
+                activity,
+                state,
+                criteria_applied,
+                gaps,
+                blockers,
+                accepted_uncertainties,
+                actor,
+                json,
+            } => {
+                let assessment = readiness_assess(
+                    path,
+                    ReadinessAssessmentInput {
+                        mission_id: mission,
+                        activity,
+                        decision: parse_readiness_decision(&state)?,
+                        criteria_applied,
+                        gaps,
+                        blockers,
+                        accepted_uncertainties,
+                        actor_reference: actor,
+                    },
+                )?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&assessment)?);
+                } else {
+                    println!("Recorded readiness for {}: {}", assessment.activity, state);
+                    println!("Assessment: {}", assessment.id);
+                }
+            }
+            ReadinessCommand::Show {
+                path,
+                mission,
+                json,
+            } => {
+                let current = readiness_get(&path, &mission)?;
+                let history = readiness_history(&path, &mission)?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "current": current,
+                            "history": history
+                        }))?
+                    );
+                } else {
+                    print_readiness(&current);
+                    for assessment in history {
+                        println!(
+                            "  {} · {} · {} · {}",
+                            assessment.id,
+                            assessment.activity,
+                            readiness_decision_name(assessment.decision),
+                            assessment.assessed_at_unix_ms
+                        );
+                    }
+                }
+            }
+        },
         Command::Install {
             project: _,
             path,
@@ -1220,13 +1377,28 @@ fn print_status(snapshot: &tramuri_core::StatusSnapshot) {
                 )
             })
             .count();
+        let contract_summary = if mission.outcome.criteria.is_empty() {
+            "Success Contract: no criteria yet".to_owned()
+        } else {
+            format!("{pending} required criteria need review")
+        };
         println!(
-            "{}\t{:?}\tOutcome: {}\t{} required criteria need review\t{}",
+            "{}\t{:?}\tOutcome: {}\t{}\t{}",
             mission.id,
             mission.state,
             mission.outcome.state,
-            pending,
+            contract_summary,
             terminal_safe(&mission.objective)
+        );
+        println!(
+            "  Next activity: {} · Context readiness: {}",
+            mission
+                .readiness
+                .activity
+                .as_deref()
+                .map(terminal_safe)
+                .unwrap_or_else(|| "not selected".to_owned()),
+            readiness_state_name(mission.readiness.state)
         );
     }
     if !snapshot.recent_activity.is_empty() {
@@ -1240,6 +1412,58 @@ fn print_status(snapshot: &tramuri_core::StatusSnapshot) {
                 activity.record_id
             );
         }
+    }
+}
+
+fn print_readiness(readiness: &tramuri_core::MissionReadiness) {
+    println!("Mission: {}", readiness.mission_id);
+    let Some(assessment) = &readiness.assessment else {
+        println!("Next activity: not selected");
+        println!("Context readiness: not assessed");
+        return;
+    };
+    println!("Next activity: {}", terminal_safe(&assessment.activity));
+    println!(
+        "Context readiness: {}",
+        readiness_state_name(readiness.state)
+    );
+    println!("Assessed: {}", assessment.assessed_at_unix_ms);
+    println!(
+        "Success Contract revision: {}",
+        assessment.contract_revision
+    );
+    if let Some(actor) = &assessment.actor_reference {
+        println!("Reviewer (declared): {}", terminal_safe(actor));
+    }
+    for (label, values) in [
+        ("Gap", &assessment.gaps),
+        ("Blocker", &assessment.blockers),
+        ("Accepted uncertainty", &assessment.accepted_uncertainties),
+    ] {
+        for value in values {
+            println!("{label}: {}", terminal_safe(value));
+        }
+    }
+    println!("This assessment does not block execution.");
+}
+
+fn readiness_state_name(value: tramuri_core::ReadinessState) -> &'static str {
+    match value {
+        tramuri_core::ReadinessState::NotAssessed => "not assessed",
+        tramuri_core::ReadinessState::Preparing => "preparing",
+        tramuri_core::ReadinessState::NeedsReview => "needs review",
+        tramuri_core::ReadinessState::Ready => "ready for selected activity",
+        tramuri_core::ReadinessState::Stale => "stale; review needed",
+        tramuri_core::ReadinessState::Blocked => "blocked for selected activity",
+    }
+}
+
+fn readiness_decision_name(value: ReadinessDecision) -> &'static str {
+    match value {
+        ReadinessDecision::Preparing => "preparing",
+        ReadinessDecision::NeedsReview => "needs_review",
+        ReadinessDecision::Ready => "ready",
+        ReadinessDecision::Blocked => "blocked",
     }
 }
 
@@ -1284,7 +1508,20 @@ fn print_resume(mission: &tramuri_core::MissionStatus) {
         "Success Contract revision {} · Outcome {}",
         mission.contract.revision, mission.outcome.state
     );
+    println!(
+        "Next activity: {} · Context readiness: {}",
+        mission
+            .readiness
+            .activity
+            .as_deref()
+            .map(terminal_safe)
+            .unwrap_or_else(|| "not selected".to_owned()),
+        readiness_state_name(mission.readiness.state)
+    );
     println!("Criteria:");
+    if mission.outcome.criteria.is_empty() {
+        println!("  No criteria recorded yet; the Outcome remains pending.");
+    }
     for review in &mission.outcome.criteria {
         let result = review
             .assessments
@@ -1305,8 +1542,19 @@ fn print_resume(mission: &tramuri_core::MissionStatus) {
     println!("Executions: {}", mission.executions.len());
     for execution in &mission.executions {
         println!(
-            "  {}\t{:?}\t{:?}\trevision {}",
-            execution.id, execution.state, execution.actor_kind, execution.contract_revision
+            "  {}\t{:?}\t{:?} ({})\t{}\trevision {}",
+            execution.id,
+            execution.state,
+            execution.actor_kind,
+            execution
+                .actor_reference
+                .as_deref()
+                .unwrap_or("unspecified"),
+            execution
+                .work_perspective
+                .map(perspective_name)
+                .unwrap_or("perspective not recorded"),
+            execution.contract_revision
         );
     }
     println!("Evidence references: {}", mission.evidence.len());
@@ -1397,6 +1645,24 @@ fn agent_context(snapshot: &tramuri_core::StatusSnapshot) -> String {
             mission.outcome.state,
             terminal_safe(&mission.objective)
         ));
+        output.push_str(&format!(
+            "- Next activity: {}; context readiness: {}.\n",
+            mission
+                .readiness
+                .activity
+                .as_deref()
+                .map(terminal_safe)
+                .unwrap_or_else(|| "not selected".to_owned()),
+            readiness_state_name(mission.readiness.state)
+        ));
+        if let Some(assessment) = &mission.readiness.assessment {
+            for blocker in assessment.blockers.iter().take(3) {
+                output.push_str(&format!("- Recorded blocker: {}\n", terminal_safe(blocker)));
+            }
+            for gap in assessment.gaps.iter().take(3) {
+                output.push_str(&format!("- Recorded context gap: {}\n", terminal_safe(gap)));
+            }
+        }
         for review in &mission.outcome.criteria {
             let result = review
                 .assessments
@@ -1499,5 +1765,16 @@ fn print_install_summary(platform: integrations::Platform, files: &[String]) {
     } else {
         println!("\nExisting instructions are preserved; Tramuri adds only its managed section.");
     }
-    println!("\nNext: `tramuri init .` (if needed), then `tramuri status --open`.");
+    println!("\nNext:");
+    println!("  1. If this workspace is new, run `tramuri init .`.");
+    println!(
+        "  2. Tell your assistant what outcome you want and whether to work as a Product Engineer, FDE, or another role."
+    );
+    println!(
+        "     The Tramuri skill will guide Mission setup and continue the workflow; a project scan is optional."
+    );
+    println!(
+        "  3. After recorded Mission work, the assistant refreshes and opens the local report once."
+    );
+    println!("     To open it yourself later, run `tramuri status --open`.");
 }

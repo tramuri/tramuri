@@ -36,6 +36,7 @@ fn execution(
             contract_revision: 1,
             actor_kind: ActorKind::Human,
             actor_reference: Some("reviewer".into()),
+            work_perspective: None,
             state,
             notes: None,
         },

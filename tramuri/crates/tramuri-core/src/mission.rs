@@ -103,6 +103,35 @@ impl ActorKind {
     }
 }
 
+/// The user's selected professional perspective for one recorded Execution.
+/// This does not identify or authenticate the actor that performed the work.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkPerspective {
+    ProductEngineer,
+    Fde,
+    Other,
+}
+
+impl WorkPerspective {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::ProductEngineer => "product_engineer",
+            Self::Fde => "fde",
+            Self::Other => "other",
+        }
+    }
+
+    fn from_storage_value(value: &str) -> Option<Self> {
+        match value {
+            "product_engineer" => Some(Self::ProductEngineer),
+            "fde" => Some(Self::Fde),
+            "other" => Some(Self::Other),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionState {
@@ -144,6 +173,7 @@ pub struct Execution {
     pub contract_revision: u32,
     pub actor_kind: ActorKind,
     pub actor_reference: Option<String>,
+    pub work_perspective: Option<WorkPerspective>,
     pub state: ExecutionState,
     pub started_at_unix_ms: i64,
     pub ended_at_unix_ms: Option<i64>,
@@ -156,6 +186,7 @@ pub struct ExecutionInput {
     pub contract_revision: u32,
     pub actor_kind: ActorKind,
     pub actor_reference: Option<String>,
+    pub work_perspective: Option<WorkPerspective>,
     pub state: ExecutionState,
     pub notes: Option<String>,
 }
@@ -347,9 +378,9 @@ pub fn execution_record(path: impl AsRef<Path>, input: ExecutionInput) -> Result
     let id = Uuid::new_v4().to_string();
     let end = (input.state != ExecutionState::InProgress).then_some(now);
     connection.execute(
-        "INSERT INTO executions (id, mission_id, contract_id, contract_revision, actor_kind, actor_reference, state, started_at_unix_ms, ended_at_unix_ms, notes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        params![id, input.mission_id, contract_id, revision, input.actor_kind.as_str(), input.actor_reference.as_deref().map(str::trim).filter(|s| !s.is_empty()), input.state.as_str(), now, end, input.notes.as_deref().map(str::trim).filter(|s| !s.is_empty())],
+        "INSERT INTO executions (id, mission_id, contract_id, contract_revision, actor_kind, actor_reference, work_perspective, state, started_at_unix_ms, ended_at_unix_ms, notes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![id, input.mission_id, contract_id, revision, input.actor_kind.as_str(), input.actor_reference.as_deref().map(str::trim).filter(|s| !s.is_empty()), input.work_perspective.map(WorkPerspective::as_str), input.state.as_str(), now, end, input.notes.as_deref().map(str::trim).filter(|s| !s.is_empty())],
     )?;
     Ok(Execution {
         id,
@@ -358,6 +389,7 @@ pub fn execution_record(path: impl AsRef<Path>, input: ExecutionInput) -> Result
         contract_revision: input.contract_revision,
         actor_kind: input.actor_kind,
         actor_reference: input.actor_reference,
+        work_perspective: input.work_perspective,
         state: input.state,
         started_at_unix_ms: now,
         ended_at_unix_ms: end,
@@ -459,7 +491,7 @@ pub fn execution_list(path: impl AsRef<Path>, mission_id: &str) -> Result<Vec<Ex
 
     let mut statement = connection.prepare(
         "SELECT id, mission_id, contract_id, contract_revision, actor_kind, actor_reference,
-                state, started_at_unix_ms, ended_at_unix_ms, notes
+                work_perspective, state, started_at_unix_ms, ended_at_unix_ms, notes
          FROM executions
          WHERE mission_id = ?1
          ORDER BY started_at_unix_ms DESC, id DESC",
@@ -479,7 +511,7 @@ pub fn execution_get(path: impl AsRef<Path>, execution_id: &str) -> Result<Execu
     connection
         .query_row(
             "SELECT id, mission_id, contract_id, contract_revision, actor_kind, actor_reference,
-                    state, started_at_unix_ms, ended_at_unix_ms, notes
+                    work_perspective, state, started_at_unix_ms, ended_at_unix_ms, notes
              FROM executions WHERE id = ?1",
             [execution_id],
             execution_from_row,
@@ -548,9 +580,16 @@ fn execution_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Execution> {
     let actor_value: String = row.get(4)?;
     let actor_kind = ActorKind::from_storage_value(&actor_value)
         .ok_or_else(|| invalid_storage_value(4, "execution actor kind", &actor_value))?;
-    let state_value: String = row.get(6)?;
+    let work_perspective_value: Option<String> = row.get(6)?;
+    let work_perspective = work_perspective_value
+        .map(|value| {
+            WorkPerspective::from_storage_value(&value)
+                .ok_or_else(|| invalid_storage_value(6, "execution work perspective", &value))
+        })
+        .transpose()?;
+    let state_value: String = row.get(7)?;
     let state = ExecutionState::from_storage_value(&state_value)
-        .ok_or_else(|| invalid_storage_value(6, "execution state", &state_value))?;
+        .ok_or_else(|| invalid_storage_value(7, "execution state", &state_value))?;
 
     Ok(Execution {
         id: row.get(0)?,
@@ -560,10 +599,11 @@ fn execution_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Execution> {
             .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(3, revision))?,
         actor_kind,
         actor_reference: row.get(5)?,
+        work_perspective,
         state,
-        started_at_unix_ms: row.get(7)?,
-        ended_at_unix_ms: row.get(8)?,
-        notes: row.get(9)?,
+        started_at_unix_ms: row.get(8)?,
+        ended_at_unix_ms: row.get(9)?,
+        notes: row.get(10)?,
     })
 }
 
@@ -885,9 +925,12 @@ pub fn outcome_get(
             _ => has_pending_required = true,
         }
     }
+    let has_required_criteria = criterion_outcomes
+        .iter()
+        .any(|criterion| criterion.criterion.required);
     let state = if has_failed_required {
         OutcomeState::NotAchieved
-    } else if has_pending_required {
+    } else if !has_required_criteria || has_pending_required {
         OutcomeState::Pending
     } else {
         OutcomeState::Verified
@@ -1145,7 +1188,9 @@ pub fn mission_contract_revise(
 }
 
 fn validate_criteria(criteria: &[CriterionInput]) -> Result<()> {
-    if !criteria.iter().any(|criterion| criterion.required) {
+    // Empty contracts are valid during exploratory work. If criteria are supplied, at least
+    // one must be required so an optional-only contract cannot be vacuously verified.
+    if !criteria.is_empty() && !criteria.iter().any(|criterion| criterion.required) {
         return Err(TramuriError::NoRequiredCriterion);
     }
     if criteria

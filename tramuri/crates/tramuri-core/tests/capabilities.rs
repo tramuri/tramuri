@@ -130,7 +130,7 @@ fn scan_discovers_supported_declarations_without_copying_configuration_values() 
     assert!(!encoded.contains("private.example.invalid"));
     assert!(!encoded.contains("private agent body"));
     assert!(!encoded.contains("do-not-run-marker"));
-    assert_eq!(SCHEMA_VERSION, 6);
+    assert_eq!(SCHEMA_VERSION, 8);
 
     let first_ids: Vec<_> = snapshot
         .capabilities

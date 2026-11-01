@@ -19,7 +19,28 @@ const GEMINI_HOOK_FILE: &str = ".gemini/settings.json";
 const GEMINI_HOOK_COMMAND: &str = "tramuri status --hint --hook-format gemini";
 const CURSOR_RULE_FRONTMATTER: &str =
     "---\ndescription: Tramuri project guidance\nalwaysApply: true\n---\n\n";
-const SKILL: &str = include_str!("../../../python/tramuri/skills/tramuri/SKILL.md");
+const SKILLS: [(&str, &str); 5] = [
+    (
+        "tramuri",
+        include_str!("../../../python/tramuri/skills/tramuri/SKILL.md"),
+    ),
+    (
+        "tramuri-start",
+        include_str!("../../../python/tramuri/skills/tramuri-start/SKILL.md"),
+    ),
+    (
+        "tramuri-discovery",
+        include_str!("../../../python/tramuri/skills/tramuri-discovery/SKILL.md"),
+    ),
+    (
+        "tramuri-missions",
+        include_str!("../../../python/tramuri/skills/tramuri-missions/SKILL.md"),
+    ),
+    (
+        "tramuri-integrity",
+        include_str!("../../../python/tramuri/skills/tramuri-integrity/SKILL.md"),
+    ),
+];
 const CODEX_INSTRUCTIONS: &str = include_str!("../../../always_on/agents-md.md");
 const COPILOT_INSTRUCTIONS: &str = include_str!("../../../always_on/copilot-instructions.md");
 const CLAUDE_INSTRUCTIONS: &str = include_str!("../../../always_on/claude-md.md");
@@ -82,13 +103,13 @@ impl Platform {
         }
     }
 
-    fn skill_file(self) -> &'static str {
+    fn skill_root(self) -> &'static str {
         match self {
-            Self::Codex => ".agents/skills/tramuri/SKILL.md",
-            Self::Copilot => ".github/skills/tramuri/SKILL.md",
-            Self::Claude => ".claude/skills/tramuri/SKILL.md",
-            Self::Cursor => ".cursor/skills/tramuri/SKILL.md",
-            Self::Gemini => ".gemini/skills/tramuri/SKILL.md",
+            Self::Codex => ".agents/skills",
+            Self::Copilot => ".github/skills",
+            Self::Claude => ".claude/skills",
+            Self::Cursor => ".cursor/skills",
+            Self::Gemini => ".gemini/skills",
         }
     }
 
@@ -112,7 +133,7 @@ impl std::fmt::Display for Platform {
 pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     let root = canonical_root(root)?;
     let instruction_path = Path::new(platform.instruction_file());
-    let skill_path = Path::new(platform.skill_file());
+    let skills = skill_paths(platform);
     let reference_paths = reference_paths(platform);
     let block = format!("{START}\n## Tramuri\n{}\n{END}", platform.instructions());
 
@@ -125,10 +146,14 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
         validate_native_hook(&root.join(hook_file), platform)?;
     }
 
-    let skill_target = ensure_parent(&root, skill_path)?;
-    validate_managed_target(&skill_target, |text| {
-        has_front_matter(text) && text.contains(SKILL_MARKER)
-    })?;
+    let mut skill_targets = Vec::with_capacity(skills.len());
+    for (relative, _) in &skills {
+        let target = ensure_parent(&root, relative)?;
+        validate_managed_target(&target, |text| {
+            has_front_matter(text) && text.contains(SKILL_MARKER)
+        })?;
+        skill_targets.push(target);
+    }
     let mut reference_targets = Vec::with_capacity(reference_paths.len());
     for (relative, _) in &reference_paths {
         let target = ensure_parent(&root, relative)?;
@@ -140,17 +165,21 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     } else {
         write_managed_instruction(&root, instruction_path, &block)?;
     }
-    write_managed_skill(&root, skill_path)?;
+    for ((_, content), target) in skills.iter().zip(skill_targets) {
+        write_managed_skill(&target, content)?;
+    }
     for ((_, content), target) in REFERENCES.iter().zip(reference_targets) {
         fs::write(target, content)?;
     }
     if hook_file(platform).is_some() {
         install_native_hook(&root, platform)?;
     }
-    let mut installed = vec![
-        platform.instruction_file().to_owned(),
-        platform.skill_file().to_owned(),
-    ];
+    let mut installed = vec![platform.instruction_file().to_owned()];
+    installed.extend(
+        skills
+            .iter()
+            .map(|(path, _)| path.to_string_lossy().into_owned()),
+    );
     installed.extend(
         reference_paths
             .iter()
@@ -165,9 +194,11 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
 pub fn uninstall(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     let root = canonical_root(root)?;
     let instruction = Path::new(platform.instruction_file());
-    let skill = Path::new(platform.skill_file());
+    let skills = skill_paths(platform);
     validate_existing_parent(&root, instruction)?;
-    validate_existing_parent(&root, skill)?;
+    for (skill, _) in &skills {
+        validate_existing_parent(&root, skill)?;
+    }
     let reference_paths = reference_paths(platform);
     for (path, _) in &reference_paths {
         validate_existing_parent(&root, path)?;
@@ -190,19 +221,19 @@ pub fn uninstall(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
             removed.push(path.to_string_lossy().into_owned());
         }
     }
-    let skill_dir = root.join(skill.parent().expect("skill path has a parent"));
     if let Some(references_dir) = reference_paths.first().and_then(|(path, _)| path.parent()) {
         let _ = fs::remove_dir(root.join(references_dir));
     }
-    if remove_managed_skill(&root, skill)? {
-        removed.push(platform.skill_file().to_owned());
+    for (skill, _) in &skills {
+        if remove_managed_skill(&root, skill)? {
+            removed.push(skill.to_string_lossy().into_owned());
+        }
     }
     if let Some(hook_file) = hook_file(platform) {
         if remove_native_hook(&root, platform)? {
             removed.push(hook_file.to_owned());
         }
     }
-    let _ = fs::remove_dir(skill_dir);
     Ok(removed)
 }
 
@@ -218,13 +249,15 @@ pub fn status(root: &Path) -> io::Result<Vec<(Platform, bool)>> {
     .into_iter()
     .map(|platform| -> io::Result<(Platform, bool)> {
         let instructions = root.join(platform.instruction_file());
-        let skill = root.join(platform.skill_file());
+        let skills = skill_paths(platform);
         let references_installed = reference_paths(platform).iter().all(|(path, _)| {
             read_if_regular(&root.join(path)).is_ok_and(|text| text.starts_with(REFERENCE_MARKER))
         });
         let installed = read_if_regular(&instructions).is_ok_and(|text| has_managed_block(&text))
-            && read_if_regular(&skill)
-                .is_ok_and(|text| has_front_matter(&text) && text.contains(SKILL_MARKER))
+            && skills.iter().all(|(skill, _)| {
+                read_if_regular(&root.join(skill))
+                    .is_ok_and(|text| has_front_matter(&text) && text.contains(SKILL_MARKER))
+            })
             && references_installed;
         let installed = if hook_file(platform).is_some() {
             installed && native_hook_installed(&root, platform)?
@@ -528,12 +561,18 @@ fn remove_native_hook(root: &Path, platform: Platform) -> io::Result<bool> {
 }
 
 fn reference_paths(platform: Platform) -> Vec<(PathBuf, &'static str)> {
-    let skill_dir = Path::new(platform.skill_file())
-        .parent()
-        .expect("skill path has a parent");
+    let skill_dir = Path::new(platform.skill_root()).join("tramuri");
     REFERENCES
         .iter()
         .map(|(name, content)| (skill_dir.join("references").join(name), *content))
+        .collect()
+}
+
+fn skill_paths(platform: Platform) -> Vec<(PathBuf, &'static str)> {
+    let root = Path::new(platform.skill_root());
+    SKILLS
+        .iter()
+        .map(|(name, content)| (root.join(name).join("SKILL.md"), *content))
         .collect()
 }
 
@@ -758,11 +797,10 @@ fn has_front_matter(text: &str) -> bool {
     text.lines().next() == Some("---")
 }
 
-fn write_managed_skill(root: &Path, relative: &Path) -> io::Result<()> {
-    let path = ensure_parent(root, relative)?;
-    match read_if_regular(&path) {
+fn write_managed_skill(path: &Path, content: &str) -> io::Result<()> {
+    match read_if_regular(path) {
         Ok(text) if has_front_matter(&text) && text.contains(SKILL_MARKER) => {
-            fs::write(path, SKILL)
+            fs::write(path, content)
         }
         Ok(_) => Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
@@ -771,7 +809,7 @@ fn write_managed_skill(root: &Path, relative: &Path) -> io::Result<()> {
                 path.display()
             ),
         )),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::write(path, SKILL),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::write(path, content),
         Err(error) => Err(error),
     }
 }
@@ -962,7 +1000,9 @@ mod tests {
             assert_eq!(error.kind(), io::ErrorKind::InvalidData);
             assert_eq!(fs::read_to_string(&hook_file).unwrap(), malformed);
             assert!(!project.path().join(platform.instruction_file()).exists());
-            assert!(!project.path().join(platform.skill_file()).exists());
+            for (skill, _) in skill_paths(platform) {
+                assert!(!project.path().join(skill).exists());
+            }
         }
     }
 
@@ -991,27 +1031,45 @@ mod tests {
             Platform::Codex,
             Platform::Copilot,
             Platform::Claude,
+            Platform::Cursor,
             Platform::Gemini,
         ] {
             install(project.path(), platform).unwrap();
             let instructions = project.path().join(platform.instruction_file());
-            let skill = project.path().join(platform.skill_file());
             let instructions = fs::read_to_string(instructions).unwrap();
             assert!(instructions.contains(START));
-            assert!(instructions.contains(platform.skill_file()));
+            assert!(instructions.contains(&format!("{}/tramuri/SKILL.md", platform.skill_root())));
             assert!(instructions.contains("verified outcome"));
             assert!(instructions.contains("explicit item"));
-            let skill = fs::read_to_string(skill).unwrap();
-            assert_eq!(
-                skill.lines().take(2).collect::<Vec<_>>(),
-                ["---", "name: tramuri"]
-            );
-            assert!(skill.contains(SKILL_MARKER));
+            let main_skill = fs::read_to_string(
+                project
+                    .path()
+                    .join(platform.skill_root())
+                    .join("tramuri/SKILL.md"),
+            )
+            .unwrap();
+            assert_eq!(skill_paths(platform).len(), 5);
+            for (relative, _) in skill_paths(platform) {
+                let skill = fs::read_to_string(project.path().join(&relative)).unwrap();
+                let skill_name = relative
+                    .parent()
+                    .and_then(Path::file_name)
+                    .expect("skill directory has a name")
+                    .to_string_lossy();
+                assert_eq!(skill.lines().next(), Some("---"));
+                assert!(
+                    skill
+                        .lines()
+                        .any(|line| line == format!("name: {skill_name}"))
+                );
+                assert!(skill.contains(SKILL_MARKER));
+            }
             for (relative, _) in reference_paths(platform) {
                 let reference = fs::read_to_string(project.path().join(&relative)).unwrap();
                 assert!(reference.starts_with(REFERENCE_MARKER));
                 assert!(
-                    skill.contains(&relative.file_name().unwrap().to_string_lossy().to_string())
+                    main_skill
+                        .contains(&relative.file_name().unwrap().to_string_lossy().to_string())
                 );
             }
         }
@@ -1027,13 +1085,16 @@ mod tests {
     #[test]
     fn install_refuses_to_overwrite_an_existing_unmanaged_skill() {
         let project = tempdir().unwrap();
-        let skill = project.path().join(Platform::Claude.skill_file());
+        let skill = project
+            .path()
+            .join(".claude/skills/tramuri-discovery/SKILL.md");
         fs::create_dir_all(skill.parent().unwrap()).unwrap();
         fs::write(&skill, "# User skill\n").unwrap();
 
         let error = install(project.path(), Platform::Claude).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(fs::read_to_string(skill).unwrap(), "# User skill\n");
+        assert!(!project.path().join("CLAUDE.md").exists());
     }
 
     #[test]
@@ -1047,7 +1108,9 @@ mod tests {
         let instructions = fs::read_to_string(project.path().join("GEMINI.md")).unwrap();
         assert!(instructions.contains("# User instructions"));
         assert!(!instructions.contains(START));
-        assert!(!project.path().join(Platform::Gemini.skill_file()).exists());
+        for (skill, _) in skill_paths(Platform::Gemini) {
+            assert!(!project.path().join(skill).exists());
+        }
         for (relative, _) in reference_paths(Platform::Gemini) {
             assert!(!project.path().join(relative).exists());
         }

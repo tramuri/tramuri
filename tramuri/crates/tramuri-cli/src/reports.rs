@@ -12,15 +12,25 @@ use tramuri_core::{
 const JSON_FILE: &str = "tramauri.json";
 const MARKDOWN_FILE: &str = "tramauri.md";
 const HTML_FILE: &str = "tramauri.html";
+const REPORT_HTML: &str = include_str!("../assets/tramauri-report.html");
 
 #[derive(serde::Serialize)]
 struct ReportDocument<'a> {
     #[serde(flatten)]
     status: &'a StatusSnapshot,
+    report_schema: &'static str,
     capability_schema: &'a str,
     capability_scan_complete: bool,
     capabilities: Vec<ReportCapability<'a>>,
     capability_warnings: &'a [String],
+    execution_actors: Vec<ReportExecutionActor<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct ReportExecutionActor<'a> {
+    mission_id: &'a str,
+    execution_id: &'a str,
+    actor_reference: &'a str,
 }
 
 #[derive(serde::Serialize)]
@@ -91,6 +101,7 @@ fn report_document<'a>(
 ) -> ReportDocument<'a> {
     ReportDocument {
         status: snapshot,
+        report_schema: "tramuri.report.v2",
         capability_schema: &capabilities.schema,
         capability_scan_complete: capabilities.scan_complete,
         capabilities: capabilities
@@ -108,6 +119,21 @@ fn report_document<'a>(
             })
             .collect(),
         capability_warnings: &capabilities.warnings,
+        execution_actors: snapshot
+            .missions
+            .iter()
+            .flat_map(|mission| {
+                mission.executions.iter().filter_map(move |execution| {
+                    execution.actor_reference.as_deref().map(|actor_reference| {
+                        ReportExecutionActor {
+                            mission_id: &mission.id,
+                            execution_id: &execution.id,
+                            actor_reference,
+                        }
+                    })
+                })
+            })
+            .collect(),
     }
 }
 
@@ -228,15 +254,43 @@ pub fn render_markdown(snapshot: &StatusSnapshot, capabilities: &CapabilitySnaps
     }
     for mission in &snapshot.missions {
         output.push_str(&format!(
-            "### {} — {}\n\n- State: `{}`\n- Success Contract: revision {}\n- Outcome: `{}`\n- Executions: {}\n- Evidence references: {}\n\n",
+            "### {} — {}\n\n- State: `{}`\n- Current activity: `{}`\n- Context readiness: `{}`\n- Success Contract: revision {}\n- Outcome: `{}`\n- Executions: {}\n- Evidence references: {}\n\n",
             mission.id,
             md_escape(&mission.objective),
             state_name(mission.state),
+            mission.readiness.activity.as_deref().unwrap_or("not selected"),
+            readiness_name(mission.readiness.state),
             mission.contract.revision,
             outcome_name(mission.outcome.state),
             mission.executions.len(),
             mission.evidence.len(),
         ));
+        if let Some(readiness) = &mission.readiness.assessment {
+            for item in &readiness.criteria_applied {
+                output.push_str(&format!("- Readiness check applied: {}\n", md_escape(item)));
+            }
+            for (label, items) in [
+                ("Gap", &readiness.gaps),
+                ("Blocker", &readiness.blockers),
+                ("Accepted uncertainty", &readiness.accepted_uncertainties),
+            ] {
+                for item in items {
+                    output.push_str(&format!("- {label}: {}\n", md_escape(item)));
+                }
+            }
+            output.push_str(&format!(
+                "- Readiness policy `{}` · context references: {} · reviewed at `{}` by declared actor `{}`\n",
+                md_escape(&readiness.policy_version),
+                readiness.context_references.len(),
+                readiness.assessed_at_unix_ms,
+                md_escape(
+                    readiness
+                        .actor_reference
+                        .as_deref()
+                        .unwrap_or("not recorded")
+                ),
+            ));
+        }
         output.push_str("Criteria:\n\n");
         for review in &mission.outcome.criteria {
             let latest = review
@@ -367,7 +421,7 @@ pub fn render_markdown(snapshot: &StatusSnapshot, capabilities: &CapabilitySnaps
         output.push_str(&format!("- Warning: {}\n", md_escape(warning)));
     }
     output.push_str(
-        "\nKnowledge is not shown under Missions because the current data model does not associate Knowledge records with a Mission. Free-form context, execution notes, evidence locators, verifier references, and assessment explanations are excluded from this report.\n",
+        "\nKnowledge appears under a Mission only when explicitly linked. Free-form context, execution notes, evidence locators, verifier references, and outcome review explanations are excluded from this report. Readiness gaps and blockers are included because they were explicitly recorded for that assessment.\n",
     );
     output
 }
@@ -380,29 +434,7 @@ fn render_html(document: &ReportDocument<'_>) -> Result<String, serde_json::Erro
         .replace('>', "\\u003e")
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
-    Ok(format!(
-        r#"<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>Tramuri workspace</title>
-<style>
-:root{{--bg:#111318;--panel:#191c23;--line:#2b303a;--text:#eceef2;--muted:#a0a7b4;--accent:#8da8ff;--green:#86d6aa;--amber:#f2c879;--red:#f08b8b;font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text)}}header{{position:sticky;top:0;background:#111318ed;backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:18px max(22px,calc((100vw - 1160px)/2));display:flex;gap:24px;align-items:center;justify-content:space-between;z-index:2}}h1{{font-size:20px;margin:0}}.muted{{color:var(--muted);font-size:13px}}main{{max-width:1160px;margin:28px auto;padding:0 22px}}.stats{{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px}}.stat,.card{{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px}}.stat strong{{display:block;font-size:25px}}.toolbar{{display:flex;gap:10px;margin:18px 0}}input,select{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--text)}}input{{flex:1}}.mission{{margin:12px 0}}.mission summary{{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:14px;align-items:start}}.mission summary::-webkit-details-marker{{display:none}}.title{{font-size:17px;font-weight:650}}.badge{{border:1px solid var(--line);border-radius:99px;padding:2px 9px;font-size:12px;white-space:nowrap}}.verified{{color:var(--green)}}.pending{{color:var(--amber)}}.not_achieved{{color:var(--red)}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}}h2{{font-size:16px;margin:22px 0 10px}}h3{{font-size:14px;margin:10px 0}}ul{{padding-left:20px}}li{{margin:5px 0}}.event{{border-left:2px solid var(--line);padding:4px 0 6px 12px}}.empty{{color:var(--muted)}}@media(max-width:760px){{.stats{{grid-template-columns:repeat(2,1fr)}}.grid{{grid-template-columns:1fr}}header{{position:static;align-items:flex-start;flex-direction:column}}}}
-</style></head><body>
-<script type="application/json" id="report-data">{json}</script>
-<header><div><h1>Tramuri <span class="muted">Workspace status</span></h1><div class="muted" id="generated"></div></div><span class="muted">Local report · no external services</span></header>
-<main><section class="stats" id="stats"></section><div class="toolbar"><input id="search" type="search" placeholder="Search Missions and capabilities"><select id="state"><option value="all">All states</option><option value="open">Open</option><option value="closed">Closed</option></select></div><section id="missions"></section><h2>Recent activity</h2><section id="activity" class="card"></section><h2>Declared capabilities</h2><section id="capabilities" class="card"></section><p class="muted">Capability records describe declarations only; Tramuri does not execute hooks, connect to MCP servers, or verify operational availability. Knowledge is not attached to Missions without an explicit relationship.</p></main>
-<script>
-const report=JSON.parse(document.getElementById('report-data').textContent);const d=report;const el=(tag,text,cls)=>{{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n}};
-document.getElementById('generated').textContent='Generated '+new Date(d.generated_at_unix_ms).toLocaleString()+' · Contract '+d.schema;
-const stats=document.getElementById('stats');[['Missions',d.workspace.mission_count],['Open',d.workspace.open_mission_count],['Closed',d.workspace.closed_mission_count],['Verified outcomes',d.missions.filter(m=>m.outcome.state==='verified').length],['Capabilities',report.capabilities.length]].forEach(([k,v])=>{{const c=el('div',undefined,'stat');c.append(el('span',k,'muted'),el('strong',String(v)));stats.append(c)}});
-function render(){{const q=document.getElementById('search').value.toLowerCase();const state=document.getElementById('state').value;const host=document.getElementById('missions');host.replaceChildren();const list=d.missions.filter(m=>(state==='all'||m.state===state)&&(m.objective.toLowerCase().includes(q)||m.id.toLowerCase().includes(q)));if(!list.length)host.append(el('p','No matching Missions.','empty'));for(const m of list){{const details=el('details',undefined,'card mission');const summary=el('summary');const left=el('div');left.append(el('div',m.objective,'title'),el('div','Mission '+m.id+' · contract revision '+m.contract.revision,'muted'));summary.append(left,el('span',m.outcome.state.replace('_',' '),'badge '+m.outcome.state));details.append(summary);const grid=el('div',undefined,'grid');const c=el('section');c.append(el('h3','Success criteria'));for(const r of m.outcome.criteria){{const a=r.assessments[r.assessments.length-1];const status=a?a.result:'unverified';const li=el('li',r.criterion.description+' — '+status+(r.criterion.required?' · required':' · optional'));c.append(li)}}const w=el('section');w.append(el('h3','Work history'));for(const e of m.executions)w.append(el('div','Execution '+e.id+' · '+e.state+' · '+e.actor_kind,'event'));for(const e of m.evidence)w.append(el('div','Evidence '+e.id+' · '+e.kind+' · '+e.availability,'event'));if(!m.executions.length&&!m.evidence.length)w.append(el('p','No executions or evidence recorded.','empty'));grid.append(c,w);details.append(grid);const footer=el('div',m.outcome.state==='verified'?'Outcome verified by recorded criterion assessments.':m.outcome.state==='not_achieved'?'Outcome not achieved according to current required criteria.':'Outcome pending review.','muted');details.append(footer);host.append(details)}}}}
-document.getElementById('search').addEventListener('input',render);document.getElementById('state').addEventListener('change',render);render();
-const history=el('section');history.append(el('h2','Success Contract history'));let hasHistory=false;for(const m of d.missions){{if(m.contract_history.length<2)continue;hasHistory=true;const group=el('details','', 'card');group.append(el('summary',m.objective+' · '+m.id));for(const rev of [...m.contract_history].reverse().slice(1)){{const section=el('section');section.append(el('h3','Revision '+rev.contract_revision+' · outcome '+rev.state));for(const c of rev.criteria){{const latest=c.assessments[c.assessments.length-1];section.append(el('div',c.criterion.description+' — '+(latest?latest.result:'unverified')+(c.criterion.required?' · required':' · optional'),'event'));for(const a of c.assessments)section.append(el('div','Review '+a.id+' · '+a.result+' · '+a.verifier_kind+' · '+a.assessed_at_unix_ms+' · evidence '+(a.evidence_ids.join(', ')||'none'),'muted'))}}group.append(section)}}}}if(hasHistory)document.querySelector('main').insertBefore(history,document.getElementById('activity').parentElement.previousElementSibling);
-const reviews=el('section');reviews.append(el('h2','Criterion review history'));let hasReviews=false;for(const m of d.missions){{for(const rev of m.contract_history){{for(const c of rev.criteria){{if(!c.assessments.length)continue;hasReviews=true;const block=el('details','', 'card');block.append(el('summary',m.objective+' · revision '+rev.contract_revision+' · '+c.criterion.description));for(const a of c.assessments)block.append(el('div','Review '+a.id+' · '+a.result+' · '+a.verifier_kind+' · '+new Date(a.assessed_at_unix_ms).toLocaleString()+' · evidence '+(a.evidence_ids.join(', ')||'none'),'event'));reviews.append(block)}}}}}}if(hasReviews)document.querySelector('main').insertBefore(reviews,document.getElementById('activity').parentElement.previousElementSibling);
-const activity=document.getElementById('activity');if(!d.recent_activity.length)activity.append(el('p','No recent activity recorded.','empty'));for(const a of d.recent_activity)activity.append(el('div',a.kind+' · Mission '+a.mission_id+' · '+a.record_id+' · '+new Date(a.occurred_at_unix_ms).toLocaleString(),'event'));
-const caps=document.getElementById('capabilities');if(!report.capabilities.length)caps.append(el('p','No declarative capabilities were recognized. Run `tramuri scan` to refresh discovery.','empty'));for(const c of report.capabilities){{const row=el('div',undefined,'event');row.append(el('strong',c.name+' · '+c.category.replace('_',' ')),el('div',c.ecosystem+' · '+c.state.replaceAll('_',' ')+' · '+c.path,'muted'));if(c.limitation)row.append(el('div',c.limitation,'muted'));caps.append(row)}}if(report.capability_warnings.length)for(const warning of report.capability_warnings)caps.append(el('div','Warning: '+warning,'muted'));
-</script></body></html>"#
-    ))
+    Ok(REPORT_HTML.replace("__TRAMURI_REPORT_DATA__", &json))
 }
 
 fn state_name(value: MissionState) -> &'static str {
@@ -416,6 +448,17 @@ fn outcome_name(value: OutcomeState) -> &'static str {
         OutcomeState::Pending => "pending",
         OutcomeState::NotAchieved => "not_achieved",
         OutcomeState::Verified => "verified",
+    }
+}
+
+fn readiness_name(value: tramuri_core::ReadinessState) -> &'static str {
+    match value {
+        tramuri_core::ReadinessState::NotAssessed => "not_assessed",
+        tramuri_core::ReadinessState::Preparing => "preparing",
+        tramuri_core::ReadinessState::NeedsReview => "needs_review",
+        tramuri_core::ReadinessState::Ready => "ready",
+        tramuri_core::ReadinessState::Stale => "stale",
+        tramuri_core::ReadinessState::Blocked => "blocked",
     }
 }
 fn assessment_name(value: CriterionAssessmentResult) -> &'static str {
@@ -439,15 +482,16 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
     use tramuri_core::{
-        CriterionInput, MissionInput, capability_snapshot, init, mission_create, scan,
-        status_snapshot,
+        ActorKind, CriterionInput, ExecutionInput, ExecutionState, MissionInput,
+        ReadinessAssessmentInput, ReadinessDecision, WorkPerspective, capability_snapshot,
+        execution_record, init, mission_create, readiness_assess, scan, status_snapshot,
     };
 
     #[test]
     fn report_writes_required_filenames_and_escapes_script_payloads() {
         let project = tempdir().unwrap();
         init(project.path()).unwrap();
-        mission_create(
+        let mission = mission_create(
             project.path(),
             MissionInput {
                 objective: "<script>alert('unsafe')</script> & rollout".to_owned(),
@@ -457,6 +501,33 @@ mod tests {
                     required: true,
                     evidence_expectation: None,
                 }],
+            },
+        )
+        .unwrap();
+        execution_record(
+            project.path(),
+            ExecutionInput {
+                mission_id: mission.id.clone(),
+                contract_revision: 1,
+                actor_kind: ActorKind::Agent,
+                actor_reference: Some("Codex (synthetic)".to_owned()),
+                work_perspective: Some(WorkPerspective::ProductEngineer),
+                state: ExecutionState::Completed,
+                notes: None,
+            },
+        )
+        .unwrap();
+        readiness_assess(
+            project.path(),
+            ReadinessAssessmentInput {
+                mission_id: mission.id.clone(),
+                activity: "prototype".to_owned(),
+                decision: ReadinessDecision::Blocked,
+                criteria_applied: vec!["Check the privacy boundary".to_owned()],
+                gaps: vec!["Review stakeholder input".to_owned()],
+                blockers: vec!["<script>do not execute</script>".to_owned()],
+                accepted_uncertainties: Vec::new(),
+                actor_reference: Some("synthetic-reviewer".to_owned()),
             },
         )
         .unwrap();
@@ -472,12 +543,27 @@ mod tests {
         let capabilities = capability_snapshot(project.path()).unwrap();
         assert_eq!(capabilities.capabilities.len(), 1);
         let document = report_document(&snapshot, &capabilities);
+        let report_json = serde_json::to_value(&document).unwrap();
+        assert_eq!(report_json["missions"][0]["readiness"]["state"], "blocked");
+        assert_eq!(
+            report_json["missions"][0]["readiness"]["assessment"]["blockers"][0],
+            "<script>do not execute</script>"
+        );
         let html = render_html(&document).unwrap();
         assert!(!html.contains("<script>alert('unsafe')</script>"));
         assert!(html.contains("\\u003cscript\\u003e"));
         assert!(!html.contains("private-context"));
+        assert!(!html.contains("<script>do not execute</script>"));
+        assert!(html.contains("readinessBlocked"));
+        assert!(html.contains("nextActivity"));
+        assert!(html.contains("Codex (synthetic)"));
+        assert!(html.contains("Product Engineer"));
+        assert!(html.contains("PT-BR"));
+        assert!(html.contains("Your work, in context."));
+        assert!(html.contains("Seu trabalho, com contexto."));
         let markdown = render_markdown(&snapshot, &capabilities);
         assert!(markdown.contains("&lt;script&gt;"));
+        assert!(markdown.contains("Blocker: &lt;script&gt;do not execute&lt;/script&gt;"));
 
         let html_path = write_reports(project.path(), &snapshot).unwrap();
         let report_dir = project.path().join(".tramuri/reports");
@@ -490,7 +576,7 @@ mod tests {
             &fs::read(project.path().join(".tramuri/reports").join(JSON_FILE)).unwrap(),
         )
         .unwrap();
-        assert_eq!(json["schema"], "tramuri.status.v1");
+        assert_eq!(json["schema"], "tramuri.status.v2");
         assert_eq!(json["capabilities"][0]["name"], "test");
         assert_eq!(json["capability_summary"]["total"], 1);
         assert_eq!(json["workspace"]["mission_count"], 1);

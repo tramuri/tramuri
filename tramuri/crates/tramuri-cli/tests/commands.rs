@@ -370,7 +370,7 @@ fn mission_list_status_and_resume_share_safe_workspace_state() {
         .unwrap();
     assert!(status.status.success());
     let status: Value = serde_json::from_slice(&status.stdout).unwrap();
-    assert_eq!(status["schema"], "tramuri.status.v1");
+    assert_eq!(status["schema"], "tramuri.status.v2");
     assert_eq!(status["missions"][0]["outcome"]["state"], "pending");
     assert!(status["missions"][0].get("context").is_none());
     assert!(!status.to_string().contains("private-context"));
@@ -857,6 +857,8 @@ fn execution_and_evidence_retrieval_lists_and_shows_json_records() {
                 status,
                 "--actor",
                 "fde-1",
+                "--work-perspective",
+                "fde",
                 "--notes",
                 "handoff notes",
                 "--json",
@@ -911,6 +913,11 @@ fn execution_and_evidence_retrieval_lists_and_shows_json_records() {
     assert!(list.status.success());
     let listed_executions: Vec<Value> = serde_json::from_slice(&list.stdout).unwrap();
     assert_eq!(listed_executions.len(), 2);
+    assert!(
+        listed_executions
+            .iter()
+            .all(|item| item["work_perspective"] == "fde")
+    );
     let mut expected_executions = executions.clone();
     expected_executions.sort_by(|left, right| {
         right["started_at_unix_ms"]
@@ -1123,6 +1130,101 @@ fn outcome_commands_record_assessments_and_report_verified_state() {
 }
 
 #[test]
+fn exploratory_mission_and_readiness_are_available_through_cli() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+
+    let created = tramuri()
+        .args([
+            "mission",
+            "create",
+            "--path",
+            path,
+            "--objective",
+            "Investigate a customer workflow",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let mission: Value = serde_json::from_slice(&created.stdout).unwrap();
+    assert!(
+        mission["success_contract"]["criteria"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    let initial_status = tramuri()
+        .args(["status", "--path", path, "--json"])
+        .output()
+        .unwrap();
+    assert!(initial_status.status.success());
+    let initial_status: Value = serde_json::from_slice(&initial_status.stdout).unwrap();
+    assert_eq!(
+        initial_status["missions"][0]["readiness"]["state"],
+        "not_assessed"
+    );
+    assert_eq!(initial_status["missions"][0]["outcome"]["state"], "pending");
+
+    let mission_id = mission["id"].as_str().unwrap();
+    let assessed = tramuri()
+        .args([
+            "readiness",
+            "assess",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--activity",
+            "discover",
+            "--state",
+            "blocked",
+            "--blocker",
+            "Waiting for a customer interview",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        assessed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&assessed.stderr)
+    );
+    let assessment: Value = serde_json::from_slice(&assessed.stdout).unwrap();
+    assert_eq!(assessment["decision"], "blocked");
+
+    let shown = tramuri()
+        .args([
+            "readiness",
+            "show",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(shown.status.success());
+    let shown: Value = serde_json::from_slice(&shown.stdout).unwrap();
+    assert_eq!(shown["current"]["state"], "blocked");
+    assert_eq!(shown["history"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn init_and_scan_emit_machine_readable_json() {
     let project = tempdir().expect("project directory should be created");
     fs::write(project.path().join("hello.txt"), "hello\n").expect("fixture should be written");
@@ -1137,7 +1239,7 @@ fn init_and_scan_emit_machine_readable_json() {
         .expect("CLI should launch");
     assert!(init.status.success());
     let init_json: Value = serde_json::from_slice(&init.stdout).expect("init should emit JSON");
-    assert_eq!(init_json["schema_version"], 6);
+    assert_eq!(init_json["schema_version"], 8);
     assert_eq!(init_json["already_initialized"], false);
 
     let repeated_init = tramuri()

@@ -60,11 +60,11 @@ enterprise authentication, subscriptions, or workflow hosting in the MVP.
 The MVP builds a local, inspectable path from intent to reviewed result:
 
 1. Initialize local Tramuri state in any chosen workspace directory.
-2. Create a Mission and Success Contract without requiring a repository scan.
+2. Create an exploratory Mission with an empty Success Contract, then refine criteria during Discovery.
 3. Attach relevant persistent knowledge and explicitly selected Context Pack material.
 4. Record an execution and evidence references without launching tools.
 5. Assess each required criterion and report a Verified Outcome only when the required evidence and
-   review conditions are met.
+   review conditions are met. A contract with no required criteria remains pending, never verified.
 6. Preserve these distinctions through versioned Context and Evidence Pack contracts and equivalent
    Rust CLI and Python SDK operations.
 

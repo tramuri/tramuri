@@ -81,22 +81,40 @@ tramuri --version
 If the `tramuri` command is not found after installation, run `uv tool update-shell` and reopen
 your terminal.
 
+After a new Tramuri release is published, update it with the package manager used to install it:
+
+```bash
+uv tool upgrade tramuri
+# If installed with pipx instead:
+pipx upgrade tramuri
+tramuri --version
+```
+
 Install Tramuri into the project for the assistant you use, preserving existing instructions and hooks:
 
 ```bash
 tramuri install --platform codex --project
 tramuri init .
-tramuri scan .
-tramuri capabilities
-tramuri status --open
 ```
+
+Then describe the outcome in the assistant chat, for example: “I want to work as a Product Engineer
+on improving customer onboarding” or “I am taking over this integration as an FDE.” The installed
+Tramuri skills guide Mission and Success Contract setup, record the selected work perspective, and
+continue with the task; a project scan is optional. After a coherent work session changes Mission
+records, the assistant refreshes and opens the local report once. You can also ask “open the Tramuri
+report” or run `tramuri status --open` yourself.
+
+The local report opens in English or Brazilian Portuguese and shows work perspective (Product
+Engineer/FDE) separately from the recorded actor. Actor labels are provided by the caller and are
+not authenticated; Tramuri does not infer a current Mission owner.
 
 `tramuri capabilities --type skill --json` filters the latest declarative catalog. Scanning honors
 project ignore rules and sensitive-path exclusions; it does not read global agent settings, execute
 hooks, start MCP servers, or make network connections.
 
-Codex, Claude Code, Cursor, and Gemini CLI receive native project instructions, a discoverable
-Tramuri skill, and a project-local session-start hook. Hooks emit only a static reminder; they do
+Codex, Claude Code, Cursor, and Gemini CLI receive native project instructions, a Tramuri overview
+skill plus focused setup, discovery, Mission, and integrity skills, and a project-local session-start
+hook. Hooks emit only a static reminder; they do
 not read the database or attach Mission data. The assistant must explicitly run Tramuri commands
 when it needs workspace context. Hooks follow each host's project trust settings, and installation
 preserves unrelated instructions and hook entries. Cursor uses `.cursor/rules/tramuri.mdc`,
@@ -113,7 +131,20 @@ tramuri install --project --platform gemini
 ```
 
 `tramuri status` summarizes the workspace, `tramuri status --open` generates and opens the local
-report, and `tramuri resume --mission <id>` reconstructs recorded work. `tramuri mission list`
+report, and `tramuri resume --mission <id>` reconstructs recorded work and readiness for the selected
+next activity. A Mission can start without criteria; its Outcome stays pending until required criteria
+are added and reviewed. Readiness is advisory and never blocks execution:
+
+```bash
+tramuri mission create --objective "Investigate onboarding drop-off"
+tramuri readiness assess --mission <id> --activity discover --state needs_review \
+  --gap "Interview data is not available yet"
+tramuri status --open
+```
+
+Use `tramuri readiness show --mission <id>` to review the current assessment and its history.
+Changing the objective, Success Contract, or explicitly linked Knowledge/Capabilities marks the
+latest readiness as stale while retaining the original assessment. `tramuri mission list`
 discovers Missions. The report files are `.tramuri/reports/tramauri.html`, `tramauri.md`, and
 `tramauri.json`. Opening an older supported database can apply its existing schema migrations;
 status reads do not change Mission, execution, evidence, or outcome records. These commands work
@@ -124,6 +155,9 @@ Knowledge and discovered Capabilities can be explicitly associated with a Missio
 includes only those recorded associations. Tramuri does not infer Mission relevance; capability
 links retain the observed source hash and become changed, missing, or unverified after later scans.
 Actor attribution is caller supplied and is not authenticated.
+
+Follow complete synthetic projects from setup to handoff in the [Product Engineer and FDE
+examples](docs/examples/README.md).
 
 ### How an assistant can use Tramuri
 

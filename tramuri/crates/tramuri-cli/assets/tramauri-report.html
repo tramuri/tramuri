@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light">
+  <title>Tramuri · Workspace</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f4f6f5;
+      --surface: #fff;
+      --surface-soft: #f8faf9;
+      --ink: #172522;
+      --muted: #64736f;
+      --line: #e2e9e6;
+      --teal: #167d70;
+      --teal-soft: #e5f4f0;
+      --green: #19744f;
+      --green-soft: #e8f5ed;
+      --amber: #94610a;
+      --amber-soft: #fff3d8;
+      --red: #ae413b;
+      --red-soft: #fff0ee;
+      --shadow: 0 12px 34px rgba(23, 49, 42, .055);
+      font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); }
+    button, input, select { font: inherit; }
+    button, a, select, input { outline-offset: 3px; }
+    :focus-visible { outline: 3px solid #4ab7a3; }
+    a { color: inherit; text-decoration: none; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
+    .rail { position: sticky; top: 0; height: 100vh; padding: 26px 16px; background: #fbfcfb; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+    .brand { display: flex; gap: 11px; align-items: center; padding: 0 10px 28px; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; color: white; background: var(--teal); border-radius: 11px 11px 11px 4px; font-size: 18px; font-weight: 750; }
+    .brand-name { font-size: 17px; line-height: 1.15; font-weight: 730; letter-spacing: -.03em; }
+    .brand-tag { color: var(--muted); font-size: 11px; margin-top: 3px; }
+    .rail-label { padding: 0 12px; margin: 8px 0; color: #8b9793; font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .nav { display: grid; gap: 4px; }
+    .nav a { padding: 9px 12px; border-radius: 9px; color: #53635f; font-weight: 570; font-size: 13px; }
+    .nav a:hover, .nav a:focus-visible { background: var(--teal-soft); color: var(--teal); }
+    .rail-note { margin-top: auto; padding: 13px; color: var(--muted); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 12px; font-size: 11px; }
+    .rail-note strong { display: block; color: var(--ink); margin-bottom: 4px; font-size: 12px; }
+    .main { min-width: 0; }
+    .topbar { height: 66px; display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 0 clamp(20px, 4vw, 58px); background: rgba(255,255,255,.72); border-bottom: 1px solid var(--line); }
+    .local-mark { color: var(--muted); font-size: 12px; }
+    .language { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 9px; }
+    .language button { border: 0; border-radius: 6px; padding: 5px 9px; color: var(--muted); background: transparent; cursor: pointer; font-size: 11px; font-weight: 700; }
+    .language button[aria-pressed="true"] { color: #fff; background: var(--teal); }
+    .content { width: min(1160px, 100%); margin: 0 auto; padding: 35px clamp(20px, 4vw, 58px) 64px; }
+    .eyebrow { margin: 0 0 8px; color: var(--teal); font-size: 10px; font-weight: 760; letter-spacing: .13em; text-transform: uppercase; }
+    .hero { display: flex; justify-content: space-between; gap: 24px; align-items: flex-end; margin-bottom: 26px; }
+    h1 { margin: 0; font-size: clamp(27px, 3vw, 38px); line-height: 1.12; letter-spacing: -.045em; font-weight: 690; }
+    .hero-copy { max-width: 630px; margin: 11px 0 0; color: var(--muted); font-size: 14px; }
+    .generated { flex: 0 0 auto; padding: 11px 14px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 11px; font-size: 11px; }
+    .generated strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 11px; margin: 25px 0 34px; }
+    .metric { min-height: 100px; padding: 16px 17px; background: var(--surface); border: 1px solid var(--line); border-radius: 13px; box-shadow: var(--shadow); }
+    .metric-label { color: var(--muted); font-size: 11px; font-weight: 600; }
+    .metric-value { display: block; margin-top: 5px; font-size: 28px; line-height: 1; letter-spacing: -.04em; font-weight: 720; }
+    .metric-detail { display: block; margin-top: 8px; color: var(--muted); font-size: 10px; }
+    .section { scroll-margin-top: 22px; margin-top: 36px; }
+    .section-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 14px; }
+    .section-heading h2 { margin: 0; font-size: 19px; line-height: 1.2; letter-spacing: -.025em; font-weight: 680; }
+    .section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .toolbar { display: flex; gap: 9px; margin: 16px 0 13px; }
+    .search-wrap { position: relative; flex: 1; min-width: 0; }
+    .search-wrap input { width: 100%; height: 40px; padding: 0 13px 0 36px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; }
+    .search-wrap input::placeholder { color: #8b9793; }
+    .search-icon { position: absolute; top: 11px; left: 13px; color: #81908b; font-size: 13px; }
+    .toolbar select { min-width: 146px; height: 40px; padding: 0 30px 0 11px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; }
+    .mission-list { display: grid; gap: 12px; }
+    .mission-card { overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow); }
+    .mission-card[open] { border-color: #cbded8; }
+    .mission-card > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; list-style: none; cursor: pointer; }
+    .mission-card > summary::-webkit-details-marker { display: none; }
+    .mission-card > summary:hover { background: #fbfdfc; }
+    .mission-title { max-width: 720px; font-size: 16px; line-height: 1.35; font-weight: 670; letter-spacing: -.015em; }
+    .mission-meta { display: flex; flex-wrap: wrap; gap: 7px 13px; margin-top: 6px; color: var(--muted); font-size: 10px; }
+    .summary-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; min-height: 23px; padding: 3px 8px; border-radius: 999px; font-size: 10px; line-height: 1.2; font-weight: 680; white-space: nowrap; }
+    .badge-open, .badge-pending, .badge-unverified, .badge-in_progress, .badge-blocked { color: var(--amber); background: var(--amber-soft); }
+    .badge-closed, .badge-verified, .badge-met, .badge-completed, .badge-observed { color: var(--green); background: var(--green-soft); }
+    .badge-not_achieved, .badge-not_met, .badge-failed, .badge-missing, .badge-changed { color: var(--red); background: var(--red-soft); }
+    .readiness-blocked, .readiness-stale { color: var(--red); background: var(--red-soft); }
+    .readiness-ready { color: var(--green); background: var(--green-soft); }
+    .badge-cancelled, .badge-neutral { color: #5d6b67; background: #edf1ef; }
+    .mission-body { padding: 0 20px 21px; border-top: 1px solid #eef2f0; }
+    .readiness-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 15px 0 0; padding: 11px 13px; background: #f4f8f6; border: 1px solid #e3ece8; border-radius: 10px; }
+    .readiness-strip strong { font-size: 10px; }
+    .readiness-notes { display: grid; gap: 3px; width: 100%; color: var(--muted); font-size: 10px; }
+    .mission-summary { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; margin: 16px 0; padding: 14px 15px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 11px; }
+    .mission-summary strong { display: block; margin-bottom: 3px; font-size: 11px; }
+    .mission-summary span { color: var(--muted); font-size: 11px; }
+    .outcome-callout { max-width: 340px; padding: 9px 11px; border-radius: 9px; font-size: 10px; font-weight: 650; }
+    .outcome-callout.pending { color: var(--amber); background: var(--amber-soft); }
+    .outcome-callout.verified { color: var(--green); background: var(--green-soft); }
+    .outcome-callout.not_achieved { color: var(--red); background: var(--red-soft); }
+    .detail-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 13px; }
+    .panel { min-width: 0; padding: 15px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+    .panel h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px; font-size: 12px; font-weight: 700; }
+    .criterion-list, .timeline { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .criterion { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px; background: var(--surface-soft); border: 1px solid #edf1ef; border-radius: 9px; }
+    .criterion-text { font-size: 11px; line-height: 1.5; }
+    .criterion-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+    .tiny-tag { color: var(--muted); background: #eef2f0; border-radius: 5px; padding: 2px 5px; font-size: 9px; }
+    .history { margin-top: 7px; color: var(--muted); font-size: 10px; }
+    .history summary { cursor: pointer; }
+    .history-item { padding: 5px 0 0 10px; }
+    .timeline-item { position: relative; padding: 2px 0 8px 13px; border-left: 1px solid #dce7e3; }
+    .timeline-item:last-child { padding-bottom: 1px; border-left-color: transparent; }
+    .timeline-item::before { position: absolute; top: 5px; left: -4px; width: 7px; height: 7px; content: ""; border-radius: 50%; background: #62a99b; box-shadow: 0 0 0 3px #e8f4f1; }
+    .timeline-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 10px; font-weight: 640; }
+    .timeline-meta { margin-top: 3px; color: var(--muted); font-size: 9px; }
+    .perspective { color: var(--teal); font-size: 9px; font-weight: 700; }
+    .empty { padding: 15px; color: var(--muted); background: var(--surface-soft); border: 1px dashed #d8e2de; border-radius: 10px; font-size: 11px; }
+    .activity-list, .capability-list { display: grid; gap: 8px; }
+    .activity-row, .capability-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+    .activity-title, .capability-title { font-size: 11px; font-weight: 640; }
+    .activity-meta, .capability-meta { margin-top: 3px; color: var(--muted); font-size: 9px; overflow-wrap: anywhere; }
+    .notice { margin-top: 16px; padding: 12px 14px; color: #566661; background: #edf5f2; border: 1px solid #dbe9e4; border-radius: 10px; font-size: 10px; }
+    .notice strong { color: var(--ink); }
+    .warning { margin-top: 8px; padding: 9px 11px; color: var(--amber); background: var(--amber-soft); border-radius: 8px; font-size: 10px; overflow-wrap: anywhere; }
+    .footnote { margin: 28px 0 0; padding-top: 15px; color: var(--muted); border-top: 1px solid var(--line); font-size: 10px; }
+    @media (max-width: 1000px) {
+      .app { grid-template-columns: 190px minmax(0, 1fr); }
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 720px) {
+      .app { display: block; }
+      .rail { position: static; height: auto; padding: 13px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .brand { padding: 0 2px 10px; }
+      .rail-label, .rail-note { display: none; }
+      .nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .nav a { padding: 8px 5px; text-align: center; font-size: 10px; }
+      .topbar { height: 52px; }
+      .content { padding-top: 25px; }
+      .hero { display: block; }
+      .generated { display: inline-block; margin-top: 14px; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 460px) {
+      .mission-card > summary { align-items: flex-start; padding: 15px; }
+      .mission-body { padding: 0 14px 15px; }
+      .mission-summary { grid-template-columns: 1fr; }
+      .outcome-callout { max-width: none; }
+      .summary-badges { flex-direction: column; align-items: flex-end; }
+      .toolbar { flex-direction: column; }
+      .toolbar select { width: 100%; }
+      .activity-row, .capability-row { display: block; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+    @media print {
+      body { background: #fff; }
+      .app { display: block; }
+      .rail, .topbar, .toolbar { display: none !important; }
+      .content { width: 100%; padding: 0; }
+      .mission-card, .metric, .panel { box-shadow: none; break-inside: avoid; }
+      .mission-card:not([open]) > .mission-body { display: block; }
+      .section { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <script type="application/json" id="report-data">__TRAMURI_REPORT_DATA__</script>
+  <div class="app">
+    <aside class="rail">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">T</div>
+        <div><div class="brand-name">Tramuri</div><div class="brand-tag" data-i18n="brandTag">From intent to verified outcomes</div></div>
+      </div>
+      <div class="rail-label" data-i18n="workspaceLabel">Workspace</div>
+      <nav class="nav" aria-label="Report sections">
+        <a href="#overview" data-i18n="navOverview">Overview</a>
+        <a href="#missions" data-i18n="navMissions">Missions</a>
+        <a href="#activity" data-i18n="navActivity">Activity</a>
+        <a href="#capabilities" data-i18n="navCapabilities">Capabilities</a>
+      </nav>
+      <div class="rail-note"><strong data-i18n="localTitle">Private by default</strong><span data-i18n="localNote">This report stays in the local workspace. It uses no external services.</span></div>
+    </aside>
+    <div class="main">
+      <div class="topbar">
+        <span class="local-mark" data-i18n="localReport">Local report</span>
+        <div class="language" role="group" aria-label="Language">
+          <button id="lang-en" type="button" aria-pressed="true">EN</button>
+          <button id="lang-pt" type="button" aria-pressed="false">PT-BR</button>
+        </div>
+      </div>
+      <main class="content">
+        <section id="overview">
+          <div class="hero">
+            <div>
+              <p class="eyebrow" data-i18n="eyebrow">WORKSPACE / OVERVIEW</p>
+              <h1 data-i18n="pageTitle">Your work, in context.</h1>
+              <p class="hero-copy" data-i18n="pageDescription">A local view of Missions, recorded work, evidence, and reviewed outcomes.</p>
+            </div>
+            <div class="generated"><strong data-i18n="generatedLabel">Report generated</strong><span id="generated"></span></div>
+          </div>
+          <section class="metrics" id="metrics" aria-label="Workspace summary"></section>
+          <div class="notice"><strong data-i18n="integrityTitle">Execution completed is not outcome verified.</strong> <span data-i18n="integrityNote">Required criteria need supported assessments.</span></div>
+        </section>
+
+        <section class="section" id="missions">
+          <div class="section-heading"><div><h2 data-i18n="missionsTitle">Missions</h2><p data-i18n="missionsDescription">Open a Mission to review its current Success Contract and recorded work.</p></div></div>
+          <div class="toolbar">
+            <label class="search-wrap"><span class="search-icon" aria-hidden="true">⌕</span><input id="search" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="Search Missions and capabilities" aria-label="Search"></label>
+            <select id="state" aria-label="Mission state">
+              <option value="all" data-i18n="filterAll">All Missions</option>
+              <option value="open" data-i18n="filterOpen">Open</option>
+              <option value="closed" data-i18n="filterClosed">Closed</option>
+            </select>
+          </div>
+          <div class="mission-list" id="mission-list"></div>
+        </section>
+        <section class="section" id="activity">
+          <div class="section-heading"><div><h2 data-i18n="activityTitle">Recent activity</h2><p data-i18n="activityDescription">Recorded events, newest first.</p></div></div>
+          <div class="activity-list" id="activity-list"></div>
+        </section>
+        <section class="section" id="capabilities">
+          <div class="section-heading"><div><h2 data-i18n="capabilitiesTitle">Declared capabilities</h2><p data-i18n="capabilitiesDescription">Resources recognized in the latest authorized scan.</p></div></div>
+          <div class="capability-list" id="capability-list"></div>
+          <div class="notice"><strong data-i18n="capabilityCaveatTitle">Declarations are not operational checks.</strong> <span data-i18n="capabilityCaveat">Tramuri does not execute hooks, connect to MCP servers, or verify declared resources.</span></div>
+        </section>
+        <p class="footnote" data-i18n="privacyNote">This report omits Mission context, notes, evidence locators, and review explanations. Actor labels are caller-supplied, not authenticated.</p>
+      </main>
+    </div>
+  </div>
+  <script>
+    const report = JSON.parse(document.getElementById("report-data").textContent);
+    const data = report;
+    const actorLabels = new Map((report.execution_actors || []).map(item => [item.execution_id, item.actor_reference]));
+    const strings = {
+      en: {
+        documentTitle: "Tramuri · Workspace", brandTag: "From intent to verified outcomes", workspaceLabel: "Workspace",
+        navOverview: "Overview", navMissions: "Missions", navActivity: "Activity", navCapabilities: "Capabilities",
+        localTitle: "Private by default", localNote: "This report stays in the local workspace. It uses no external services.", localReport: "Local report",
+        eyebrow: "WORKSPACE / OVERVIEW", pageTitle: "Your work, in context.",
+        pageDescription: "A local view of Missions, recorded work, evidence, and reviewed outcomes.", generatedLabel: "Report generated",
+        integrityTitle: "Execution completed is not outcome verified.", integrityNote: "A result is verified only when required criteria have recorded assessments supported by evidence.",
+        missionsTitle: "Missions", missionsDescription: "Open a Mission to review its current Success Contract and recorded work.",
+        searchPlaceholder: "Search Missions and capabilities", filterAll: "All Missions", filterOpen: "Open", filterClosed: "Closed",
+        activityTitle: "Recent activity", activityDescription: "Recorded events, newest first.", capabilitiesTitle: "Declared capabilities",
+        capabilitiesDescription: "Resources recognized in the latest authorized scan.", capabilityCaveatTitle: "Declarations are not operational checks.",
+        capabilityCaveat: "Tramuri does not execute hooks, connect to MCP servers, or verify declared resources.",
+        privacyNote: "This report omits Mission context, notes, evidence locators, and review explanations. Actor labels are caller-supplied, not authenticated.",
+        metricMissions: "Missions", metricOpen: "Open", metricPending: "Outcomes pending", metricVerified: "Verified outcomes", metricCapabilities: "Capabilities",
+        noMissions: "No Missions match these filters.", noMissionsHelp: "Create a Mission from the assistant or CLI to begin tracking an outcome.",
+        noActivity: "No activity has been recorded.", noCapabilities: "No capabilities are recorded yet.",
+        scanIncomplete: "No complete scan is recorded. Discovery is optional; Missions work without a project scan.",
+        stateOpen: "Open", stateClosed: "Closed", outcomePending: "Outcome pending review", outcomeVerified: "Outcome verified", outcomeNotAchieved: "Required criteria not met",
+        nextActivity: "Current focus", activityNotSelected: "No next activity selected", readiness: "Context readiness", readinessNotAssessed: "Not assessed", readinessPreparing: "Preparing", readinessNeedsReview: "Needs review", readinessReady: "Ready for this activity", readinessStale: "Stale · review needed", readinessBlocked: "Blocked for this activity", readinessCheck: "Check applied", linkedContext: "linked context references",
+        activityDiscover: "Discovery", activityPrototype: "Prototype", activityImplement: "Implementation", activityDeploy: "Deployment", activityVerify: "Verification", noCriteria: "No success criteria recorded yet. Outcome remains unverified.", gapLabel: "Gap", blockerLabel: "Critical blocker", acceptedUncertaintyLabel: "Accepted uncertainty",
+        contractRevision: "Contract revision", criteria: "Success criteria", executions: "Execution history", evidence: "Evidence references",
+        required: "Required", optional: "Optional", assessmentMet: "Met", assessmentNotMet: "Not met", assessmentUnverified: "Not verified",
+        noAssessments: "Not assessed", noExecutions: "No executions recorded.", noEvidence: "No evidence references recorded.",
+        notRecorded: "Not recorded", actor: "Actor", perspective: "Work perspective", perspectiveProduct: "Product Engineer", perspectiveFde: "FDE", perspectiveOther: "Other",
+        execution: "Execution", executionInProgress: "In progress", executionCompleted: "Completed", executionBlocked: "Blocked", executionFailed: "Failed", executionCancelled: "Cancelled",
+        evidenceProjectFile: "Project file", evidenceExternal: "External reference", evidenceAttestation: "Human attestation", captured: "Captured",
+        contractHistory: "Previous contract revisions", assessmentHistory: "Review history", verifierHuman: "Human review", verifierMechanism: "Mechanism review",
+        evidenceUsed: "Evidence IDs", activityContractCreated: "Success Contract created", activityContractRevised: "Success Contract revised",
+        activityEvidence: "Evidence recorded", activityCriterionMet: "Criterion assessed as met", activityCriterionNotMet: "Criterion assessed as not met",
+        activityCriterionUnverified: "Criterion left unverified", noSearchResults: "No matching Missions or capabilities.",
+        capabilityAgent: "Agent", capabilitySkill: "Skill", capabilityRule: "Instruction or rule", capabilityHook: "Hook", capabilityMcp: "MCP server",
+        scanComplete: "Scan complete", scanPartial: "Scan incomplete", stateRecognized: "Recognized declaration", stateInvalid: "Invalid declaration",
+        availabilityObserved: "Observed", availabilityUnverified: "Not verified", warning: "Scan note",
+        missionId: "Mission ID", assessedCount: "assessed", outcomeExplanationPending: "Recorded work is not a verified outcome; criteria still need review.",
+        outcomeExplanationVerified: "All required criteria have recorded successful assessments.",
+        outcomeExplanationNotAchieved: "At least one required criterion is recorded as not met."
+      },
+      pt: {
+        documentTitle: "Tramuri · Workspace", brandTag: "Da intenção a resultados verificados", workspaceLabel: "Workspace",
+        navOverview: "Visão geral", navMissions: "Missions", navActivity: "Atividade", navCapabilities: "Capacidades",
+        localTitle: "Privado por padrão", localNote: "Este relatório fica no workspace local. Nenhum serviço externo é usado.", localReport: "Relatório local",
+        eyebrow: "WORKSPACE / VISÃO GERAL", pageTitle: "Seu trabalho, com contexto.",
+        pageDescription: "Uma visão local das Missions, do trabalho registrado, das evidências e dos resultados avaliados.", generatedLabel: "Relatório gerado",
+        integrityTitle: "Execução concluída não significa resultado verificado.", integrityNote: "Critérios obrigatórios precisam de avaliações registradas com evidências.",
+        missionsTitle: "Missions", missionsDescription: "Abra uma Mission para revisar o Success Contract vigente e o trabalho registrado.",
+        searchPlaceholder: "Buscar Missions e capacidades", filterAll: "Todas as Missions", filterOpen: "Abertas", filterClosed: "Fechadas",
+        activityTitle: "Atividade recente", activityDescription: "Eventos registrados, do mais recente ao mais antigo.", capabilitiesTitle: "Capacidades declaradas",
+        capabilitiesDescription: "Recursos reconhecidos na última varredura autorizada.", capabilityCaveatTitle: "Declaração não comprova funcionamento.",
+        capabilityCaveat: "O Tramuri não executa hooks, conecta a servidores MCP nem verifica recursos declarados.",
+        privacyNote: "Este relatório omite contexto da Mission, notas, locators de evidências e explicações de avaliações. Os nomes dos atores são informados pelo chamador e não são autenticados.",
+        metricMissions: "Missions", metricOpen: "Abertas", metricPending: "Resultados pendentes", metricVerified: "Resultados verificados", metricCapabilities: "Capacidades",
+        noMissions: "Nenhuma Mission corresponde aos filtros.", noMissionsHelp: "Crie uma Mission pelo assistente ou pela CLI para acompanhar um resultado.",
+        noActivity: "Nenhuma atividade foi registrada.", noCapabilities: "Nenhuma capacidade foi registrada.",
+        scanIncomplete: "Não há uma varredura completa registrada. A descoberta é opcional; Missions funcionam sem varredura.",
+        stateOpen: "Aberta", stateClosed: "Fechada", outcomePending: "Resultado aguardando avaliação", outcomeVerified: "Resultado verificado", outcomeNotAchieved: "Critérios obrigatórios não atendidos",
+        nextActivity: "Foco atual", activityNotSelected: "Próxima atividade não definida", readiness: "Prontidão do contexto", readinessNotAssessed: "Não avaliada", readinessPreparing: "Em preparação", readinessNeedsReview: "Precisa de revisão", readinessReady: "Pronto para esta atividade", readinessStale: "Desatualizada · precisa revisar", readinessBlocked: "Bloqueado para esta atividade", readinessCheck: "Verificação aplicada", linkedContext: "referências de contexto vinculadas",
+        activityDiscover: "Discovery", activityPrototype: "Protótipo", activityImplement: "Implementação", activityDeploy: "Implantação", activityVerify: "Verificação", noCriteria: "Ainda não há critérios de sucesso. O resultado permanece não verificado.", gapLabel: "Lacuna", blockerLabel: "Bloqueio crítico", acceptedUncertaintyLabel: "Incerteza aceita",
+        contractRevision: "Revisão do contrato", criteria: "Critérios de sucesso", executions: "Histórico de execuções", evidence: "Referências de evidência",
+        required: "Obrigatório", optional: "Opcional", assessmentMet: "Atendido", assessmentNotMet: "Não atendido", assessmentUnverified: "Não verificado",
+        noAssessments: "Não avaliado", noExecutions: "Nenhuma execução registrada.", noEvidence: "Nenhuma referência de evidência registrada.",
+        notRecorded: "Não registrado", actor: "Executor", perspective: "Papel de trabalho", perspectiveProduct: "Product Engineer", perspectiveFde: "FDE", perspectiveOther: "Outro",
+        execution: "Execução", executionInProgress: "Em andamento", executionCompleted: "Concluída", executionBlocked: "Bloqueada", executionFailed: "Falhou", executionCancelled: "Cancelada",
+        evidenceProjectFile: "Arquivo do projeto", evidenceExternal: "Referência externa", evidenceAttestation: "Atestado humano", captured: "Capturada",
+        contractHistory: "Revisões anteriores do contrato", assessmentHistory: "Histórico de avaliações", verifierHuman: "Avaliação humana", verifierMechanism: "Avaliação por mecanismo",
+        evidenceUsed: "IDs das evidências", activityContractCreated: "Success Contract criado", activityContractRevised: "Success Contract revisado",
+        activityEvidence: "Evidência registrada", activityCriterionMet: "Critério avaliado como atendido", activityCriterionNotMet: "Critério avaliado como não atendido",
+        activityCriterionUnverified: "Critério mantido como não verificado", noSearchResults: "Nenhuma Mission ou capacidade encontrada.",
+        capabilityAgent: "Agente", capabilitySkill: "Skill", capabilityRule: "Instrução ou regra", capabilityHook: "Hook", capabilityMcp: "Servidor MCP",
+        scanComplete: "Varredura completa", scanPartial: "Varredura incompleta", stateRecognized: "Declaração reconhecida", stateInvalid: "Declaração inválida",
+        availabilityObserved: "Observada", availabilityUnverified: "Não verificada", warning: "Observação da varredura",
+        missionId: "ID da Mission", assessedCount: "avaliados", outcomeExplanationPending: "Trabalho registrado ainda não é resultado verificado; faltam avaliações dos critérios.",
+        outcomeExplanationVerified: "Todos os critérios obrigatórios têm avaliações positivas registradas.",
+        outcomeExplanationNotAchieved: "Pelo menos um critério obrigatório está registrado como não atendido."
+      }
+    };
+    let language = "en";
+    const text = key => strings[language][key] || strings.en[key] || key;
+    const make = (tag, value, className) => {
+      const item = document.createElement(tag);
+      if (value !== undefined && value !== null) item.textContent = value;
+      if (className) item.className = className;
+      return item;
+    };
+    const date = value => {
+      if (value === undefined || value === null) return text("notRecorded");
+      const locale = language === "pt" ? "pt-BR" : "en-US";
+      return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+    };
+    const stateLabel = value => {
+      const keys = {
+        open: "stateOpen", closed: "stateClosed", pending: "outcomePending", verified: "outcomeVerified",
+        not_achieved: "outcomeNotAchieved", met: "assessmentMet", not_met: "assessmentNotMet",
+        unverified: "assessmentUnverified", in_progress: "executionInProgress", completed: "executionCompleted",
+        blocked: "executionBlocked", failed: "executionFailed", cancelled: "executionCancelled",
+        observed: "availabilityObserved", changed: "stateInvalid", missing: "stateInvalid",
+        declared_and_recognized: "stateRecognized", invalid: "stateInvalid"
+      };
+      return text(keys[value] || "notRecorded");
+    };
+    const missionActivityLabel = value => {
+      const keys = { discover: "activityDiscover", prototype: "activityPrototype", implement: "activityImplement", deploy: "activityDeploy", verify: "activityVerify" };
+      return value ? (keys[value] ? text(keys[value]) : value) : text("activityNotSelected");
+    };
+    const readinessLabel = value => text(({ not_assessed: "readinessNotAssessed", preparing: "readinessPreparing", needs_review: "readinessNeedsReview", ready: "readinessReady", stale: "readinessStale", blocked: "readinessBlocked" })[value] || "readinessNotAssessed");
+    const perspectiveLabel = value => {
+      if (value === "product_engineer") return text("perspectiveProduct");
+      if (value === "fde") return text("perspectiveFde");
+      if (value === "other") return text("perspectiveOther");
+      return text("notRecorded");
+    };
+    const activityLabel = value => {
+      if (value.startsWith("execution_")) return text("execution") + " · " + stateLabel(value.slice(10));
+      const keys = {
+        success_contract_created: "activityContractCreated", success_contract_revised: "activityContractRevised",
+        evidence_recorded: "activityEvidence", criterion_met: "activityCriterionMet",
+        criterion_notmet: "activityCriterionNotMet", criterion_unverified: "activityCriterionUnverified"
+      };
+      return text(keys[value] || "activityEvidence");
+    };
+    function applyLanguage(next) {
+      language = next;
+      document.documentElement.lang = next === "pt" ? "pt-BR" : "en";
+      document.title = text("documentTitle");
+      document.querySelectorAll("[data-i18n]").forEach(item => { item.textContent = text(item.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach(item => { item.placeholder = text(item.dataset.i18nPlaceholder); });
+      document.getElementById("generated").textContent = date(data.generated_at_unix_ms);
+      document.getElementById("lang-en").setAttribute("aria-pressed", String(next === "en"));
+      document.getElementById("lang-pt").setAttribute("aria-pressed", String(next === "pt"));
+      try { localStorage.setItem("tramuri-report-language", next); } catch (_) {}
+      render();
+    }
+    function renderMetrics() {
+      const values = [
+        [text("metricMissions"), data.workspace.mission_count, text("metricOpen") + ": " + data.workspace.open_mission_count],
+        [text("metricOpen"), data.workspace.open_mission_count, text("stateClosed") + ": " + data.workspace.closed_mission_count],
+        [text("metricPending"), data.missions.filter(m => m.outcome.state === "pending").length, text("outcomeExplanationPending")],
+        [text("metricVerified"), data.missions.filter(m => m.outcome.state === "verified").length, text("outcomeExplanationVerified")],
+        [text("metricCapabilities"), report.capabilities.length, report.capability_scan_complete ? text("scanComplete") : text("scanPartial")]
+      ];
+      const host = document.getElementById("metrics");
+      host.replaceChildren();
+      for (const [label, value, detail] of values) {
+        const card = make("div", undefined, "metric");
+        card.append(make("span", label, "metric-label"), make("strong", String(value), "metric-value"), make("span", detail, "metric-detail"));
+        host.append(card);
+      }
+    }
+    function renderMissions(query, state) {
+      const host = document.getElementById("mission-list");
+      host.replaceChildren();
+      const matching = data.missions.filter(m => (state === "all" || m.state === state)
+        && (!query || m.objective.toLocaleLowerCase().includes(query) || m.id.toLowerCase().includes(query)));
+      if (!matching.length) {
+        const empty = make("div", undefined, "empty");
+        empty.append(make("strong", text("noMissions")), make("div", text("noMissionsHelp")));
+        host.append(empty);
+        return;
+      }
+      let opened = false;
+      for (const mission of matching) {
+        const card = make("details", undefined, "mission-card");
+        card.open = mission.state === "open" && !opened;
+        opened ||= card.open;
+        const summary = make("summary");
+        const heading = make("div");
+        heading.append(make("div", mission.objective, "mission-title"));
+        const meta = make("div", undefined, "mission-meta");
+        meta.append(
+          make("span", text("missionId") + ": " + mission.id.slice(0, 8)),
+          make("span", text("contractRevision") + " " + mission.contract.revision),
+          make("span", date(mission.created_at_unix_ms))
+        );
+        heading.append(meta);
+        const badges = make("div", undefined, "summary-badges");
+        badges.append(
+          make("span", stateLabel(mission.state), "badge badge-" + mission.state),
+          make("span", stateLabel(mission.outcome.state), "badge badge-" + mission.outcome.state)
+        );
+        summary.append(heading, badges);
+        card.append(summary);
+
+        const body = make("div", undefined, "mission-body");
+        const readiness = mission.readiness || { activity: null, state: "not_assessed", assessment: null };
+        const readinessPanel = make("div", undefined, "readiness-strip");
+        readinessPanel.append(
+          make("strong", text("nextActivity") + ": " + missionActivityLabel(readiness.activity)),
+          make("span", text("readiness") + ": " + readinessLabel(readiness.state), "badge readiness-" + readiness.state)
+        );
+        if (readiness.assessment) {
+          const notes = make("div", undefined, "readiness-notes");
+          for (const item of readiness.assessment.criteria_applied || []) notes.append(make("div", text("readinessCheck") + ": " + item));
+          for (const [key, items] of [["gapLabel", readiness.assessment.gaps], ["blockerLabel", readiness.assessment.blockers], ["acceptedUncertaintyLabel", readiness.assessment.accepted_uncertainties]]) {
+            for (const item of items || []) notes.append(make("div", text(key) + ": " + item));
+          }
+          notes.append(make("div", (readiness.assessment.context_references || []).length + " " + text("linkedContext")));
+          if (readiness.state === "stale") notes.append(make("div", text("readinessStale")));
+          readinessPanel.append(notes);
+        }
+        body.append(readinessPanel);
+        const assessed = mission.outcome.criteria.filter(review => review.assessments.length > 0).length;
+        const missionSummary = make("div", undefined, "mission-summary");
+        const contract = make("div");
+        contract.append(
+          make("strong", text("contractRevision") + " " + mission.outcome.contract_revision),
+          make("span", assessed + " / " + mission.outcome.criteria.length + " " + text("assessedCount"))
+        );
+        const outcomeText = mission.outcome.state === "verified"
+          ? text("outcomeExplanationVerified")
+          : mission.outcome.state === "not_achieved"
+            ? text("outcomeExplanationNotAchieved")
+            : text("outcomeExplanationPending");
+        missionSummary.append(contract, make("div", outcomeText, "outcome-callout " + mission.outcome.state));
+        body.append(missionSummary);
+
+        const grid = make("div", undefined, "detail-grid");
+        const criteriaPanel = make("section", undefined, "panel");
+        criteriaPanel.append(make("h3", text("criteria") + " · " + mission.outcome.criteria.length));
+        const criteriaList = make("ul", undefined, "criterion-list");
+        if (!mission.outcome.criteria.length) criteriaList.append(make("li", text("noCriteria"), "empty"));
+        for (const review of mission.outcome.criteria) {
+          const criterion = make("li", undefined, "criterion");
+          const textBlock = make("div");
+          textBlock.append(make("div", review.criterion.description, "criterion-text"));
+          const tags = make("div", undefined, "criterion-tags");
+          tags.append(make("span", review.criterion.required ? text("required") : text("optional"), "tiny-tag"));
+          const latest = review.assessments[review.assessments.length - 1];
+          tags.append(make("span", latest ? text("assessmentHistory") + ": " + stateLabel(latest.result) : text("noAssessments"), "tiny-tag"));
+          textBlock.append(tags);
+          if (review.assessments.length) {
+            const history = make("details", undefined, "history");
+            history.append(make("summary", text("assessmentHistory") + " (" + review.assessments.length + ")"));
+            for (const assessment of [...review.assessments].reverse()) {
+              const verifier = assessment.verifier_kind === "human" ? text("verifierHuman") : text("verifierMechanism");
+              history.append(make("div", stateLabel(assessment.result) + " · " + verifier + " · " + date(assessment.assessed_at_unix_ms) + " · " + text("evidenceUsed") + ": " + (assessment.evidence_ids.join(", ") || text("notRecorded")), "history-item"));
+            }
+            textBlock.append(history);
+          }
+          criterion.append(textBlock, make("span", stateLabel(latest ? latest.result : "unverified"), "badge badge-" + (latest ? latest.result : "unverified")));
+          criteriaList.append(criterion);
+        }
+        criteriaPanel.append(criteriaList);
+
+        const workPanel = make("section", undefined, "panel");
+        workPanel.append(make("h3", text("executions") + " & " + text("evidence") + " · " + (mission.executions.length + mission.evidence.length)));
+        const timeline = make("ul", undefined, "timeline");
+        const events = [];
+        for (const execution of mission.executions) {
+          const actor = actorLabels.get(execution.id);
+          const actorKind = execution.actor_kind === "agent" ? "Agent" : execution.actor_kind === "human" ? "Human" : "Tool";
+          events.push({
+            time: execution.ended_at_unix_ms || execution.started_at_unix_ms,
+            item: execution, type: "execution", title: stateLabel(execution.state),
+            actor: actor ? actorKind + " · " + actor : actorKind, perspective: execution.work_perspective
+          });
+        }
+        for (const evidence of mission.evidence) {
+          events.push({
+            time: evidence.captured_at_unix_ms, item: evidence, type: "evidence",
+            title: text(evidence.kind === "project_file" ? "evidenceProjectFile" : evidence.kind === "external_reference" ? "evidenceExternal" : "evidenceAttestation"),
+            actor: "", perspective: null
+          });
+        }
+        events.sort((a, b) => b.time - a.time || String(a.item.id).localeCompare(String(b.item.id)));
+        if (!events.length) timeline.append(make("li", text("noExecutions") + " " + text("noEvidence"), "empty"));
+        for (const event of events) {
+          const row = make("li", undefined, "timeline-item");
+          const title = make("div", undefined, "timeline-title");
+          title.append(make("span", event.type === "execution" ? text("execution") + " · " + event.title : text("evidence") + " · " + event.title));
+          if (event.perspective) title.append(make("span", perspectiveLabel(event.perspective), "perspective"));
+          row.append(title);
+          const meta = make("div", undefined, "timeline-meta");
+          meta.append(make("span", event.type === "execution"
+            ? text("actor") + ": " + event.actor + " · " + date(event.time)
+            : stateLabel(event.item.availability) + " · " + text("captured") + " " + date(event.time)));
+          row.append(meta);
+          timeline.append(row);
+        }
+        workPanel.append(timeline);
+        grid.append(criteriaPanel, workPanel);
+        body.append(grid);
+
+        if (mission.contract_history.length > 1) {
+          const history = make("details", undefined, "history");
+          history.append(make("summary", text("contractHistory") + " (" + (mission.contract_history.length - 1) + ")"));
+          for (const revision of [...mission.contract_history].reverse().slice(1)) {
+            history.append(make("div", text("contractRevision") + " " + revision.contract_revision + " · " + stateLabel(revision.state), "history-item"));
+          }
+          body.append(history);
+        }
+        card.append(body);
+        host.append(card);
+      }
+    }
+    function renderActivity(query) {
+      const host = document.getElementById("activity-list");
+      host.replaceChildren();
+      const missions = new Map(data.missions.map(mission => [mission.id, mission.objective]));
+      const rows = data.recent_activity.filter(item => {
+        const objective = missions.get(item.mission_id) || "";
+        return !query || objective.toLocaleLowerCase().includes(query) || item.kind.toLowerCase().includes(query);
+      });
+      if (!rows.length) host.append(make("div", text("noActivity"), "empty"));
+      for (const item of rows) {
+        const row = make("div", undefined, "activity-row");
+        const info = make("div");
+        info.append(make("div", activityLabel(item.kind), "activity-title"));
+        info.append(make("div", missions.get(item.mission_id) || text("missionId") + " " + item.mission_id.slice(0, 8), "activity-meta"));
+        row.append(info, make("time", date(item.occurred_at_unix_ms), "activity-meta"));
+        host.append(row);
+      }
+    }
+    function renderCapabilities(query) {
+      const host = document.getElementById("capability-list");
+      host.replaceChildren();
+      const labels = { agent: "capabilityAgent", skill: "capabilitySkill", rule: "capabilityRule", hook: "capabilityHook", mcp_server: "capabilityMcp" };
+      const items = report.capabilities.filter(item => !query || [item.name, item.ecosystem, item.path].some(value => value.toLocaleLowerCase().includes(query)));
+      if (!items.length) host.append(make("div", report.capabilities.length ? text("noSearchResults") : text("noCapabilities"), "empty"));
+      if (!report.capability_scan_complete && !query) host.append(make("div", text("scanIncomplete"), "empty"));
+      for (const capability of items) {
+        const row = make("div", undefined, "capability-row");
+        const info = make("div");
+        info.append(make("div", capability.name + " · " + text(labels[capability.category] || "capabilityRule"), "capability-title"));
+        info.append(make("div", capability.ecosystem + " · " + stateLabel(capability.state) + " · " + capability.path, "capability-meta"));
+        if (capability.limitation) info.append(make("div", capability.limitation, "capability-meta"));
+        row.append(info, make("span", stateLabel(capability.availability), "badge badge-" + capability.availability));
+        host.append(row);
+      }
+      for (const warning of report.capability_warnings) host.append(make("div", text("warning") + ": " + warning, "warning"));
+    }
+    function render() {
+      const query = document.getElementById("search").value.trim().toLocaleLowerCase();
+      renderMetrics();
+      renderMissions(query, document.getElementById("state").value);
+      renderActivity(query);
+      renderCapabilities(query);
+    }
+    document.getElementById("search").addEventListener("input", render);
+    document.getElementById("state").addEventListener("change", render);
+    document.getElementById("lang-en").addEventListener("click", () => applyLanguage("en"));
+    document.getElementById("lang-pt").addEventListener("click", () => applyLanguage("pt"));
+    try { if (localStorage.getItem("tramuri-report-language") === "pt") language = "pt"; } catch (_) {}
+    applyLanguage(language);
+  </script>
+</body>
+</html>

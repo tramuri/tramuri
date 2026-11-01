@@ -32,6 +32,9 @@ from ._native import (
     _mission_resume_json,
     _outcome_assess_json,
     _outcome_get_json,
+    _readiness_assess_json,
+    _readiness_get_json,
+    _readiness_history_json,
     _scan_json,
     _capability_snapshot_json,
     _status_json,
@@ -97,14 +100,59 @@ def mission_create(
     path: PathLike = ".",
     *,
     objective: str,
-    criteria: list[dict[str, Any]],
+    criteria: list[dict[str, Any]] | None = None,
     context: str | None = None,
 ) -> dict[str, Any]:
-    """Create a Mission and its first Success Contract through the Rust core."""
+    """Create a Mission; omit criteria to begin discovery with an exploratory contract."""
     encoded_path = os.fsdecode(os.fspath(path))
     return json.loads(
-        _mission_create_json(encoded_path, objective, context, json.dumps(criteria))
+        _mission_create_json(encoded_path, objective, context, json.dumps(criteria or []))
     )
+
+
+def readiness_assess(
+    path: PathLike = ".",
+    *,
+    mission_id: str,
+    activity: str,
+    state: str,
+    criteria_applied: list[str] | tuple[str, ...] = (),
+    gaps: list[str] | tuple[str, ...] = (),
+    blockers: list[str] | tuple[str, ...] = (),
+    accepted_uncertainties: list[str] | tuple[str, ...] = (),
+    actor_reference: str | None = None,
+) -> dict[str, Any]:
+    """Record consultative context readiness for an explicitly selected activity."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(
+        _readiness_assess_json(
+            encoded_path,
+            json.dumps(
+                {
+                    "mission_id": mission_id,
+                    "activity": activity,
+                    "decision": state,
+                    "criteria_applied": list(criteria_applied),
+                    "gaps": list(gaps),
+                    "blockers": list(blockers),
+                    "accepted_uncertainties": list(accepted_uncertainties),
+                    "actor_reference": actor_reference,
+                }
+            ),
+        )
+    )
+
+
+def readiness_get(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
+    """Return the current activity readiness, including stale detection."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_readiness_get_json(encoded_path, mission_id))
+
+
+def readiness_history(path: PathLike = ".", *, mission_id: str) -> list[dict[str, Any]]:
+    """Return append-only readiness assessments, newest first."""
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_readiness_history_json(encoded_path, mission_id))
 
 
 def mission_get(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
@@ -201,10 +249,16 @@ def mission_contract_revise(
 def execution_record(
     path: PathLike = ".", *, mission_id: str, contract_revision: int,
     actor_kind: str, state: str, actor_reference: str | None = None, notes: str | None = None,
+    work_perspective: str | None = None,
 ) -> dict[str, Any]:
-    """Record an attempt; completion does not verify the Mission outcome."""
+    """Record an attempt and optional work perspective; completion does not verify the outcome."""
     encoded_path = os.fsdecode(os.fspath(path))
-    return json.loads(_execution_record_json(encoded_path, mission_id, contract_revision, actor_kind, state, actor_reference, notes))
+    return json.loads(
+        _execution_record_json(
+            encoded_path, mission_id, contract_revision, actor_kind, state, actor_reference, notes,
+            work_perspective,
+        )
+    )
 
 
 def execution_list(path: PathLike = ".", *, mission_id: str) -> list[dict[str, Any]]:
@@ -329,4 +383,7 @@ __all__ = [
     "evidence_get",
     "outcome_assess",
     "outcome_get",
+    "readiness_assess",
+    "readiness_get",
+    "readiness_history",
 ]

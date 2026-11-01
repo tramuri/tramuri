@@ -15,6 +15,11 @@ Keep these concepts distinct:
 5. **Verified Outcome** is the result of evaluating the contract's criteria; it is not implied by a
    completed execution.
 
+An Execution may also record a `work_perspective` (`product_engineer`, `fde`, or `other`). This is
+the professional lens for that piece of work, not the identity of its actor. `actor_kind` and the
+optional caller-supplied actor reference describe who or what performed it; those labels are not
+authenticated and do not establish a current Mission owner.
+
 Do not claim business success solely because a command, deployment, or execution completed. Distinguish
 technical checks from acceptance criteria and human or external validation. Report missing, stale, or
 conflicting evidence and leave the outcome unverified when appropriate.
@@ -25,7 +30,9 @@ or automatic orchestration behavior.
 ## Create and review a Mission
 
 Missions require an initialized Tramuri workspace, but do not require Git metadata or a discovery
-scan. Define at least one required criterion in the Success Contract:
+scan. During discovery, create an exploratory Mission without criteria if success is not clear yet.
+Its Outcome remains pending; zero criteria can never imply verification. Add at least one required
+criterion when the expected result becomes concrete:
 
 ```json
 {
@@ -45,11 +52,25 @@ Create the Mission from the CLI:
 tramuri init .
 tramuri mission create --objective "Validate customer onboarding" --criteria-file criteria.json --json
 tramuri mission show --mission <mission-id> --json
-tramuri execution record --mission <mission-id> --contract-revision 1 --actor-kind human --status completed --json
+tramuri execution record --mission <mission-id> --contract-revision 1 --actor-kind human --status completed --work-perspective fde --actor "FDE 1" --json
 tramuri evidence add --mission <mission-id> --execution <execution-id> --kind human_attestation --locator customer-approval-record --json
 tramuri outcome assess --mission <mission-id> --contract-revision 1 --criterion <criterion-id> --result met --evidence <evidence-id> --verifier-kind human --verifier product-owner --json
 tramuri outcome show --mission <mission-id> --json
 ```
+
+Record readiness for the explicitly selected next activity. This is an advisory assessment: it does
+not gate execution. `ready` requires no unresolved gaps or critical blockers; accepted uncertainties
+remain visible. Use `blocked` when a critical blocker is recorded.
+
+```text
+tramuri readiness assess --mission <mission-id> --activity discover --state needs_review --gap "Interview data is missing"
+tramuri readiness show --mission <mission-id> --json
+tramuri status --open
+```
+
+Supported activity names are suggestions rather than a closed workflow; custom activity values are
+allowed. Objective, Success Contract, and explicitly linked Knowledge/Capability changes can make
+the latest assessment stale. Earlier assessments remain available in history.
 
 Or create it through the Python SDK:
 
@@ -83,6 +104,8 @@ execution = tramuri.execution_record(
     contract_revision=mission["success_contract"]["revision"],
     actor_kind="human",
     state="completed",
+    actor_reference="FDE 1",
+    work_perspective="fde",
 )
 evidence = tramuri.evidence_add(
     workspace,

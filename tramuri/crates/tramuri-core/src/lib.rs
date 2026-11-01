@@ -6,6 +6,7 @@ mod error;
 mod hash_status;
 mod knowledge;
 mod mission;
+mod readiness;
 mod relationships;
 mod status;
 mod storage;
@@ -26,9 +27,13 @@ pub use mission::{
     ActorKind, Criterion, CriterionAssessment, CriterionAssessmentInput, CriterionAssessmentResult,
     CriterionInput, CriterionOutcome, EvidenceInput, EvidenceKind, EvidenceReference, Execution,
     ExecutionInput, ExecutionState, Mission, MissionInput, MissionState, OutcomeState,
-    SuccessContract, VerifiedOutcome, VerifierKind, evidence_add, evidence_get, evidence_list,
-    execution_get, execution_list, execution_record, mission_close, mission_contract_revise,
-    mission_create, mission_get, outcome_assess, outcome_get,
+    SuccessContract, VerifiedOutcome, VerifierKind, WorkPerspective, evidence_add, evidence_get,
+    evidence_list, execution_get, execution_list, execution_record, mission_close,
+    mission_contract_revise, mission_create, mission_get, outcome_assess, outcome_get,
+};
+pub use readiness::{
+    MissionReadiness, ReadinessAssessment, ReadinessAssessmentInput, ReadinessDecision,
+    ReadinessState, readiness_assess, readiness_get, readiness_history,
 };
 pub use relationships::{
     MissionCapabilityRelationship, MissionKnowledgeRelationship, MissionRelationships,
@@ -42,4 +47,4 @@ pub use status::{
 };
 
 /// The current on-disk SQLite schema version.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 8;

@@ -6,12 +6,13 @@ use serde::Deserialize;
 use tramuri_core::{
     ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
     EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType,
-    MissionInput, TramuriError as CoreError, VerifierKind, capability_list, evidence_add,
-    evidence_get, evidence_list, execution_get, execution_list, execution_record, init,
-    knowledge_add, knowledge_list, knowledge_withdraw, mission_capability_link,
-    mission_capability_unlink, mission_close, mission_contract_revise, mission_create, mission_get,
-    mission_knowledge_link, mission_knowledge_unlink, mission_list, mission_relationships,
-    mission_resume, outcome_assess, outcome_get, scan, status_snapshot,
+    MissionInput, ReadinessAssessmentInput, ReadinessDecision, TramuriError as CoreError,
+    VerifierKind, WorkPerspective, capability_list, evidence_add, evidence_get, evidence_list,
+    execution_get, execution_list, execution_record, init, knowledge_add, knowledge_list,
+    knowledge_withdraw, mission_capability_link, mission_capability_unlink, mission_close,
+    mission_contract_revise, mission_create, mission_get, mission_knowledge_link,
+    mission_knowledge_unlink, mission_list, mission_relationships, mission_resume, outcome_assess,
+    outcome_get, readiness_assess, readiness_get, readiness_history, scan, status_snapshot,
 };
 
 create_exception!(_native, TramuriError, PyException);
@@ -126,6 +127,22 @@ struct MissionCriterionJson {
     evidence_expectation: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ReadinessAssessmentJson {
+    mission_id: String,
+    activity: String,
+    decision: ReadinessDecision,
+    #[serde(default)]
+    criteria_applied: Vec<String>,
+    #[serde(default)]
+    gaps: Vec<String>,
+    #[serde(default)]
+    blockers: Vec<String>,
+    #[serde(default)]
+    accepted_uncertainties: Vec<String>,
+    actor_reference: Option<String>,
+}
+
 fn required_by_default() -> bool {
     true
 }
@@ -160,6 +177,39 @@ fn _mission_create_json(
     )
     .map_err(map_core_error)?;
     serde_json::to_string(&mission).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _readiness_assess_json(path: &str, input_json: &str) -> PyResult<String> {
+    let input: ReadinessAssessmentJson = serde_json::from_str(input_json)
+        .map_err(|error| TramuriError::new_err(format!("invalid readiness JSON: {error}")))?;
+    let assessment = readiness_assess(
+        path,
+        ReadinessAssessmentInput {
+            mission_id: input.mission_id,
+            activity: input.activity,
+            decision: input.decision,
+            criteria_applied: input.criteria_applied,
+            gaps: input.gaps,
+            blockers: input.blockers,
+            accepted_uncertainties: input.accepted_uncertainties,
+            actor_reference: input.actor_reference,
+        },
+    )
+    .map_err(map_core_error)?;
+    serde_json::to_string(&assessment).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _readiness_get_json(path: &str, mission_id: &str) -> PyResult<String> {
+    let readiness = readiness_get(path, mission_id).map_err(map_core_error)?;
+    serde_json::to_string(&readiness).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _readiness_history_json(path: &str, mission_id: &str) -> PyResult<String> {
+    let history = readiness_history(path, mission_id).map_err(map_core_error)?;
+    serde_json::to_string(&history).map_err(map_serialization_error)
 }
 
 #[pyfunction]
@@ -283,7 +333,8 @@ fn _mission_contract_revise_json(
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, mission_id, contract_revision, actor_kind, state, actor_reference=None, notes=None))]
+#[pyo3(signature = (path, mission_id, contract_revision, actor_kind, state, actor_reference=None, notes=None, work_perspective=None))]
+#[allow(clippy::too_many_arguments)] // Keep the Python SDK's explicit, keyword-friendly API.
 fn _execution_record_json(
     path: &str,
     mission_id: &str,
@@ -292,6 +343,7 @@ fn _execution_record_json(
     state: &str,
     actor_reference: Option<&str>,
     notes: Option<&str>,
+    work_perspective: Option<&str>,
 ) -> PyResult<String> {
     let actor_kind = match actor_kind {
         "human" => ActorKind::Human,
@@ -311,6 +363,17 @@ fn _execution_record_json(
         "cancelled" => ExecutionState::Cancelled,
         _ => return Err(TramuriError::new_err("invalid execution state")),
     };
+    let work_perspective = match work_perspective {
+        None => None,
+        Some("product_engineer") => Some(WorkPerspective::ProductEngineer),
+        Some("fde") => Some(WorkPerspective::Fde),
+        Some("other") => Some(WorkPerspective::Other),
+        Some(_) => {
+            return Err(TramuriError::new_err(
+                "work_perspective must be product_engineer, fde, or other",
+            ));
+        }
+    };
     let result = execution_record(
         path,
         ExecutionInput {
@@ -318,6 +381,7 @@ fn _execution_record_json(
             contract_revision,
             actor_kind,
             actor_reference: actor_reference.map(str::to_owned),
+            work_perspective,
             state,
             notes: notes.map(str::to_owned),
         },
@@ -450,6 +514,9 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(_knowledge_list_json, module)?)?;
     module.add_function(wrap_pyfunction!(_knowledge_withdraw_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_create_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_readiness_assess_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_readiness_get_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_readiness_history_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_get_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_list_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_knowledge_link_json, module)?)?;

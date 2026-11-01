@@ -53,8 +53,10 @@ pub enum TramuriError {
     InvalidWithdrawal(String),
     #[error("mission objective must not be empty")]
     EmptyMissionObjective,
-    #[error("a success contract must contain at least one required criterion")]
+    #[error("a non-empty success contract must contain at least one required criterion")]
     NoRequiredCriterion,
+    #[error("invalid context readiness assessment: {0}")]
+    InvalidReadiness(String),
     #[error("success criterion description must not be empty")]
     EmptySuccessCriterion,
     #[error("mission was not found: {0}")]

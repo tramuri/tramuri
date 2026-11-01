@@ -146,6 +146,8 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             migrate_v3_to_v4(&mut connection)?;
             migrate_v4_to_v5(&mut connection)?;
             migrate_v5_to_v6(&mut connection)?;
+            migrate_v6_to_v7(&mut connection)?;
+            migrate_v7_to_v8(&mut connection)?;
         }
         1 => {
             migrate_v1_to_v2(&mut connection)?;
@@ -153,23 +155,40 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             migrate_v3_to_v4(&mut connection)?;
             migrate_v4_to_v5(&mut connection)?;
             migrate_v5_to_v6(&mut connection)?;
+            migrate_v6_to_v7(&mut connection)?;
+            migrate_v7_to_v8(&mut connection)?;
         }
         2 => {
             migrate_v2_to_v3(&mut connection)?;
             migrate_v3_to_v4(&mut connection)?;
             migrate_v4_to_v5(&mut connection)?;
             migrate_v5_to_v6(&mut connection)?;
+            migrate_v6_to_v7(&mut connection)?;
+            migrate_v7_to_v8(&mut connection)?;
         }
         3 => {
             migrate_v3_to_v4(&mut connection)?;
             migrate_v4_to_v5(&mut connection)?;
             migrate_v5_to_v6(&mut connection)?;
+            migrate_v6_to_v7(&mut connection)?;
+            migrate_v7_to_v8(&mut connection)?;
         }
         4 => {
             migrate_v4_to_v5(&mut connection)?;
             migrate_v5_to_v6(&mut connection)?;
+            migrate_v6_to_v7(&mut connection)?;
+            migrate_v7_to_v8(&mut connection)?;
         }
-        5 => migrate_v5_to_v6(&mut connection)?,
+        5 => {
+            migrate_v5_to_v6(&mut connection)?;
+            migrate_v6_to_v7(&mut connection)?;
+            migrate_v7_to_v8(&mut connection)?;
+        }
+        6 => {
+            migrate_v6_to_v7(&mut connection)?;
+            migrate_v7_to_v8(&mut connection)?;
+        }
+        7 => migrate_v7_to_v8(&mut connection)?,
         version if version == i64::from(SCHEMA_VERSION) => {}
         found => {
             return Err(TramuriError::UnsupportedSchema {
@@ -334,24 +353,41 @@ fn migrate_schema(connection: &mut Connection) -> Result<()> {
             migrate_v2_to_v3(connection)?;
             migrate_v3_to_v4(connection)?;
             migrate_v4_to_v5(connection)?;
-            migrate_v5_to_v6(connection)
+            migrate_v5_to_v6(connection)?;
+            migrate_v6_to_v7(connection)?;
+            migrate_v7_to_v8(connection)
         }
         2 => {
             migrate_v2_to_v3(connection)?;
             migrate_v3_to_v4(connection)?;
             migrate_v4_to_v5(connection)?;
-            migrate_v5_to_v6(connection)
+            migrate_v5_to_v6(connection)?;
+            migrate_v6_to_v7(connection)?;
+            migrate_v7_to_v8(connection)
         }
         3 => {
             migrate_v3_to_v4(connection)?;
             migrate_v4_to_v5(connection)?;
-            migrate_v5_to_v6(connection)
+            migrate_v5_to_v6(connection)?;
+            migrate_v6_to_v7(connection)?;
+            migrate_v7_to_v8(connection)
         }
         4 => {
             migrate_v4_to_v5(connection)?;
-            migrate_v5_to_v6(connection)
+            migrate_v5_to_v6(connection)?;
+            migrate_v6_to_v7(connection)?;
+            migrate_v7_to_v8(connection)
         }
-        5 => migrate_v5_to_v6(connection),
+        5 => {
+            migrate_v5_to_v6(connection)?;
+            migrate_v6_to_v7(connection)?;
+            migrate_v7_to_v8(connection)
+        }
+        6 => {
+            migrate_v6_to_v7(connection)?;
+            migrate_v7_to_v8(connection)
+        }
+        7 => migrate_v7_to_v8(connection),
         version if version == i64::from(SCHEMA_VERSION) => Ok(()),
         found => Err(TramuriError::UnsupportedSchema {
             found,
@@ -508,6 +544,46 @@ fn migrate_v5_to_v6(connection: &mut Connection) -> Result<()> {
             ON mission_capability_links(mission_id, created_at_unix_ms, capability_id);",
     )?;
     transaction.pragma_update(None, "user_version", 6)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v6_to_v7(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(
+        "ALTER TABLE executions ADD COLUMN work_perspective TEXT
+         CHECK (work_perspective IN ('product_engineer', 'fde', 'other'));",
+    )?;
+    transaction.pragma_update(None, "user_version", 7)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v7_to_v8(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(
+        "CREATE TABLE readiness_assessments (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            mission_id TEXT NOT NULL REFERENCES missions(id),
+            activity TEXT NOT NULL CHECK (length(trim(activity)) BETWEEN 1 AND 80),
+            contract_revision INTEGER NOT NULL CHECK (contract_revision >= 1),
+            policy_version TEXT NOT NULL CHECK (length(trim(policy_version)) > 0),
+            state TEXT NOT NULL CHECK (state IN ('preparing', 'needs_review', 'ready', 'blocked')),
+            criteria_applied_json TEXT NOT NULL,
+            gaps_json TEXT NOT NULL,
+            blockers_json TEXT NOT NULL,
+            accepted_uncertainties_json TEXT NOT NULL,
+            context_references_json TEXT NOT NULL,
+            actor_reference TEXT,
+            assessed_at_unix_ms INTEGER NOT NULL,
+            context_fingerprint TEXT NOT NULL CHECK (length(context_fingerprint) = 64),
+            FOREIGN KEY (mission_id, contract_revision)
+                REFERENCES success_contracts(mission_id, revision)
+        );
+        CREATE INDEX readiness_assessments_latest
+            ON readiness_assessments(mission_id, assessed_at_unix_ms DESC, id DESC);",
+    )?;
+    transaction.pragma_update(None, "user_version", 8)?;
     transaction.commit()?;
     Ok(())
 }

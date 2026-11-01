@@ -107,9 +107,13 @@ assert callable(tramuri.evidence_list)
 assert callable(tramuri.evidence_get)
 assert callable(tramuri.mission_relationships)
 assert callable(tramuri.mission_resume)
+assert callable(tramuri.mission_workflow_activity_set)
 assert Path(tramuri.__file__).with_name("py.typed").is_file()
+product_skill = Path(tramuri.__file__).parent / "skills" / "tramuri-product-engineering" / "SKILL.md"
+assert product_skill.is_file()
+assert "agent hypothesis" in product_skill.read_text(encoding="utf-8").lower()
 report = tramuri.init(project_path)
-assert report["schema_version"] == 8
+assert report["schema_version"] == 9
 assert Path(report["database_path"]).parent.name == "database"
 exploratory = tramuri.mission_create(
     project_path,
@@ -126,6 +130,18 @@ assessment = tramuri.readiness_assess(
 )
 assert tramuri.readiness_get(project_path, mission_id=exploratory["id"])["assessment"] == assessment
 assert len(tramuri.readiness_history(project_path, mission_id=exploratory["id"])) == 1
+guided = tramuri.mission_start(
+    project_path,
+    objective="Create a SaaS for selling online courses to learners",
+)
+assert guided["workflow"]["next_activity"] == "product_framing"
+updated_workflow = tramuri.mission_workflow_activity_set(
+    project_path,
+    mission_id=guided["mission"]["id"],
+    next_activity="discover",
+)
+assert updated_workflow["next_activity"] == "discover"
+assert updated_workflow["perspective"] == "product_engineer"
 skill = Path(project_path) / ".agents" / "skills" / "release" / "SKILL.md"
 skill.parent.mkdir(parents=True)
 skill.write_text("---\\nname: release\\ndescription: Verify a release\\n---\\n", encoding="utf-8")
@@ -246,6 +262,7 @@ print(json.dumps({"mission_id": mission["id"], "execution": execution, "evidence
     assert "name: tramuri" in installed_skill.read_text(encoding="utf-8")
     for skill_name in (
         "tramuri-start",
+        "tramuri-product-engineering",
         "tramuri-discovery",
         "tramuri-missions",
         "tramuri-integrity",

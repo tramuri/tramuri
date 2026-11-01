@@ -71,6 +71,14 @@ pub enum TramuriError {
     InvalidActorReference,
     #[error("execution state must be in_progress, completed, blocked, failed, or cancelled")]
     InvalidExecutionState,
+    #[error("execution cannot transition from {from} to {to}")]
+    InvalidExecutionTransition { from: String, to: String },
+    #[error("invalid Tramuri workflow configuration: {0}")]
+    InvalidWorkProfileConfig(String),
+    #[error(
+        "work perspective is ambiguous; choose --perspective product_engineer, fde, mixed, or other"
+    )]
+    AmbiguousWorkPerspective,
     #[error("execution was not found: {0}")]
     ExecutionNotFound(String),
     #[error("evidence reference was not found: {0}")]

@@ -19,7 +19,7 @@ const GEMINI_HOOK_FILE: &str = ".gemini/settings.json";
 const GEMINI_HOOK_COMMAND: &str = "tramuri status --hint --hook-format gemini";
 const CURSOR_RULE_FRONTMATTER: &str =
     "---\ndescription: Tramuri project guidance\nalwaysApply: true\n---\n\n";
-const SKILLS: [(&str, &str); 5] = [
+const SKILLS: [(&str, &str); 6] = [
     (
         "tramuri",
         include_str!("../../../python/tramuri/skills/tramuri/SKILL.md"),
@@ -27,6 +27,10 @@ const SKILLS: [(&str, &str); 5] = [
     (
         "tramuri-start",
         include_str!("../../../python/tramuri/skills/tramuri-start/SKILL.md"),
+    ),
+    (
+        "tramuri-product-engineering",
+        include_str!("../../../python/tramuri/skills/tramuri-product-engineering/SKILL.md"),
     ),
     (
         "tramuri-discovery",
@@ -385,7 +389,7 @@ fn hook_entry(platform: Platform) -> serde_json::Value {
             "type": "command",
             "command": command,
             "timeout": 10000,
-            "description": "Print a static Tramuri reminder without reading workspace records"
+            "description": "Check Tramuri database presence and guide substantive work without reading records"
         }),
         Platform::Copilot => unreachable!("Copilot does not install hooks"),
     }
@@ -1034,13 +1038,25 @@ mod tests {
             Platform::Cursor,
             Platform::Gemini,
         ] {
+            assert!(
+                platform
+                    .instructions()
+                    .contains("This is the first project-work step")
+            );
             install(project.path(), platform).unwrap();
             let instructions = project.path().join(platform.instruction_file());
             let instructions = fs::read_to_string(instructions).unwrap();
             assert!(instructions.contains(START));
             assert!(instructions.contains(&format!("{}/tramuri/SKILL.md", platform.skill_root())));
-            assert!(instructions.contains("verified outcome"));
-            assert!(instructions.contains("explicit item"));
+            let instructions = instructions
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(instructions.contains("even when the user does not mention Tramuri"));
+            assert!(instructions.contains("one-shot questions"));
+            assert!(instructions.contains("do not ask whether to use Tramuri or initialize"));
+            assert!(instructions.contains("Do not claim an Execution verifies an Outcome"));
+            assert!(instructions.contains("explicit selection and authorization"));
             let main_skill = fs::read_to_string(
                 project
                     .path()
@@ -1048,7 +1064,27 @@ mod tests {
                     .join("tramuri/SKILL.md"),
             )
             .unwrap();
-            assert_eq!(skill_paths(platform).len(), 5);
+            assert!(main_skill.contains("at most"));
+            let product_skill = project
+                .path()
+                .join(platform.skill_root())
+                .join("tramuri-product-engineering/SKILL.md");
+            assert!(product_skill.is_file());
+            assert!(
+                fs::read_to_string(product_skill)
+                    .unwrap()
+                    .contains("Do not invent interviews")
+            );
+            assert!(main_skill.contains("once at the end"));
+            let start_skill = fs::read_to_string(
+                project
+                    .path()
+                    .join(platform.skill_root())
+                    .join("tramuri-start/SKILL.md"),
+            )
+            .unwrap();
+            assert!(start_skill.contains("at most once"));
+            assert_eq!(skill_paths(platform).len(), 6);
             for (relative, _) in skill_paths(platform) {
                 let skill = fs::read_to_string(project.path().join(&relative)).unwrap();
                 let skill_name = relative

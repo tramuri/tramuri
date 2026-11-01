@@ -16,12 +16,19 @@ from ._native import (
     _execution_get_json,
     _execution_list_json,
     _execution_record_json,
+    _execution_transition_json,
     _knowledge_add_json,
     _knowledge_list_json,
     _knowledge_withdraw_json,
     _mission_contract_revise_json,
     _mission_close_json,
     _mission_create_json,
+    _mission_start_json,
+    _profile_get_json,
+    _profile_set_json,
+    _mission_workflow_get_json,
+    _mission_workflow_set_json,
+    _mission_workflow_activity_set_json,
     _mission_get_json,
     _mission_list_json,
     _mission_knowledge_link_json,
@@ -107,6 +114,50 @@ def mission_create(
     encoded_path = os.fsdecode(os.fspath(path))
     return json.loads(
         _mission_create_json(encoded_path, objective, context, json.dumps(criteria or []))
+    )
+
+
+def mission_start(
+    path: PathLike = ".", *, objective: str, perspective: str | None = None,
+    context: str | None = None,
+) -> dict[str, Any]:
+    """Start an exploratory Mission; ambiguous routing raises TramuriError."""
+    return json.loads(_mission_start_json(os.fsdecode(os.fspath(path)), objective, perspective, context))
+
+
+def profile_get(path: PathLike = ".") -> dict[str, Any]:
+    """Read local Work Profile defaults without authenticating a person."""
+    return json.loads(_profile_get_json(os.fsdecode(os.fspath(path))))
+
+
+def profile_set(
+    path: PathLike = ".", *, perspective: str = "auto", ask: str = "ambiguous"
+) -> dict[str, Any]:
+    """Set the default work perspective and ambiguity prompt policy."""
+    return json.loads(_profile_set_json(os.fsdecode(os.fspath(path)), perspective, ask))
+
+
+def mission_workflow_get(path: PathLike = ".", *, mission_id: str) -> dict[str, Any] | None:
+    """Get Mission perspective and planned next activity, if recorded."""
+    return json.loads(_mission_workflow_get_json(os.fsdecode(os.fspath(path)), mission_id))
+
+
+def mission_workflow_set(
+    path: PathLike = ".", *, mission_id: str, perspective: str,
+    source: str = "explicit", next_activity: str | None = None,
+) -> dict[str, Any]:
+    """Update explicit workflow metadata without assessing Context Readiness."""
+    return json.loads(_mission_workflow_set_json(os.fsdecode(os.fspath(path)), mission_id, perspective, source, next_activity))
+
+
+def mission_workflow_activity_set(
+    path: PathLike = ".", *, mission_id: str, next_activity: str,
+) -> dict[str, Any]:
+    """Update a Mission's current focus without changing its work perspective or provenance."""
+    return json.loads(
+        _mission_workflow_activity_set_json(
+            os.fsdecode(os.fspath(path)), mission_id, next_activity,
+        )
     )
 
 
@@ -283,6 +334,13 @@ def execution_get(
     return json.loads(_execution_get_json(encoded_path, execution_id))
 
 
+def execution_transition(
+    path: PathLike = ".", *, execution_id: str, state: str
+) -> dict[str, Any]:
+    """Explicitly finish an in-progress Execution; terminal records cannot be rewritten."""
+    return json.loads(_execution_transition_json(os.fsdecode(os.fspath(path)), execution_id, state))
+
+
 def evidence_add(
     path: PathLike = ".", *, mission_id: str, execution_id: str, kind: str, locator: str,
 ) -> dict[str, Any]:
@@ -364,6 +422,12 @@ __all__ = [
     "knowledge_list",
     "knowledge_withdraw",
     "mission_create",
+    "mission_start",
+    "profile_get",
+    "profile_set",
+    "mission_workflow_get",
+    "mission_workflow_set",
+    "mission_workflow_activity_set",
     "mission_get",
     "mission_list",
     "mission_knowledge_link",
@@ -376,6 +440,7 @@ __all__ = [
     "mission_close",
     "mission_contract_revise",
     "execution_record",
+    "execution_transition",
     "execution_list",
     "execution_get",
     "evidence_add",

@@ -14,6 +14,7 @@ from tramuri import (
     evidence_get,
     evidence_list,
     execution_record,
+    execution_transition,
     execution_get,
     execution_list,
     init,
@@ -25,6 +26,10 @@ from tramuri import (
     mission_capability_unlink,
     mission_contract_revise,
     mission_create,
+    mission_start,
+    mission_workflow_activity_set,
+    profile_get,
+    profile_set,
     mission_get,
     mission_knowledge_link,
     mission_knowledge_unlink,
@@ -51,7 +56,7 @@ def test_init_is_idempotent_and_scan_returns_inventory(tmp_path: Path) -> None:
     second_init = init(tmp_path)
     report = scan(tmp_path)
 
-    assert first_init["schema_version"] == 8
+    assert first_init["schema_version"] == 9
     assert first_init["already_initialized"] is False
     assert second_init["already_initialized"] is True
     assert report["complete"] is True
@@ -77,7 +82,7 @@ def test_mission_list_and_status_are_privacy_minimized(tmp_path: Path) -> None:
     snapshot = status(tmp_path)
 
     assert listed[0]["id"] == mission["id"]
-    assert snapshot["schema"] == "tramuri.status.v2"
+    assert snapshot["schema"] == "tramuri.status.v3"
     assert snapshot["missions"][0]["outcome"]["state"] == "pending"
     assert "context" not in snapshot["missions"][0]
     assert "private-context-marker" not in json.dumps(snapshot)
@@ -111,6 +116,47 @@ def test_exploratory_mission_and_readiness_round_trip(tmp_path: Path) -> None:
     assert readiness["assessment"]["context_references"] == []
     assert len(readiness_history(tmp_path, mission_id=mission["id"])) == 1
     assert status(tmp_path)["missions"][0]["readiness"]["state"] == "ready"
+
+
+def test_guided_start_profile_and_execution_lifecycle(tmp_path: Path) -> None:
+    init(tmp_path)
+    profile_set(tmp_path, perspective="fde")
+    assert profile_get(tmp_path)["default_work_perspective"] == "fde"
+
+    # Clear product intent takes precedence over the configured default.
+    started = mission_start(tmp_path, objective="Quero criar um produto para pequenos negócios")
+    assert started["route"]["source"] == "current_intent"
+    assert started["workflow"]["perspective"] == "product_engineer"
+    assert started["workflow"]["next_activity"] == "product_framing"
+    assert started["mission"]["success_contract"]["criteria"] == []
+    assert status(tmp_path)["missions"][0]["readiness"]["state"] == "not_assessed"
+    resumed = mission_resume(tmp_path, mission_id=started["mission"]["id"])
+    assert resumed["workflow"]["perspective"] == "product_engineer"
+    assert resumed["workflow"]["next_activity"] == "product_framing"
+    focused = mission_workflow_activity_set(
+        tmp_path, mission_id=started["mission"]["id"], next_activity="discover"
+    )
+    assert focused["next_activity"] == "discover"
+    assert focused["perspective_source"] == "current_intent"
+    assert len(focused["perspective_history"]) == 1
+
+    execution = execution_record(
+        tmp_path, mission_id=started["mission"]["id"], contract_revision=1,
+        actor_kind="agent", state="in_progress",
+    )
+    assert execution["work_perspective"] == "product_engineer"
+    completed = execution_transition(tmp_path, execution_id=execution["id"], state="completed")
+    assert completed["state"] == "completed"
+    assert completed["ended_at_unix_ms"] >= completed["started_at_unix_ms"]
+
+    with pytest.raises(TramuriError, match="cannot transition"):
+        execution_transition(tmp_path, execution_id=execution["id"], state="failed")
+
+
+def test_guided_start_ambiguous_intent_requires_explicit_choice(tmp_path: Path) -> None:
+    with pytest.raises(TramuriError, match="ambiguous"):
+        mission_start(tmp_path, objective="Quero criar uma solução")
+    assert not (tmp_path / ".tramuri" / "database" / "tramuri.sqlite3").exists()
 
 
 def test_readiness_reports_stale_after_success_contract_revision(tmp_path: Path) -> None:

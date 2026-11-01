@@ -22,8 +22,11 @@ evidence, or assessing whether a Mission's Success Contract was met.
   Contract criterion against reviewed evidence; leave it unverified when the evidence is insufficient.
 - Do not mark a criterion met or claim a Verified Outcome without the responsible person's or
   authorized mechanism's actual review.
+- Before recording a `human` review on behalf of an agent, require explicit authorization from the
+  responsible person for that review. `verifier_reference` is a declared label, not authentication.
 - After a coherent task has written or assessed Mission records, refresh and open the local report
-  once with `tramuri status --open`, unless the user asked not to. Do not run it after every
+  at most once with `tramuri status --open`, only if it has not already been opened in this session
+  and the user has not asked to skip it. Do not reopen it after every
   individual write or merely to inspect status. Tell the user that the report is local and derived;
   it does not change Mission or Outcome state.
 

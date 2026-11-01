@@ -94,13 +94,14 @@ Install Tramuri into the project for the assistant you use, preserving existing 
 
 ```bash
 tramuri install --platform codex --project
-tramuri init .
 ```
 
-Then describe the outcome in the assistant chat, for example: “I want to work as a Product Engineer
-on improving customer onboarding” or “I am taking over this integration as an FDE.” The installed
-Tramuri skills guide Mission and Success Contract setup, record the selected work perspective, and
-continue with the task; a project scan is optional. After a coherent work session changes Mission
+Then describe a substantive goal in the assistant chat, for example: “I want to improve customer
+onboarding” or “I am taking over this customer integration.” The installed instructions guide a
+Mission start or resume even if you do not mention Tramuri. A clear goal initializes the local
+database automatically; tell the assistant your work perspective only if it is not clear from the
+request. You do not need to run `tramuri init` first or learn CLI syntax. Mission and Success Contract
+setup stays exploratory, and a project scan is optional. After a coherent work session changes Mission
 records, the assistant refreshes and opens the local report once. You can also ask “open the Tramuri
 report” or run `tramuri status --open` yourself.
 
@@ -113,9 +114,9 @@ project ignore rules and sensitive-path exclusions; it does not read global agen
 hooks, start MCP servers, or make network connections.
 
 Codex, Claude Code, Cursor, and Gemini CLI receive native project instructions, a Tramuri overview
-skill plus focused setup, discovery, Mission, and integrity skills, and a project-local session-start
-hook. Hooks emit only a static reminder; they do
-not read the database or attach Mission data. The assistant must explicitly run Tramuri commands
+skill plus focused setup, Product Engineering, discovery, Mission, and integrity skills, and a
+project-local session-start hook. Hooks check local database-file presence and give startup guidance;
+they do not read Mission records or attach prompt data. The assistant must explicitly run Tramuri commands
 when it needs workspace context. Hooks follow each host's project trust settings, and installation
 preserves unrelated instructions and hook entries. Cursor uses `.cursor/rules/tramuri.mdc`,
 `.cursor/skills/tramuri/`, and `.cursor/hooks.json`; the other hosts use their native instruction,
@@ -136,7 +137,44 @@ next activity. A Mission can start without criteria; its Outcome stays pending u
 are added and reviewed. Readiness is advisory and never blocks execution:
 
 ```bash
-tramuri mission create --objective "Investigate onboarding drop-off"
+tramuri start --goal "Criar um produto para pequenos negócios"
+tramuri status
+tramuri resume --mission <id>
+```
+
+`tramuri start` creates an exploratory Mission and routes clear phrases to a work perspective.
+Product Engineer Missions start with `product_framing`; other perspectives start with Discovery.
+The Context Readiness stays `not_assessed` until
+someone records an assessment. When intent is unclear, provide `--perspective product_engineer|fde|mixed|other`
+or ask the assistant to clarify. Routing in the Rust Core uses a small phrase set; it does not claim
+general natural-language understanding. A connected assistant can suggest a perspective, which the
+user can correct.
+
+Choose a default perspective for this workspace with:
+
+```bash
+tramuri profile set product_engineer
+tramuri profile set fde --ask always
+tramuri profile set auto
+```
+
+The current Mission focus can be changed without changing perspective provenance or approving
+Context Readiness. Product Engineer phases can use `product_framing`, `discover`, `define`, `scope`,
+`prototype`, `implement`, `validate`, `launch`, and `learn`. Record a meaningful Execution once work
+starts, then close that same record explicitly:
+
+```bash
+tramuri mission workflow set --mission <id> --perspective product_engineer --activity prototype
+tramuri mission workflow set --mission <legacy-id> --perspective product_engineer --source inferred --activity product_framing
+tramuri mission workflow activity --mission <id> --activity discover
+tramuri execution update --id <execution-id> --status completed
+```
+
+The available terminal statuses are `completed`, `blocked`, `failed`, and `cancelled`. Execution
+completion does not verify the Mission outcome. Add or revise criteria during Discovery when they
+become clear:
+
+```bash
 tramuri readiness assess --mission <id> --activity discover --state needs_review \
   --gap "Interview data is not available yet"
 tramuri status --open
@@ -161,10 +199,12 @@ examples](docs/examples/README.md).
 
 ### How an assistant can use Tramuri
 
-The project installer is intended to give a supported assistant persistent, platform-native
-guidance for when Tramuri is useful. The skill explains the workflow; the CLI performs Tramuri
-operations against local project state. Both are optional, and the assistant remains free to use
-other tools.
+The project installer gives a supported assistant persistent, platform-native workflow guidance.
+For substantive project work, the instructions direct the assistant to start or resume a Mission
+before exploring files or invoking other creation tools, then continue the requested task. The skill
+explains the workflow; the CLI performs Tramuri operations against local project state. Hooks do not
+inspect prompts or force an assistant to follow instructions, so this remains host guidance rather
+than a technical enforcement mechanism.
 
 | Interface | Use |
 | --- | --- |

@@ -17,11 +17,26 @@ success criteria, or resume previously recorded work.
   Git, source code, an agent, or a scan.
 - At a new Mission, establish the work perspective (Product Engineer, FDE, another perspective, or
   no preference). Infer it only when the request makes it clear, say what you inferred, and allow
-  correction. Record it on each Execution with `--work-perspective product_engineer|fde|other`;
-  reuse it on resume and switch only when asked or when the work clearly changes. The perspective
-  is not the executor's identity.
+  correction. Record the Mission perspective and its source (`explicit`, `current_intent`,
+  `profile`, or `inferred`) separately from the Execution actor. Reuse a recorded perspective on
+  resume and switch only when asked or when the work clearly changes. The perspective is not the
+  executor's identity.
+- For a new, substantive objective, prefer `tramuri start --goal "..." --perspective ...` so an
+  exploratory Mission, perspective source, and planned Discovery activity are recorded together.
+  Current explicit intent can override the configured default. Ask one concise question if routing
+  remains ambiguous. Routing is a suggestion from a small deterministic phrase set; do not claim
+  the Core understands arbitrary natural language.
+- Keep planned activity separate from Context Readiness. Starting Discovery leaves readiness
+  `not_assessed`; never promote it automatically. Avoid one Execution per conversational question.
+- Update a Mission's current focus with `tramuri mission workflow activity --mission <id> --activity
+  <key>` when its phase materially changes. This preserves the work perspective and its provenance;
+  it does not complete an Execution or assess readiness.
 - Use `tramuri mission list` to discover Missions. If more than one could apply, ask the user to
   select one; never choose an arbitrary Mission.
+- If a relevant older Mission has no perspective recorded, do not invent a user selection. When its
+  objective and the current request clearly imply a work perspective, say the suggestion and record
+  it with `tramuri mission workflow set --mission <id> --perspective <value> --source inferred
+  --activity <first-activity>`. Leave it unrecorded or ask one short question if still ambiguous.
 - Use `tramuri mission show --mission <id>` for its current contract and
   `tramuri resume --mission <id>` to recover recorded context.
 - When continuing a task, perform this sequence without asking the user to issue each command:

@@ -5,8 +5,9 @@ use tempfile::tempdir;
 use tramuri_core::{
     ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
     EvidenceKind, ExecutionInput, ExecutionState, MissionInput, MissionState, OutcomeState,
-    VerifierKind, WorkPerspective, evidence_add, execution_record, init, mission_close,
-    mission_contract_revise, mission_create, mission_get, outcome_assess, outcome_get, scan,
+    VerifierKind, WorkPerspective, evidence_add, execution_record, execution_transition, init,
+    mission_close, mission_contract_revise, mission_create, mission_get, outcome_assess,
+    outcome_get, scan,
 };
 
 fn criteria(descriptions: &[&str]) -> Vec<CriterionInput> {
@@ -72,6 +73,47 @@ fn execution_perspective_is_persisted_separately_from_actor_identity() {
     assert_eq!(execution.actor_kind, ActorKind::Agent);
     assert_eq!(execution.actor_reference.as_deref(), Some("Codex"));
     assert_eq!(execution.work_perspective, Some(WorkPerspective::Fde));
+}
+
+#[test]
+fn execution_transition_sets_end_time_and_keeps_terminal_state_immutable() {
+    let workspace = tempdir().unwrap();
+    init(workspace.path()).unwrap();
+    let mission = mission_create(
+        workspace.path(),
+        MissionInput {
+            objective: "Complete synthetic Discovery".to_owned(),
+            context: None,
+            criteria: Vec::new(),
+        },
+    )
+    .unwrap();
+    let execution = execution_record(
+        workspace.path(),
+        ExecutionInput {
+            mission_id: mission.id,
+            contract_revision: 1,
+            actor_kind: ActorKind::Human,
+            actor_reference: None,
+            work_perspective: None,
+            state: ExecutionState::InProgress,
+            notes: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(execution.ended_at_unix_ms, None);
+    let completed =
+        execution_transition(workspace.path(), &execution.id, ExecutionState::Completed).unwrap();
+    assert_eq!(completed.state, ExecutionState::Completed);
+    assert!(completed.ended_at_unix_ms.unwrap() >= execution.started_at_unix_ms);
+    assert_eq!(
+        execution_transition(workspace.path(), &execution.id, ExecutionState::Completed).unwrap(),
+        completed
+    );
+    assert!(matches!(
+        execution_transition(workspace.path(), &execution.id, ExecutionState::Failed),
+        Err(tramuri_core::TramuriError::InvalidExecutionTransition { .. })
+    ));
 }
 
 #[test]

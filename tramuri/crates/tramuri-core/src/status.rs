@@ -90,6 +90,8 @@ pub struct MissionStatus {
     pub evidence: Vec<EvidenceSummary>,
     pub outcome: OutcomeSummary,
     pub readiness: crate::MissionReadiness,
+    /// Planned work is separate from a formal Context Readiness assessment.
+    pub workflow: Option<crate::MissionWorkflow>,
 }
 
 /// Explicit, Mission-scoped context for a deliberate resume operation.
@@ -270,7 +272,18 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
             .collect();
         let outcome_summary = summarize_outcome(outcome);
         let contract_history = outcomes.iter().map(summarize_outcome).collect();
-        let readiness = crate::readiness_get(&workspace, &mission.id)?;
+        let workflow = crate::mission_workflow_get(&workspace, &mission.id)?;
+        let mut readiness = crate::readiness_get(&workspace, &mission.id)?;
+        if let (Some(planned), Some(assessment)) = (
+            workflow
+                .as_ref()
+                .and_then(|item| item.next_activity.as_deref()),
+            readiness.assessment.as_ref(),
+        ) && assessment.activity != planned
+        {
+            // Keep the saved assessment/history intact, but do not imply it applies to a new plan.
+            readiness.state = crate::ReadinessState::Stale;
+        }
         missions.push(MissionStatus {
             id: mission.id,
             objective: mission.objective,
@@ -282,6 +295,7 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
             outcome: outcome_summary,
             contract_history,
             readiness,
+            workflow,
         });
     }
 
@@ -299,7 +313,7 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
     let mission_count = missions.len();
 
     Ok(StatusSnapshot {
-        schema: "tramuri.status.v2".to_owned(),
+        schema: "tramuri.status.v3".to_owned(),
         generated_at_unix_ms,
         workspace: WorkspaceSummary {
             mission_count,
@@ -371,7 +385,7 @@ mod tests {
 
         let snapshot = status_snapshot(project.path()).unwrap();
 
-        assert_eq!(snapshot.schema, "tramuri.status.v2");
+        assert_eq!(snapshot.schema, "tramuri.status.v3");
         assert_eq!(snapshot.workspace.mission_count, 0);
         assert_eq!(snapshot.workspace.open_mission_count, 0);
         assert_eq!(snapshot.workspace.closed_mission_count, 0);

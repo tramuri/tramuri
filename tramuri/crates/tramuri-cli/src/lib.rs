@@ -1,19 +1,21 @@
 use std::ffi::OsString;
 use std::io::{self, IsTerminal};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use tramuri_core::{
-    ActorKind, CapabilityKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput,
-    EvidenceInput, EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput,
-    KnowledgeType, MissionInput, ReadinessAssessmentInput, ReadinessDecision, VerifierKind,
-    WorkPerspective, evidence_add, evidence_get, evidence_list, execution_get, execution_list,
-    execution_record, init, knowledge_add, knowledge_list, knowledge_withdraw,
-    mission_capability_link, mission_capability_unlink, mission_close, mission_contract_revise,
-    mission_create, mission_get, mission_knowledge_link, mission_knowledge_unlink, mission_list,
-    mission_relationships, mission_resume, outcome_assess, outcome_get, readiness_assess,
-    readiness_get, readiness_history, scan, status_snapshot,
+    ActorKind, AskWorkPerspective, CapabilityKind, CriterionAssessmentInput,
+    CriterionAssessmentResult, CriterionInput, EvidenceInput, EvidenceKind, ExecutionInput,
+    ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType, MissionInput,
+    MissionPerspective, ReadinessAssessmentInput, ReadinessDecision, VerifierKind, WorkPerspective,
+    WorkProfile, WorkProfilePreference, evidence_add, evidence_get, evidence_list, execution_get,
+    execution_list, execution_record, execution_transition, init, knowledge_add, knowledge_list,
+    knowledge_withdraw, mission_capability_link, mission_capability_unlink, mission_close,
+    mission_contract_revise, mission_create, mission_get, mission_knowledge_link,
+    mission_knowledge_unlink, mission_list, mission_relationships, mission_resume, mission_start,
+    mission_workflow_activity_set, mission_workflow_set, outcome_assess, outcome_get, profile_get,
+    profile_set, readiness_assess, readiness_get, readiness_history, scan, status_snapshot,
 };
 
 mod integrations;
@@ -32,6 +34,25 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Start an exploratory Mission from an objective, creating the local workspace if needed.
+    Start {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        goal: Option<String>,
+        /// product_engineer, fde, mixed, or other.
+        #[arg(long)]
+        perspective: Option<String>,
+        #[arg(long)]
+        context: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// View or change the default Work Profile.
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommand,
+    },
     /// Initialize Tramuri's local project database.
     Init {
         /// Project directory (defaults to the current directory).
@@ -68,10 +89,10 @@ enum Command {
         /// Emit a compact, privacy-minimized snapshot for an agent session hook.
         #[arg(long, conflicts_with_all = ["json", "open"])]
         agent: bool,
-        /// Emit a static reminder for the project session hook without reading workspace records.
+        /// Emit session guidance based on database-file presence without reading workspace records.
         #[arg(long, conflicts_with_all = ["json", "open", "agent"])]
         hint: bool,
-        /// Emit the native static-context response expected by a platform hook.
+        /// Emit the native context response expected by a platform hook.
         #[arg(long, requires = "hint", value_enum, conflicts_with_all = ["json", "open", "agent"])]
         hook_format: Option<HookFormat>,
         /// Print the versioned status snapshot as JSON.
@@ -152,6 +173,25 @@ enum IntegrationCommand {
     Status {
         #[arg(long, default_value = ".")]
         path: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ProfileCommand {
+    Show {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Set {
+        preference: String,
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long, default_value = "ambiguous")]
+        ask: String,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -329,6 +369,17 @@ enum ExecutionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Finish an existing in-progress Execution with an explicit terminal state.
+    Update {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        status: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -385,6 +436,73 @@ fn parse_work_perspective(
         Some("fde") => Ok(Some(WorkPerspective::Fde)),
         Some("other") => Ok(Some(WorkPerspective::Other)),
         Some(_) => Err("work perspective must be product_engineer, fde, or other".into()),
+    }
+}
+
+fn parse_mission_perspective(
+    value: &str,
+) -> Result<MissionPerspective, Box<dyn std::error::Error>> {
+    MissionPerspective::parse(value)
+        .ok_or_else(|| "perspective must be product_engineer, fde, mixed, or other".into())
+}
+
+fn parse_intent_route_source(
+    value: &str,
+) -> Result<tramuri_core::IntentRouteSource, Box<dyn std::error::Error>> {
+    match value {
+        "explicit" => Ok(tramuri_core::IntentRouteSource::Explicit),
+        "current_intent" => Ok(tramuri_core::IntentRouteSource::CurrentIntent),
+        "profile" => Ok(tramuri_core::IntentRouteSource::Profile),
+        "inferred" => Ok(tramuri_core::IntentRouteSource::Inferred),
+        _ => Err("source must be explicit, current_intent, profile, or inferred".into()),
+    }
+}
+
+fn parse_profile(value: &str, ask: &str) -> Result<WorkProfile, Box<dyn std::error::Error>> {
+    let default_work_perspective = match value {
+        "product_engineer" => WorkProfilePreference::ProductEngineer,
+        "fde" => WorkProfilePreference::Fde,
+        "mixed" => WorkProfilePreference::Mixed,
+        "other" => WorkProfilePreference::Other,
+        "auto" => WorkProfilePreference::Auto,
+        _ => return Err("preference must be product_engineer, fde, mixed, other, or auto".into()),
+    };
+    let ask_work_perspective = match ask {
+        "ambiguous" => AskWorkPerspective::Ambiguous,
+        "always" => AskWorkPerspective::Always,
+        _ => return Err("--ask must be ambiguous or always".into()),
+    };
+    Ok(WorkProfile {
+        default_work_perspective,
+        ask_work_perspective,
+    })
+}
+
+fn prompt(label: &str) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Write as _;
+    print!("{label}");
+    io::stdout().flush()?;
+    let mut value = String::new();
+    io::stdin().read_line(&mut value)?;
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        return Err("a non-empty answer is required".into());
+    }
+    Ok(value)
+}
+
+fn prompt_perspective(
+    suggested: Option<MissionPerspective>,
+) -> Result<MissionPerspective, Box<dyn std::error::Error>> {
+    let suggested = suggested.map(MissionPerspective::as_str).unwrap_or("none");
+    loop {
+        let value = prompt(&format!(
+            "Perspective (product_engineer/fde/mixed/other; suggestion: {suggested}): "
+        ))?;
+        match MissionPerspective::parse(&value) {
+            Some(value) => return Ok(value),
+            None => eprintln!("Choose product_engineer, fde, mixed, or other."),
+        }
     }
 }
 
@@ -454,6 +572,11 @@ enum MissionCommand {
         /// Print the result as JSON.
         #[arg(long)]
         json: bool,
+    },
+    /// Set work perspective and the planned next activity without assessing readiness.
+    Workflow {
+        #[command(subcommand)]
+        command: MissionWorkflowCommand,
     },
     /// Explicitly associate a Knowledge record with a Mission.
     LinkKnowledge {
@@ -549,6 +672,38 @@ enum MissionContractCommand {
         #[arg(long)]
         criteria_file: PathBuf,
         /// Print the result as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum MissionWorkflowCommand {
+    /// Update a Mission's current focus without changing its work perspective.
+    Activity {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        /// Activity label such as product_framing, discover, define, prototype, or validate.
+        #[arg(long)]
+        activity: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Set {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        perspective: String,
+        /// Where the perspective choice came from: explicit, current_intent, profile, or inferred.
+        #[arg(long, default_value = "explicit")]
+        source: String,
+        /// Empty means no next activity has been selected.
+        #[arg(long)]
+        activity: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -684,6 +839,101 @@ where
 
 fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
+        Command::Start {
+            path,
+            mut goal,
+            perspective,
+            context,
+            json,
+        } => {
+            if goal.is_none() {
+                if !io::stdin().is_terminal() {
+                    return Err("--goal is required when stdin is not interactive".into());
+                }
+                goal = Some(prompt("What do you want to achieve? ")?);
+            }
+            let goal = goal.unwrap_or_default();
+            let explicit = perspective
+                .as_deref()
+                .map(parse_mission_perspective)
+                .transpose()?;
+            let profile = profile_get(&path)?;
+            let route = tramuri_core::route_intent(&goal, profile, explicit);
+            let explicit = if explicit.is_some() {
+                explicit
+            } else if profile.ask_work_perspective == AskWorkPerspective::Always {
+                if io::stdin().is_terminal() {
+                    Some(prompt_perspective(route.perspective)?)
+                } else {
+                    return Err("profile is configured to ask for perspective; pass --perspective in non-interactive use".into());
+                }
+            } else if route.perspective.is_none() {
+                if io::stdin().is_terminal() {
+                    Some(prompt_perspective(None)?)
+                } else {
+                    return Err(tramuri_core::TramuriError::AmbiguousWorkPerspective.into());
+                }
+            } else {
+                None
+            };
+            let result = mission_start(&path, &goal, context.as_deref(), explicit)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                let perspective = result
+                    .workflow
+                    .perspective
+                    .map(|p| p.as_str())
+                    .unwrap_or("unspecified");
+                println!(
+                    "Started exploratory Mission {} ({perspective}).",
+                    result.mission.id
+                );
+                println!(
+                    "Current focus: {}. Context Readiness: not assessed.",
+                    result
+                        .workflow
+                        .next_activity
+                        .as_deref()
+                        .map(activity_name)
+                        .unwrap_or("not selected")
+                );
+                println!(
+                    "Continue by describing what you know and what you need to discover; the Success Contract can evolve later."
+                );
+            }
+        }
+        Command::Profile { command } => match command {
+            ProfileCommand::Show { path, json } => {
+                let profile = profile_get(path)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&profile)?);
+                } else {
+                    println!(
+                        "Default perspective: {}\nAsk: {:?}",
+                        profile.default_work_perspective.as_str(),
+                        profile.ask_work_perspective
+                    );
+                }
+            }
+            ProfileCommand::Set {
+                preference,
+                path,
+                ask,
+                json,
+            } => {
+                let profile = profile_set(path, parse_profile(&preference, &ask)?)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&profile)?);
+                } else {
+                    println!(
+                        "Work Profile saved: {} (ask: {:?}).",
+                        profile.default_work_perspective.as_str(),
+                        profile.ask_work_perspective
+                    );
+                }
+            }
+        },
         Command::Init { path, json } => {
             let report = init(path.unwrap_or_else(|| PathBuf::from(".")))?;
             if json {
@@ -741,7 +991,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             json,
         } => {
             if hint {
-                let context = "Tramuri is available when installed. This is a static Tramuri reminder: when relevant, explicitly use `tramuri status` or `tramuri mission list`, then `tramuri resume --mission <id>` for a selected Mission. If this workspace is not initialized, ask before running `tramuri init`. This hook did not read or attach workspace records.";
+                let context = status_hint(&path);
                 match hook_format {
                     Some(HookFormat::Claude | HookFormat::Gemini) => println!(
                         "{}",
@@ -928,6 +1178,61 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     println!("{}\t{:?}\t{}", result.id, result.state, result.objective);
                 }
             }
+            MissionCommand::Workflow { command } => match command {
+                MissionWorkflowCommand::Activity {
+                    path,
+                    mission,
+                    activity,
+                    json,
+                } => {
+                    let workflow = mission_workflow_activity_set(path, &mission, Some(&activity))?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&workflow)?);
+                    } else {
+                        println!(
+                            "Mission {}: current focus {}. Work perspective and its provenance are unchanged.",
+                            workflow.mission_id,
+                            workflow
+                                .next_activity
+                                .as_deref()
+                                .map(activity_name)
+                                .unwrap_or("not selected")
+                        );
+                    }
+                }
+                MissionWorkflowCommand::Set {
+                    path,
+                    mission,
+                    perspective,
+                    source,
+                    activity,
+                    json,
+                } => {
+                    let workflow = mission_workflow_set(
+                        path,
+                        &mission,
+                        parse_mission_perspective(&perspective)?,
+                        parse_intent_route_source(&source)?,
+                        activity.as_deref(),
+                    )?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&workflow)?);
+                    } else {
+                        println!(
+                            "Mission {}: perspective {} · planned activity {}.",
+                            workflow.mission_id,
+                            workflow
+                                .perspective
+                                .map(MissionPerspective::as_str)
+                                .unwrap_or("not recorded"),
+                            workflow.next_activity.as_deref().unwrap_or("not selected")
+                        );
+                        println!(
+                            "Context Readiness remains separately assessed: use `tramuri readiness show`."
+                        );
+                    }
+                }
+            },
             MissionCommand::LinkKnowledge {
                 path,
                 mission,
@@ -1133,6 +1438,23 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(notes) = result.notes {
                     println!("Notes: {notes}");
                 }
+            }
+        }
+        Command::Execution {
+            command:
+                ExecutionCommand::Update {
+                    path,
+                    id,
+                    status,
+                    json,
+                },
+        } => {
+            let state = parse_execution_state(&status)?;
+            let result = execution_transition(path, &id, state)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("Execution {} is now {:?}.", result.id, result.state);
             }
         }
         Command::Evidence {
@@ -1351,6 +1673,21 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn status_hint(path: &Path) -> String {
+    let workspace_state = match tramuri_core::workspace_is_initialized(path) {
+        Ok(true) => {
+            "A regular Tramuri database file was detected; its records and schema were not read or migrated."
+        }
+        Ok(false) => "No Tramuri database was detected in this workspace.",
+        Err(_) => {
+            "Tramuri could not safely determine whether this workspace has a database; do not repair or initialize state automatically."
+        }
+    };
+    format!(
+        "Tramuri integration is installed. {workspace_state} For a substantive new project, product goal, feature, customer integration, or multi-step handoff, invoke the Tramuri start workflow before inspecting project files or choosing another workflow tool, even when the user does not name Tramuri. If an appropriate Mission already exists, resume it; otherwise use `tramuri start --goal \"...\"` to create an exploratory Mission. Installing this project integration is the user's opt-in: do not ask whether to use Tramuri or initialize this workspace. `tramuri start` creates local state only after a clear goal is supplied. Do not create Missions for one-shot questions. Ask only when the goal, perspective, or Mission choice is materially ambiguous. This SessionStart hook checks database-file presence only; it does not read Mission records, inspect prompts, or run migrations."
+    )
+}
+
 fn print_status(snapshot: &tramuri_core::StatusSnapshot) {
     println!(
         "Workspace: {} Missions ({} open, {} closed)",
@@ -1391,14 +1728,26 @@ fn print_status(snapshot: &tramuri_core::StatusSnapshot) {
             terminal_safe(&mission.objective)
         );
         println!(
-            "  Next activity: {} · Context readiness: {}",
+            "  Perspective: {} · Current focus: {} · Context readiness: {} · Executions in progress: {}",
             mission
-                .readiness
-                .activity
-                .as_deref()
-                .map(terminal_safe)
+                .workflow
+                .as_ref()
+                .and_then(|w| w.perspective)
+                .map(MissionPerspective::as_str)
+                .unwrap_or("not recorded"),
+            mission
+                .workflow
+                .as_ref()
+                .and_then(|w| w.next_activity.as_deref())
+                .or(mission.readiness.activity.as_deref())
+                .map(|activity| terminal_safe(activity_name(activity)))
                 .unwrap_or_else(|| "not selected".to_owned()),
-            readiness_state_name(mission.readiness.state)
+            readiness_state_name(mission.readiness.state),
+            mission
+                .executions
+                .iter()
+                .filter(|execution| execution.state == ExecutionState::InProgress)
+                .count()
         );
     }
     if !snapshot.recent_activity.is_empty() {
@@ -1458,6 +1807,22 @@ fn readiness_state_name(value: tramuri_core::ReadinessState) -> &'static str {
     }
 }
 
+fn activity_name(value: &str) -> &str {
+    match value {
+        "product_framing" => "Product framing",
+        "discover" => "Discovery",
+        "define" => "Product definition",
+        "scope" => "MVP scope",
+        "prototype" => "Prototype",
+        "implement" => "Implementation",
+        "validate" | "verify" => "Validation",
+        "deploy" => "Deployment",
+        "launch" => "Launch",
+        "learn" => "Learning",
+        custom => custom,
+    }
+}
+
 fn readiness_decision_name(value: ReadinessDecision) -> &'static str {
     match value {
         ReadinessDecision::Preparing => "preparing",
@@ -1509,12 +1874,19 @@ fn print_resume(mission: &tramuri_core::MissionStatus) {
         mission.contract.revision, mission.outcome.state
     );
     println!(
-        "Next activity: {} · Context readiness: {}",
+        "Perspective: {} · Current focus: {} · Context readiness: {}",
         mission
-            .readiness
-            .activity
-            .as_deref()
-            .map(terminal_safe)
+            .workflow
+            .as_ref()
+            .and_then(|w| w.perspective)
+            .map(MissionPerspective::as_str)
+            .unwrap_or("not recorded"),
+        mission
+            .workflow
+            .as_ref()
+            .and_then(|w| w.next_activity.as_deref())
+            .or(mission.readiness.activity.as_deref())
+            .map(|activity| terminal_safe(activity_name(activity)))
             .unwrap_or_else(|| "not selected".to_owned()),
         readiness_state_name(mission.readiness.state)
     );
@@ -1646,12 +2018,13 @@ fn agent_context(snapshot: &tramuri_core::StatusSnapshot) -> String {
             terminal_safe(&mission.objective)
         ));
         output.push_str(&format!(
-            "- Next activity: {}; context readiness: {}.\n",
+            "- Current focus: {}; context readiness: {}.\n",
             mission
-                .readiness
-                .activity
-                .as_deref()
-                .map(terminal_safe)
+                .workflow
+                .as_ref()
+                .and_then(|workflow| workflow.next_activity.as_deref())
+                .or(mission.readiness.activity.as_deref())
+                .map(|activity| terminal_safe(activity_name(activity)))
                 .unwrap_or_else(|| "not selected".to_owned()),
             readiness_state_name(mission.readiness.state)
         ));
@@ -1756,7 +2129,7 @@ fn print_install_summary(platform: integrations::Platform, files: &[String]) {
     }
     if platform.has_hook() {
         println!(
-            "\nThe project session hook emits a static Tramuri reminder only; it never reads Mission data."
+            "\nThe project session hook checks database-file presence and guides substantive Tramuri work; it never reads Mission data or user prompts."
         );
         println!(
             "Review any project trust prompt shown by your assistant before enabling its hook."
@@ -1766,15 +2139,14 @@ fn print_install_summary(platform: integrations::Platform, files: &[String]) {
         println!("\nExisting instructions are preserved; Tramuri adds only its managed section.");
     }
     println!("\nNext:");
-    println!("  1. If this workspace is new, run `tramuri init .`.");
     println!(
-        "  2. Tell your assistant what outcome you want and whether to work as a Product Engineer, FDE, or another role."
+        "  1. Tell your assistant the outcome you want in natural language. For substantive work, Tramuri starts or resumes a Mission and initializes this workspace when needed."
     );
     println!(
-        "     The Tramuri skill will guide Mission setup and continue the workflow; a project scan is optional."
+        "     It asks only when the goal or work perspective is materially unclear. A one-shot question does not create a Mission; scanning is optional."
     );
     println!(
-        "  3. After recorded Mission work, the assistant refreshes and opens the local report once."
+        "  2. After recorded Mission work, the assistant refreshes and opens the local report at most once per session."
     );
     println!("     To open it yourself later, run `tramuri status --open`.");
 }

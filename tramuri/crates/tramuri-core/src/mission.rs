@@ -352,6 +352,31 @@ pub struct VerifiedOutcome {
 pub fn execution_record(path: impl AsRef<Path>, input: ExecutionInput) -> Result<Execution> {
     let workspace = canonical_workspace(path.as_ref())?;
     let connection = open_database(&workspace)?;
+    let work_perspective = match input.work_perspective {
+        Some(perspective) => Some(perspective),
+        None => {
+            let stored = connection
+                .query_row(
+                    "SELECT perspective FROM mission_workflows WHERE mission_id = ?1",
+                    [&input.mission_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten();
+            match stored.as_deref() {
+                None | Some("mixed") => None,
+                Some(value) => {
+                    Some(WorkPerspective::from_storage_value(value).ok_or_else(|| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            format!("unknown stored work perspective: {value}").into(),
+                        )
+                    })?)
+                }
+            }
+        }
+    };
     let contract: Option<(String, i64)> = connection
         .query_row(
             "SELECT id, revision FROM success_contracts WHERE mission_id = ?1 AND revision = ?2",
@@ -380,7 +405,7 @@ pub fn execution_record(path: impl AsRef<Path>, input: ExecutionInput) -> Result
     connection.execute(
         "INSERT INTO executions (id, mission_id, contract_id, contract_revision, actor_kind, actor_reference, work_perspective, state, started_at_unix_ms, ended_at_unix_ms, notes)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        params![id, input.mission_id, contract_id, revision, input.actor_kind.as_str(), input.actor_reference.as_deref().map(str::trim).filter(|s| !s.is_empty()), input.work_perspective.map(WorkPerspective::as_str), input.state.as_str(), now, end, input.notes.as_deref().map(str::trim).filter(|s| !s.is_empty())],
+        params![id, input.mission_id, contract_id, revision, input.actor_kind.as_str(), input.actor_reference.as_deref().map(str::trim).filter(|s| !s.is_empty()), work_perspective.map(WorkPerspective::as_str), input.state.as_str(), now, end, input.notes.as_deref().map(str::trim).filter(|s| !s.is_empty())],
     )?;
     Ok(Execution {
         id,
@@ -389,11 +414,127 @@ pub fn execution_record(path: impl AsRef<Path>, input: ExecutionInput) -> Result
         contract_revision: input.contract_revision,
         actor_kind: input.actor_kind,
         actor_reference: input.actor_reference,
-        work_perspective: input.work_perspective,
+        work_perspective,
         state: input.state,
         started_at_unix_ms: now,
         ended_at_unix_ms: end,
         notes: input.notes,
+    })
+}
+
+/// Move an in-progress Execution to a terminal state. Terminal records remain immutable.
+pub fn execution_transition(
+    path: impl AsRef<Path>,
+    execution_id: &str,
+    state: ExecutionState,
+) -> Result<Execution> {
+    let workspace = canonical_workspace(path.as_ref())?;
+    let mut connection = open_database(&workspace)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let mut execution = execution_get_from_connection(&transaction, execution_id)?;
+    if state == ExecutionState::InProgress {
+        return Err(TramuriError::InvalidExecutionTransition {
+            from: execution.state.as_str().to_owned(),
+            to: state.as_str().to_owned(),
+        });
+    }
+    if execution.state == state {
+        transaction.commit()?;
+        return Ok(execution);
+    }
+    if execution.state != ExecutionState::InProgress {
+        return Err(TramuriError::InvalidExecutionTransition {
+            from: execution.state.as_str().to_owned(),
+            to: state.as_str().to_owned(),
+        });
+    }
+    let ended_at = now_unix_ms()?;
+    transaction.execute(
+        "UPDATE executions SET state = ?1, ended_at_unix_ms = ?2 WHERE id = ?3 AND state = 'in_progress'",
+        params![state.as_str(), ended_at, execution_id],
+    )?;
+    execution.state = state;
+    execution.ended_at_unix_ms = Some(ended_at);
+    transaction.commit()?;
+    Ok(execution)
+}
+
+fn execution_get_from_connection(
+    connection: &rusqlite::Connection,
+    execution_id: &str,
+) -> Result<Execution> {
+    let row = connection
+        .query_row(
+            "SELECT id, mission_id, contract_id, contract_revision, actor_kind, actor_reference,
+                    work_perspective, state, started_at_unix_ms, ended_at_unix_ms, notes
+             FROM executions WHERE id = ?1",
+            [execution_id],
+            |row| {
+                let actor_kind: String = row.get(4)?;
+                let perspective: Option<String> = row.get(6)?;
+                let state: String = row.get(7)?;
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    actor_kind,
+                    row.get::<_, Option<String>>(5)?,
+                    perspective,
+                    state,
+                    row.get::<_, i64>(8)?,
+                    row.get::<_, Option<i64>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((
+        id,
+        mission_id,
+        contract_id,
+        revision,
+        actor_kind,
+        actor_reference,
+        perspective,
+        state,
+        started_at,
+        ended_at,
+        notes,
+    )) = row
+    else {
+        return Err(TramuriError::ExecutionNotFound(execution_id.to_owned()));
+    };
+    Ok(Execution {
+        id,
+        mission_id,
+        contract_id,
+        contract_revision: u32::try_from(revision)
+            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(3, revision))?,
+        actor_kind: ActorKind::from_storage_value(&actor_kind).ok_or_else(|| {
+            rusqlite::Error::InvalidColumnType(
+                4,
+                "actor_kind".to_owned(),
+                rusqlite::types::Type::Text,
+            )
+        })?,
+        actor_reference,
+        work_perspective: match perspective.as_deref() {
+            Some(value) => Some(WorkPerspective::from_storage_value(value).ok_or_else(|| {
+                rusqlite::Error::InvalidColumnType(
+                    6,
+                    "work_perspective".to_owned(),
+                    rusqlite::types::Type::Text,
+                )
+            })?),
+            None => None,
+        },
+        state: ExecutionState::from_storage_value(&state).ok_or_else(|| {
+            rusqlite::Error::InvalidColumnType(7, "state".to_owned(), rusqlite::types::Type::Text)
+        })?,
+        started_at_unix_ms: started_at,
+        ended_at_unix_ms: ended_at,
+        notes,
     })
 }
 
@@ -1032,13 +1173,39 @@ fn validate_external_reference(value: &str) -> Result<()> {
 }
 
 pub fn mission_create(path: impl AsRef<Path>, input: MissionInput) -> Result<Mission> {
+    mission_create_inner(path.as_ref(), input, None)
+}
+
+pub(crate) fn mission_create_with_workflow(
+    path: impl AsRef<Path>,
+    input: MissionInput,
+    perspective: crate::MissionPerspective,
+    source: crate::IntentRouteSource,
+    next_activity: Option<String>,
+) -> Result<Mission> {
+    mission_create_inner(
+        path.as_ref(),
+        input,
+        Some((perspective, source, next_activity)),
+    )
+}
+
+fn mission_create_inner(
+    path: &Path,
+    input: MissionInput,
+    workflow: Option<(
+        crate::MissionPerspective,
+        crate::IntentRouteSource,
+        Option<String>,
+    )>,
+) -> Result<Mission> {
     let objective = input.objective.trim();
     if objective.is_empty() {
         return Err(TramuriError::EmptyMissionObjective);
     }
     validate_criteria(&input.criteria)?;
 
-    let workspace = canonical_workspace(path.as_ref())?;
+    let workspace = canonical_workspace(path)?;
     let mut connection = open_database(&workspace)?;
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let now = now_unix_ms()?;
@@ -1067,6 +1234,34 @@ pub fn mission_create(path: impl AsRef<Path>, input: MissionInput) -> Result<Mis
         now,
         &input.criteria,
     )?;
+    if let Some((perspective, source, next_activity)) = workflow {
+        let source = match source {
+            crate::IntentRouteSource::Explicit => "explicit",
+            crate::IntentRouteSource::CurrentIntent => "current_intent",
+            crate::IntentRouteSource::Profile => "profile",
+            crate::IntentRouteSource::Inferred => "inferred",
+            crate::IntentRouteSource::Ambiguous => {
+                return Err(TramuriError::AmbiguousWorkPerspective);
+            }
+        };
+        transaction.execute(
+            "INSERT INTO mission_workflows (mission_id, perspective, perspective_source, next_activity, updated_at_unix_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![mission_id, perspective.as_str(), source, next_activity, now],
+        )?;
+        transaction.execute(
+            "INSERT INTO mission_work_perspective_history
+             (id, mission_id, previous_perspective, perspective, source, changed_at_unix_ms)
+             VALUES (?1, ?2, NULL, ?3, ?4, ?5)",
+            params![
+                Uuid::new_v4().to_string(),
+                mission_id,
+                perspective.as_str(),
+                source,
+                now
+            ],
+        )?;
+    }
     transaction.commit()?;
 
     mission_get(&workspace, &mission_id)

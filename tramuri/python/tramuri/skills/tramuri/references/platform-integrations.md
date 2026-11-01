@@ -19,13 +19,13 @@ rule files and refuses malformed hook JSON without changing it. Uninstall remove
 managed instruction section, rule, skill files, and hook entry; inspect status and resolve conflicts
 explicitly.
 
-Each supported platform installs a project-local session-start hook using its native output contract.
-The hook emits only a static reminder; it does not open the database, run a scan, or attach Mission
-data. The agent can explicitly run `tramuri status`, `tramuri mission list`, or
-`tramuri resume --mission <id>` when relevant. Hooks run only when the host loads project hooks and
-any host trust controls permit them. The installer does not change global configuration. Copilot
-instructions and skills remain supported; the installer does not install Copilot hooks. Capability
-discovery can catalog project-local `.github/hooks/*.json` declarations when they are present.
+Codex, Claude Code, Cursor, and Gemini CLI install a project-local session-start hook using their
+native output contract. The hook checks only whether a regular local Tramuri database file is present;
+it does not open SQLite, run migrations or scans, inspect prompts, or attach Mission records. It
+guides the agent to start or resume a Mission before substantive project work. Hooks run only when
+the host loads project hooks and its trust controls permit them. The installer does not change global
+configuration. Copilot uses the same always-on instructions and skills but has no Tramuri hook.
+Capability discovery can catalog project-local `.github/hooks/*.json` declarations when present.
 
 `tramuri status --open` generates `.tramuri/reports/tramauri.html`, `tramauri.md`, and
 `tramauri.json`. The HTML is self-contained and local. Reports omit Mission context, execution

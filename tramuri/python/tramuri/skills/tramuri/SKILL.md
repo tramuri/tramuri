@@ -13,19 +13,24 @@ LLMs and agent frameworks. Project Discovery is optional: Missions do not requir
 For focused workflows, invoke the matching installed skill:
 
 - First-time setup or an uninitialized workspace: `$tramuri-start`
+- Product Engineering framing and discovery: `$tramuri-product-engineering`
 - Safe file and capability discovery: `$tramuri-discovery`
 - Defining or resuming a Mission: `$tramuri-missions`
 - Knowledge, provenance, evidence, and outcome integrity: `$tramuri-integrity`
 
 If the user asks a general Tramuri question, answer from the relevant CLI and installed references.
-For substantive work with an objective, multiple steps, acceptance criteria, or a handoff—or when
-the user explicitly asks to use Tramuri—follow the focused start or Mission skill and carry out the
-whole authorized sequence; do not leave them to discover each next command. Do not force a Mission
-for a one-shot question. Before resuming, inspect `tramuri status` or `tramuri mission list`, select
-the relevant Mission safely, then use `tramuri resume --mission <id>`. If uninitialized, an explicit
-request to start tracking work authorizes `tramuri init`; otherwise ask once. Project hooks provide
-only a static reminder and do not read or attach Mission data. Use `tramuri status --open` at the end
-of a coherent session that changed Mission records, unless the user asks not to. Use
+For every substantive request to create or continue a product, project, feature, customer integration,
+deployment, or handoff, invoke `$tramuri-start` before file exploration or choosing another workflow
+skill, even when the user does not name Tramuri. A project integration is opt-in: the clear task
+authorizes `tramuri start` to initialize local state and create an exploratory Mission when needed.
+Do not ask whether to use Tramuri or initialize. Do not force a Mission for one-shot questions.
+Before acting on existing work, inspect `tramuri mission list` and resume the relevant Mission; if no
+relevant Mission exists, start one. Ask one brief question only if the goal, perspective, or Mission
+choice is materially ambiguous. Do not leave the user to discover the next CLI command. Session hooks
+report database presence without reading Mission records or user prompts; platforms without hooks
+still use these instructions and skills. Use `tramuri status --open` at most
+once at the end of a coherent session that changed Mission records, only if it has not already been
+opened in this session and the user has not asked to skip it. Do not reopen after each message. Use
 `tramuri status` for a read-only status check. Do not scan unless discovery was requested.
 
 When a task depends on project-declared agent resources, consult `tramuri capabilities` after the

@@ -4,15 +4,18 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 use serde::Deserialize;
 use tramuri_core::{
-    ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
-    EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType,
-    MissionInput, ReadinessAssessmentInput, ReadinessDecision, TramuriError as CoreError,
-    VerifierKind, WorkPerspective, capability_list, evidence_add, evidence_get, evidence_list,
-    execution_get, execution_list, execution_record, init, knowledge_add, knowledge_list,
-    knowledge_withdraw, mission_capability_link, mission_capability_unlink, mission_close,
-    mission_contract_revise, mission_create, mission_get, mission_knowledge_link,
-    mission_knowledge_unlink, mission_list, mission_relationships, mission_resume, outcome_assess,
-    outcome_get, readiness_assess, readiness_get, readiness_history, scan, status_snapshot,
+    ActorKind, AskWorkPerspective, CriterionAssessmentInput, CriterionAssessmentResult,
+    CriterionInput, EvidenceInput, EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter,
+    KnowledgeInput, KnowledgeType, MissionInput, MissionPerspective, ReadinessAssessmentInput,
+    ReadinessDecision, TramuriError as CoreError, VerifierKind, WorkPerspective, WorkProfile,
+    WorkProfilePreference, capability_list, evidence_add, evidence_get, evidence_list,
+    execution_get, execution_list, execution_record, execution_transition, init, knowledge_add,
+    knowledge_list, knowledge_withdraw, mission_capability_link, mission_capability_unlink,
+    mission_close, mission_contract_revise, mission_create, mission_get, mission_knowledge_link,
+    mission_knowledge_unlink, mission_list, mission_relationships, mission_resume, mission_start,
+    mission_workflow_activity_set, mission_workflow_get, mission_workflow_set, outcome_assess,
+    outcome_get, profile_get, profile_set, readiness_assess, readiness_get, readiness_history,
+    scan, status_snapshot,
 };
 
 create_exception!(_native, TramuriError, PyException);
@@ -177,6 +180,112 @@ fn _mission_create_json(
     )
     .map_err(map_core_error)?;
     serde_json::to_string(&mission).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+#[pyo3(signature = (path, objective, perspective=None, context=None))]
+fn _mission_start_json(
+    path: &str,
+    objective: &str,
+    perspective: Option<&str>,
+    context: Option<&str>,
+) -> PyResult<String> {
+    let explicit = perspective.map(parse_mission_perspective).transpose()?;
+    let result = mission_start(path, objective, context, explicit).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+fn parse_mission_perspective(value: &str) -> PyResult<MissionPerspective> {
+    MissionPerspective::parse(value).ok_or_else(|| {
+        TramuriError::new_err("perspective must be product_engineer, fde, mixed, or other")
+    })
+}
+
+#[pyfunction]
+fn _profile_get_json(path: &str) -> PyResult<String> {
+    serde_json::to_string(&profile_get(path).map_err(map_core_error)?)
+        .map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _profile_set_json(path: &str, perspective: &str, ask: &str) -> PyResult<String> {
+    let default_work_perspective = match perspective {
+        "product_engineer" => WorkProfilePreference::ProductEngineer,
+        "fde" => WorkProfilePreference::Fde,
+        "mixed" => WorkProfilePreference::Mixed,
+        "other" => WorkProfilePreference::Other,
+        "auto" => WorkProfilePreference::Auto,
+        _ => return Err(TramuriError::new_err("invalid work perspective preference")),
+    };
+    let ask_work_perspective = match ask {
+        "ambiguous" => AskWorkPerspective::Ambiguous,
+        "always" => AskWorkPerspective::Always,
+        _ => return Err(TramuriError::new_err("ask must be ambiguous or always")),
+    };
+    let profile = profile_set(
+        path,
+        WorkProfile {
+            default_work_perspective,
+            ask_work_perspective,
+        },
+    )
+    .map_err(map_core_error)?;
+    serde_json::to_string(&profile).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _mission_workflow_get_json(path: &str, mission_id: &str) -> PyResult<String> {
+    serde_json::to_string(&mission_workflow_get(path, mission_id).map_err(map_core_error)?)
+        .map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _mission_workflow_set_json(
+    path: &str,
+    mission_id: &str,
+    perspective: &str,
+    source: &str,
+    next_activity: Option<&str>,
+) -> PyResult<String> {
+    let perspective = parse_mission_perspective(perspective)?;
+    let source = match source {
+        "explicit" => tramuri_core::IntentRouteSource::Explicit,
+        "current_intent" => tramuri_core::IntentRouteSource::CurrentIntent,
+        "profile" => tramuri_core::IntentRouteSource::Profile,
+        "inferred" => tramuri_core::IntentRouteSource::Inferred,
+        _ => return Err(TramuriError::new_err("invalid perspective source")),
+    };
+    let workflow = mission_workflow_set(path, mission_id, perspective, source, next_activity)
+        .map_err(map_core_error)?;
+    serde_json::to_string(&workflow).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _mission_workflow_activity_set_json(
+    path: &str,
+    mission_id: &str,
+    next_activity: Option<&str>,
+) -> PyResult<String> {
+    let workflow =
+        mission_workflow_activity_set(path, mission_id, next_activity).map_err(map_core_error)?;
+    serde_json::to_string(&workflow).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _execution_transition_json(path: &str, execution_id: &str, state: &str) -> PyResult<String> {
+    let state = match state {
+        "completed" => ExecutionState::Completed,
+        "blocked" => ExecutionState::Blocked,
+        "failed" => ExecutionState::Failed,
+        "cancelled" => ExecutionState::Cancelled,
+        _ => {
+            return Err(TramuriError::new_err(
+                "terminal state must be completed, blocked, failed, or cancelled",
+            ));
+        }
+    };
+    serde_json::to_string(&execution_transition(path, execution_id, state).map_err(map_core_error)?)
+        .map_err(map_serialization_error)
 }
 
 #[pyfunction]
@@ -514,6 +623,16 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(_knowledge_list_json, module)?)?;
     module.add_function(wrap_pyfunction!(_knowledge_withdraw_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_create_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_start_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_profile_get_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_profile_set_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_workflow_get_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_mission_workflow_set_json, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        _mission_workflow_activity_set_json,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(_execution_transition_json, module)?)?;
     module.add_function(wrap_pyfunction!(_readiness_assess_json, module)?)?;
     module.add_function(wrap_pyfunction!(_readiness_get_json, module)?)?;
     module.add_function(wrap_pyfunction!(_readiness_history_json, module)?)?;

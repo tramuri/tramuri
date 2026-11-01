@@ -6,6 +6,7 @@ mod error;
 mod hash_status;
 mod knowledge;
 mod mission;
+mod profile;
 mod readiness;
 mod relationships;
 mod status;
@@ -28,8 +29,15 @@ pub use mission::{
     CriterionInput, CriterionOutcome, EvidenceInput, EvidenceKind, EvidenceReference, Execution,
     ExecutionInput, ExecutionState, Mission, MissionInput, MissionState, OutcomeState,
     SuccessContract, VerifiedOutcome, VerifierKind, WorkPerspective, evidence_add, evidence_get,
-    evidence_list, execution_get, execution_list, execution_record, mission_close,
-    mission_contract_revise, mission_create, mission_get, outcome_assess, outcome_get,
+    evidence_list, execution_get, execution_list, execution_record, execution_transition,
+    mission_close, mission_contract_revise, mission_create, mission_get, outcome_assess,
+    outcome_get,
+};
+pub use profile::{
+    AskWorkPerspective, IntentRoute, IntentRouteSource, MissionPerspective, MissionStartResult,
+    MissionWorkflow, WorkPerspectiveChange, WorkProfile, WorkProfilePreference, mission_start,
+    mission_workflow_activity_set, mission_workflow_get, mission_workflow_set, profile_get,
+    profile_set, route_intent,
 };
 pub use readiness::{
     MissionReadiness, ReadinessAssessment, ReadinessAssessmentInput, ReadinessDecision,
@@ -45,6 +53,7 @@ pub use status::{
     MissionListItem, MissionResume, MissionStatus, OutcomeSummary, RecentActivity, StatusSnapshot,
     WorkspaceSummary, mission_list, mission_resume, status_snapshot,
 };
+pub use storage::workspace_is_initialized;
 
 /// The current on-disk SQLite schema version.
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;

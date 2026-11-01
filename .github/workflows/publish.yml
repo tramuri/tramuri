@@ -132,6 +132,7 @@ jobs:
               "tramuri/crates/tramuri-core/src/hash_status.rs", "tramuri/python/tramuri/__init__.py",
               "tramuri/python/tramuri/py.typed", "tramuri/python/tramuri/_cli.py", "tramuri/python/tramuri/skills/tramuri/SKILL.md",
               "tramuri/python/tramuri/skills/tramuri-start/SKILL.md",
+              "tramuri/python/tramuri/skills/tramuri-product-engineering/SKILL.md",
               "tramuri/python/tramuri/skills/tramuri-discovery/SKILL.md",
               "tramuri/python/tramuri/skills/tramuri-missions/SKILL.md",
               "tramuri/python/tramuri/skills/tramuri-integrity/SKILL.md",
@@ -232,9 +233,13 @@ jobs:
 
           workspace = Path(tempfile.mkdtemp())
           report = tramuri.init(workspace)
-          assert report["schema_version"] == 8
+          assert report["schema_version"] == 9
           assert Path(report["database_path"]).parent.name == "database"
           assert tramuri.__version__
+          product_skill = Path(tramuri.__file__).parent / "skills" / "tramuri-product-engineering" / "SKILL.md"
+          assert product_skill.is_file()
+          guided = tramuri.mission_start(workspace, objective="Create a SaaS for selling online courses")
+          assert guided["workflow"]["next_activity"] == "product_framing"
           command = Path(".venv-testpypi/bin/tramuri")
           version = subprocess.run([command, "--version"], check=True, capture_output=True, text=True)
           assert version.stdout.strip().startswith("tramuri ")

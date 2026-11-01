@@ -98,13 +98,17 @@ Instale o Tramuri no projeto para o assistente utilizado, preservando instruçõ
 
 ```bash
 tramuri install --platform codex --project
-tramuri init .
 ```
 
-Depois, descreva o resultado desejado no chat do assistente, por exemplo: “Quero atuar como Product
-Engineer para melhorar o onboarding” ou “Vou assumir esta integração como FDE”. As skills do Tramuri
-orientam a criação da Mission e do Success Contract, registram a perspectiva escolhida e conduzem o
-trabalho; a varredura do projeto é opcional. Ao final de uma sessão coerente que altere registros da
+Depois, descreva um objetivo substancial no chat do assistente, por exemplo: “Quero melhorar o
+onboarding” ou “Vou assumir esta integração de cliente”. As instruções iniciam ou retomam uma Mission
+mesmo que você não mencione o Tramuri. Um objetivo claro inicializa o banco local automaticamente;
+informe a perspectiva de trabalho apenas se ela não estiver clara no pedido. Em Missions de Product
+Engineering, uma skill específica conduz framing e discovery, separando fatos, hipóteses e dúvidas.
+Ela orienta o agente a iniciar ou retomar a Mission antes de explorar o projeto ou usar outras
+ferramentas de criação. Não é necessário rodar
+`tramuri init` antes nem aprender a sintaxe da CLI. A Mission pode começar como exploratória e a
+varredura do projeto é opcional. Ao final de uma sessão coerente que altere registros da
 Mission, o assistente atualiza e abre o relatório local uma vez. Você também pode pedir “abra o
 relatório do Tramuri” ou executar `tramuri status --open`.
 
@@ -117,10 +121,12 @@ respeita as regras de exclusão do projeto e de arquivos sensíveis; não lê co
 agentes, não executa hooks, não inicia servidores MCP nem acessa a rede.
 
 Codex, Claude Code, Cursor e Gemini CLI recebem instruções nativas do projeto, uma skill geral do
-Tramuri e skills específicas para configuração, descoberta, Missions e integridade, além de um hook
-local de início de sessão. Os hooks emitem apenas um lembrete estático: não leem
-o banco nem anexam dados das Missions. O agente executa comandos Tramuri explicitamente quando
-precisar de contexto do workspace. Os hooks respeitam as configurações de confiança da plataforma,
+Tramuri e skills específicas para configuração, Product Engineering, descoberta, Missions e
+integridade, além de um hook local de início de sessão. Os hooks verificam apenas a presença do
+arquivo do banco e orientam o início da sessão; não leem registros de Missions nem mensagens do
+usuário. Para trabalho substantivo, as instruções pedem que o agente inicie/retome Tramuri antes de
+usar outras ferramentas e depois continue a tarefa solicitada. Isso é orientação da plataforma, não
+uma trava técnica que consiga obrigar qualquer agente a obedecer. Os hooks respeitam as configurações de confiança da plataforma,
 e a instalação preserva instruções e hooks não relacionados. Cursor usa `.cursor/rules/tramuri.mdc`,
 `.cursor/skills/tramuri/` e `.cursor/hooks.json`; os demais hosts usam seus caminhos nativos.
 

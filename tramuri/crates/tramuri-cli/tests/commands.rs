@@ -21,6 +21,265 @@ fn help_is_available() {
 }
 
 #[test]
+fn start_routes_exploratory_missions_and_keeps_readiness_unassessed() {
+    let project = tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    let output = tramuri()
+        .args([
+            "start",
+            "--goal",
+            "Criar um produto para pequenos negócios",
+            "--json",
+            "--path",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["workflow"]["perspective"], "product_engineer");
+    assert_eq!(result["workflow"]["next_activity"], "product_framing");
+    assert_eq!(
+        result["mission"]["success_contract"]["criteria"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    let status = tramuri()
+        .args(["status", "--json", "--path", path])
+        .output()
+        .unwrap();
+    let status: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(
+        status["missions"][0]["workflow"]["next_activity"],
+        "product_framing"
+    );
+    assert_eq!(status["missions"][0]["readiness"]["state"], "not_assessed");
+
+    let ambiguous = tempdir().unwrap();
+    let ambiguous_path = ambiguous.path().to_str().unwrap();
+    let output = tramuri()
+        .args([
+            "start",
+            "--goal",
+            "Criar uma solução",
+            "--path",
+            ambiguous_path,
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        !ambiguous
+            .path()
+            .join(".tramuri/database/tramuri.sqlite3")
+            .exists()
+    );
+}
+
+#[test]
+fn workflow_activity_command_updates_product_phase_without_changing_perspective() {
+    let project = tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    let started = tramuri()
+        .args([
+            "start",
+            "--goal",
+            "Quero criar um SaaS de cursos online",
+            "--json",
+            "--path",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(started.status.success());
+    let started: Value = serde_json::from_slice(&started.stdout).unwrap();
+    let mission_id = started["mission"]["id"].as_str().unwrap();
+    assert_eq!(started["workflow"]["perspective_source"], "current_intent");
+    assert_eq!(started["workflow"]["next_activity"], "product_framing");
+
+    let updated = tramuri()
+        .args([
+            "mission",
+            "workflow",
+            "activity",
+            "--mission",
+            mission_id,
+            "--activity",
+            "discover",
+            "--path",
+            path,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(updated.status.success());
+    let updated: Value = serde_json::from_slice(&updated.stdout).unwrap();
+    assert_eq!(updated["next_activity"], "discover");
+    assert_eq!(updated["perspective"], "product_engineer");
+    assert_eq!(updated["perspective_source"], "current_intent");
+    assert_eq!(updated["perspective_history"].as_array().unwrap().len(), 1);
+
+    let resumed = tramuri()
+        .args(["resume", "--mission", mission_id, "--path", path])
+        .output()
+        .unwrap();
+    assert!(resumed.status.success());
+    assert!(String::from_utf8_lossy(&resumed.stdout).contains("Current focus: Discovery"));
+}
+
+#[test]
+fn legacy_mission_can_record_a_transparent_inferred_product_perspective() {
+    let project = tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let created = tramuri()
+        .args([
+            "mission",
+            "create",
+            "--path",
+            path,
+            "--objective",
+            "Criar um SaaS para vender cursos online",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+    let mission: Value = serde_json::from_slice(&created.stdout).unwrap();
+    let mission_id = mission["id"].as_str().unwrap();
+
+    let updated = tramuri()
+        .args([
+            "mission",
+            "workflow",
+            "set",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--perspective",
+            "product_engineer",
+            "--source",
+            "inferred",
+            "--activity",
+            "product_framing",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        updated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&updated.stderr)
+    );
+    let workflow: Value = serde_json::from_slice(&updated.stdout).unwrap();
+    assert_eq!(workflow["perspective"], "product_engineer");
+    assert_eq!(workflow["perspective_source"], "inferred");
+    assert_eq!(workflow["next_activity"], "product_framing");
+}
+
+#[test]
+fn profile_and_execution_transition_commands_are_explicit() {
+    let project = tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let profile = tramuri()
+        .args(["profile", "set", "fde", "--path", path])
+        .output()
+        .unwrap();
+    assert!(
+        profile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&profile.stderr)
+    );
+    let profile = tramuri()
+        .args(["profile", "show", "--json", "--path", path])
+        .output()
+        .unwrap();
+    let profile: Value = serde_json::from_slice(&profile.stdout).unwrap();
+    assert_eq!(profile["default_work_perspective"], "fde");
+
+    let start = tramuri()
+        .args([
+            "start",
+            "--goal",
+            "quero explorar uma necessidade",
+            "--json",
+            "--path",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(start.status.success());
+    let start: Value = serde_json::from_slice(&start.stdout).unwrap();
+    let mission_id = start["mission"]["id"].as_str().unwrap();
+    let execution = tramuri()
+        .args([
+            "execution",
+            "record",
+            "--mission",
+            mission_id,
+            "--contract-revision",
+            "1",
+            "--actor-kind",
+            "human",
+            "--status",
+            "in_progress",
+            "--json",
+            "--path",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let execution: Value = serde_json::from_slice(&execution.stdout).unwrap();
+    assert_eq!(execution["work_perspective"], "fde");
+    let execution_id = execution["id"].as_str().unwrap();
+    let transition = tramuri()
+        .args([
+            "execution",
+            "update",
+            "--id",
+            execution_id,
+            "--status",
+            "completed",
+            "--json",
+            "--path",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        transition.status.success(),
+        "{}",
+        String::from_utf8_lossy(&transition.stderr)
+    );
+    let transition: Value = serde_json::from_slice(&transition.stdout).unwrap();
+    assert_eq!(transition["state"], "completed");
+    assert!(transition["ended_at_unix_ms"].as_i64().is_some());
+}
+
+#[test]
 fn session_hook_hint_uses_each_hosts_native_output_contract_without_workspace_data() {
     for (platform, expected_key) in [
         ("claude", "hookSpecificOutput"),
@@ -44,7 +303,8 @@ fn session_hook_hint_uses_each_hosts_native_output_contract_without_workspace_da
                 .as_str()
                 .expect("native context should be text")
         };
-        assert!(context.contains("static Tramuri reminder"));
+        assert!(context.contains("substantive new project"));
+        assert!(context.contains("do not ask whether to use Tramuri"));
         assert!(!context.contains("Mission ID"));
     }
 
@@ -53,7 +313,7 @@ fn session_hook_hint_uses_each_hosts_native_output_contract_without_workspace_da
         .output()
         .expect("CLI should launch");
     assert!(codex.status.success());
-    assert!(String::from_utf8_lossy(&codex.stdout).contains("Tramuri is available"));
+    assert!(String::from_utf8_lossy(&codex.stdout).contains("Tramuri integration is installed"));
 }
 
 #[test]
@@ -153,8 +413,11 @@ fn install_status_and_uninstall_manage_only_tramuri_content() {
     let install_output = String::from_utf8_lossy(&install.stdout);
     assert!(install_output.contains("TRAMURI"));
     assert!(install_output.contains("session hook"));
-    assert!(install_output.contains("static Tramuri reminder"));
+    assert!(install_output.contains("database-file presence"));
     assert!(install_output.contains("AGENTS.md"));
+    assert!(install_output.contains("starts or resumes a Mission"));
+    assert!(install_output.contains("initializes this workspace when needed"));
+    assert!(!install_output.contains("run `tramuri init .`"));
 
     let hook: serde_json::Value =
         serde_json::from_slice(&fs::read(project.path().join(".codex/hooks.json")).unwrap())
@@ -163,7 +426,11 @@ fn install_status_and_uninstall_manage_only_tramuri_content() {
         hook["hooks"]["SessionStart"][0]["hooks"][0]["command"],
         "tramuri status --hint"
     );
-    assert!(instructions.contains("static reminder"));
+    let normalized_instructions = instructions
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(normalized_instructions.contains("even when the user does not mention Tramuri"));
     assert!(!instructions.contains("may provide a compact"));
 
     let status = tramuri()
@@ -370,7 +637,7 @@ fn mission_list_status_and_resume_share_safe_workspace_state() {
         .unwrap();
     assert!(status.status.success());
     let status: Value = serde_json::from_slice(&status.stdout).unwrap();
-    assert_eq!(status["schema"], "tramuri.status.v2");
+    assert_eq!(status["schema"], "tramuri.status.v3");
     assert_eq!(status["missions"][0]["outcome"]["state"], "pending");
     assert!(status["missions"][0].get("context").is_none());
     assert!(!status.to_string().contains("private-context"));
@@ -707,9 +974,34 @@ fn status_hint_never_emits_workspace_records() {
         .unwrap();
     let output = String::from_utf8_lossy(&result.stdout);
     assert!(result.status.success());
-    assert!(output.contains("Tramuri is available"));
+    assert!(output.contains("A regular Tramuri database file was detected"));
+    assert!(output.contains("substantive new project"));
     assert!(!output.contains("private objective"));
     assert!(!output.contains("private criterion"));
+}
+
+#[test]
+fn uninitialized_session_hint_guides_start_without_initializing_or_reading_prompts() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+    for format in [None, Some("claude"), Some("cursor"), Some("gemini")] {
+        let mut command = tramuri();
+        command.args(["status", "--path", path, "--hint"]);
+        if let Some(format) = format {
+            command.args(["--hook-format", format]);
+        }
+        let result = command.output().expect("session hint should run");
+        assert!(result.status.success());
+        let output = String::from_utf8_lossy(&result.stdout);
+        assert!(output.contains("No Tramuri database was detected"));
+        assert!(output.contains("invoke the Tramuri start workflow"));
+        assert!(output.contains("even when the user does not name Tramuri"));
+        assert!(output.contains("Do not create Missions for one-shot questions"));
+        assert!(!project.path().join(".tramuri").exists());
+        if format.is_some() {
+            assert!(serde_json::from_slice::<serde_json::Value>(&result.stdout).is_ok());
+        }
+    }
 }
 
 #[test]
@@ -1239,7 +1531,7 @@ fn init_and_scan_emit_machine_readable_json() {
         .expect("CLI should launch");
     assert!(init.status.success());
     let init_json: Value = serde_json::from_slice(&init.stdout).expect("init should emit JSON");
-    assert_eq!(init_json["schema_version"], 8);
+    assert_eq!(init_json["schema_version"], 9);
     assert_eq!(init_json["already_initialized"], false);
 
     let repeated_init = tramuri()

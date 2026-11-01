@@ -16,26 +16,29 @@ tramuri --version
 mkdir empresta-ferramentas
 cd empresta-ferramentas
 tramuri install --project --platform codex
-tramuri init .
-tramuri status --open
 ```
 
-A instalação para Codex é opcional e preserva instruções existentes. O hook de sessão só mostra um
-lembrete estático; não lê dados da Mission. Sem integração, os comandos funcionam no terminal.
+A integração com Codex preserva instruções existentes. O hook de sessão verifica somente a presença
+do arquivo do banco; as instruções e skills guiam o fluxo sem ler os registros da Mission. Um pedido
+substancial em linguagem natural inicia a Mission exploratória e inicializa o workspace
+automaticamente. Não rode `tramuri init` antes nem abra um relatório vazio.
 
 ## 2. Começar com uma frase no Codex
 
 Depois de instalar a integração, não digite `tramuri mission create`. Diga ao Codex o que quer
-alcançar, em suas palavras:
+alcançar, em suas palavras. O assistente deve iniciar ou retomar a Mission antes de explorar arquivos
+ou acionar outra ferramenta de criação. Ele começa com uma atualização curta de Estruturação do
+produto e faz discovery útil antes de perguntar algo que mudaria materialmente o produto:
 
 > Tenho uma ideia para um produto novo: um aplicativo para vizinhos emprestarem ferramentas que
 > usam pouco. Quero começar esse projeto do zero como Product Engineer. Me guie desde a ideia e
 > pergunte só o essencial.
 
-O assistente deve usar a skill do Tramuri para criar a Mission exploratória e seguir a conversa,
-registrando apenas decisões e informações que você confirmar. O Tramuri preserva o contexto; o
-Codex ajuda a transformar a ideia em software. Responda às perguntas em linguagem natural e
-descreva o trabalho realizado; não é preciso montar comandos. Ao final da sessão, o assistente
+O assistente deve iniciar a Mission com o Tramuri, usar a skill de Product Engineering e continuar
+sem transformar discovery em um interrogatório. Ele separa fatos informados por você, observações,
+hipóteses e dúvidas. O Tramuri preserva o contexto confirmado; o Codex ajuda a transformar a ideia
+em software. Responda em linguagem natural e descreva o trabalho realizado; não é preciso montar
+comandos. Ao final da sessão, o assistente
 atualiza e abre o relatório local.
 
 Os comandos das próximas seções mostram uma alternativa manual e o que fica registrado. Use-os se
@@ -47,12 +50,13 @@ O objetivo fictício é criar a primeira versão do aplicativo. Comece sem crit�
 produto ainda será descoberto:
 
 ```console
-tramuri mission create --objective "Criar a primeira versão de um aplicativo para vizinhos emprestarem ferramentas" --json
+tramuri start --goal "Criar a primeira versão de um aplicativo para vizinhos emprestarem ferramentas" --perspective product_engineer --json
 ```
 
 Guarde o ID retornado como `<MISSION_ID>` e registre uma lacuna:
 
 ```console
+tramuri mission workflow activity --mission <MISSION_ID> --activity discover
 tramuri readiness assess --mission <MISSION_ID> --activity discover --state needs_review --gap "Ainda não sabemos quais ferramentas os vizinhos estariam dispostos a emprestar" --actor "Engenheiro de Produto"
 tramuri status
 tramuri resume --mission <MISSION_ID>

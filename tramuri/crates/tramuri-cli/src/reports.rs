@@ -101,7 +101,7 @@ fn report_document<'a>(
 ) -> ReportDocument<'a> {
     ReportDocument {
         status: snapshot,
-        report_schema: "tramuri.report.v2",
+        report_schema: "tramuri.report.v3",
         capability_schema: &capabilities.schema,
         capability_scan_complete: capabilities.scan_complete,
         capabilities: capabilities
@@ -254,15 +254,17 @@ pub fn render_markdown(snapshot: &StatusSnapshot, capabilities: &CapabilitySnaps
     }
     for mission in &snapshot.missions {
         output.push_str(&format!(
-            "### {} — {}\n\n- State: `{}`\n- Current activity: `{}`\n- Context readiness: `{}`\n- Success Contract: revision {}\n- Outcome: `{}`\n- Executions: {}\n- Evidence references: {}\n\n",
+            "### {} — {}\n\n- State: `{}`\n- Work perspective: `{}`\n- Current focus / next activity: `{}`\n- Context readiness: `{}`\n- Success Contract: revision {}\n- Outcome: `{}`\n- Executions: {} ({} in progress)\n- Evidence references: {}\n\n",
             mission.id,
             md_escape(&mission.objective),
             state_name(mission.state),
-            mission.readiness.activity.as_deref().unwrap_or("not selected"),
+            mission.workflow.as_ref().and_then(|workflow| workflow.perspective).map(|p| p.as_str()).unwrap_or("not recorded"),
+            md_escape(mission.workflow.as_ref().and_then(|workflow| workflow.next_activity.as_deref()).or(mission.readiness.activity.as_deref()).map(activity_name).unwrap_or("not selected")),
             readiness_name(mission.readiness.state),
             mission.contract.revision,
             outcome_name(mission.outcome.state),
             mission.executions.len(),
+            mission.executions.iter().filter(|execution| execution.state == tramuri_core::ExecutionState::InProgress).count(),
             mission.evidence.len(),
         ));
         if let Some(readiness) = &mission.readiness.assessment {
@@ -426,6 +428,22 @@ pub fn render_markdown(snapshot: &StatusSnapshot, capabilities: &CapabilitySnaps
     output
 }
 
+fn activity_name(value: &str) -> &str {
+    match value {
+        "product_framing" => "Product framing",
+        "discover" => "Discovery",
+        "define" => "Product definition",
+        "scope" => "MVP scope",
+        "prototype" => "Prototype",
+        "implement" => "Implementation",
+        "validate" | "verify" => "Validation",
+        "deploy" => "Deployment",
+        "launch" => "Launch",
+        "learn" => "Learning",
+        custom => custom,
+    }
+}
+
 fn render_html(document: &ReportDocument<'_>) -> Result<String, serde_json::Error> {
     let mut json = serde_json::to_string(document)?;
     json = json
@@ -482,9 +500,10 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
     use tramuri_core::{
-        ActorKind, CriterionInput, ExecutionInput, ExecutionState, MissionInput,
-        ReadinessAssessmentInput, ReadinessDecision, WorkPerspective, capability_snapshot,
-        execution_record, init, mission_create, readiness_assess, scan, status_snapshot,
+        ActorKind, CriterionInput, ExecutionInput, ExecutionState, IntentRouteSource, MissionInput,
+        MissionPerspective, ReadinessAssessmentInput, ReadinessDecision, WorkPerspective,
+        capability_snapshot, execution_record, init, mission_create, mission_workflow_set,
+        readiness_assess, scan, status_snapshot,
     };
 
     #[test]
@@ -502,6 +521,14 @@ mod tests {
                     evidence_expectation: None,
                 }],
             },
+        )
+        .unwrap();
+        mission_workflow_set(
+            project.path(),
+            &mission.id,
+            MissionPerspective::ProductEngineer,
+            IntentRouteSource::Explicit,
+            Some("prototype"),
         )
         .unwrap();
         execution_record(
@@ -546,6 +573,14 @@ mod tests {
         let report_json = serde_json::to_value(&document).unwrap();
         assert_eq!(report_json["missions"][0]["readiness"]["state"], "blocked");
         assert_eq!(
+            report_json["missions"][0]["workflow"]["perspective"],
+            "product_engineer"
+        );
+        assert_eq!(
+            report_json["missions"][0]["workflow"]["next_activity"],
+            "prototype"
+        );
+        assert_eq!(
             report_json["missions"][0]["readiness"]["assessment"]["blockers"][0],
             "<script>do not execute</script>"
         );
@@ -558,6 +593,7 @@ mod tests {
         assert!(html.contains("nextActivity"));
         assert!(html.contains("Codex (synthetic)"));
         assert!(html.contains("Product Engineer"));
+        assert!(html.contains("Current focus / next activity"));
         assert!(html.contains("PT-BR"));
         assert!(html.contains("Your work, in context."));
         assert!(html.contains("Seu trabalho, com contexto."));
@@ -576,7 +612,8 @@ mod tests {
             &fs::read(project.path().join(".tramuri/reports").join(JSON_FILE)).unwrap(),
         )
         .unwrap();
-        assert_eq!(json["schema"], "tramuri.status.v2");
+        assert_eq!(json["schema"], "tramuri.status.v3");
+        assert_eq!(json["report_schema"], "tramuri.report.v3");
         assert_eq!(json["capabilities"][0]["name"], "test");
         assert_eq!(json["capability_summary"]["total"], 1);
         assert_eq!(json["workspace"]["mission_count"], 1);

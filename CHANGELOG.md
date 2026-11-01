@@ -8,6 +8,24 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-01
+
+### Added
+
+- Persistent local Work Profiles, transparent deterministic intent routing, and `tramuri start` for exploratory Missions with a planned Discovery activity separate from Context Readiness.
+- A Product Engineering skill that frames product work, performs useful discovery before material questions, and labels rather than persists unsupported hypotheses.
+- Product Engineer Missions begin in `product_framing`; planned focus can advance independently through the Rust Core, CLI, Python SDK, Resume, and reports.
+- Installation instructions for Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot direct agents to start/resume Tramuri before other project-work tools, then continue the requested task.
+- Mission workflow metadata and perspective-change history, visible through Core, CLI, Python SDK, Status, Resume, and the local reports.
+- Explicit transitions from in-progress Executions to terminal states, with end timestamps and terminal-state protection.
+- Report wording that distinguishes human review from external evidence availability, plus session guidance to open the report no more than once.
+
+### Changed
+
+- SQLite schema v9 adds additive Mission workflow and work-perspective history tables. Status and report JSON advance to v3; downstream Rust struct literals for `MissionStatus` must now supply `workflow`.
+- The CLI now provides `tramuri profile show|set`, `tramuri mission workflow set|activity`, and `tramuri execution update`.
+- Mission workflow perspective updates accept an explicit provenance source, including `inferred` for transparently classified legacy Missions.
+
 ## [0.5.0] - 2026-11-01
 
 ### Added

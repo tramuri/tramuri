@@ -16,26 +16,28 @@ tramuri --version
 mkdir borrow-tools
 cd borrow-tools
 tramuri install --project --platform codex
-tramuri init .
-tramuri status --open
 ```
 
-Codex integration is optional and preserves existing instructions. Its session hook emits a static
-reminder; it does not read Mission data. The same Tramuri commands work in a terminal without an
-agent integration.
+The Codex integration preserves existing instructions. Its session hook checks database-file
+presence only; the installed instructions and skills guide the workflow without reading Mission
+data. A substantive natural-language request starts the exploratory Mission and initializes the
+workspace automatically. Do not run `tramuri init` first or open an empty report.
 
 ## 2. Start with one sentence in Codex
 
 After installing the integration, do not type `tramuri mission create`. Tell Codex what you want
-to achieve in your own words:
+to achieve in your own words. The assistant should start or resume the Mission before exploring files
+or invoking another creation tool. It begins with a short Product framing update, then does useful
+discovery before asking a question that would materially change the product:
 
 > I have an idea for a new product: an app for neighbors to lend tools they rarely use. I want to
 > start this project from scratch as a Product Engineer. Guide me from the idea and ask only what is
 > essential.
 
-The assistant should use Tramuri's skill to create the exploratory Mission and continue the
-conversation, recording only information and decisions you confirm. Tramuri preserves the context;
-Codex helps turn the idea into software. Answer in natural language and describe the work you did;
+The assistant should start the Mission with Tramuri, use the Product Engineering skill, and continue
+without turning discovery into a questionnaire. It should separate user-provided facts, observations,
+hypotheses, and unknowns. Tramuri preserves confirmed context; Codex helps turn the idea into software.
+Answer in natural language and describe the work you did;
 you do not need to assemble commands. At the end of the session, the assistant refreshes and opens
 the local report.
 
@@ -49,12 +51,13 @@ The fictional goal is to create the first version of the app. Begin without crit
 product flow still needs discovery:
 
 ```console
-tramuri mission create --objective "Build the first version of an app for neighbors to lend tools" --json
+tramuri start --goal "Build the first version of an app for neighbors to lend tools" --perspective product_engineer --json
 ```
 
 Save the returned ID as `<MISSION_ID>` and record a known gap:
 
 ```console
+tramuri mission workflow activity --mission <MISSION_ID> --activity discover
 tramuri readiness assess --mission <MISSION_ID> --activity discover --state needs_review --gap "We have not learned which tools neighbors would be willing to lend" --actor "Product Engineer"
 tramuri status
 tramuri resume --mission <MISSION_ID>

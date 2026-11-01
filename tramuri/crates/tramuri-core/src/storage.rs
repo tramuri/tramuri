@@ -34,6 +34,62 @@ fn legacy_database_path(root: &Path) -> PathBuf {
     root.join(APP_DIR).join(LEGACY_DATABASE_FILE)
 }
 
+/// Check whether this workspace has a Tramuri database without opening SQLite or running migrations.
+///
+/// This is intended for lightweight integration hooks. It verifies only that a regular database
+/// file exists at the current or legacy location; it does not validate the schema or contents.
+pub fn workspace_is_initialized(root: &Path) -> Result<bool> {
+    let app_dir = root.join(APP_DIR);
+    let app_metadata = match std::fs::symlink_metadata(&app_dir) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(source) => {
+            return Err(TramuriError::Io {
+                operation: "inspect Tramuri state directory",
+                path: app_dir,
+                source,
+            });
+        }
+    };
+    if app_metadata.file_type().is_symlink() || !app_metadata.is_dir() {
+        return Err(TramuriError::InvalidStatePath(app_dir));
+    }
+
+    let current_dir = root.join(APP_DIR).join(DATABASE_DIR);
+    match std::fs::symlink_metadata(&current_dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(TramuriError::InvalidStatePath(current_dir));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(TramuriError::Io {
+                operation: "inspect Tramuri database directory",
+                path: current_dir.clone(),
+                source,
+            });
+        }
+    }
+
+    for path in [database_path(root), legacy_database_path(root)] {
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                return Err(TramuriError::InvalidStatePath(path));
+            }
+            Ok(_) => return Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(TramuriError::Io {
+                    operation: "inspect Tramuri database",
+                    path,
+                    source,
+                });
+            }
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) fn open_database(root: &Path) -> Result<Connection> {
     let app_dir = root.join(APP_DIR);
     let app_metadata = match std::fs::symlink_metadata(&app_dir) {
@@ -148,6 +204,7 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             migrate_v5_to_v6(&mut connection)?;
             migrate_v6_to_v7(&mut connection)?;
             migrate_v7_to_v8(&mut connection)?;
+            migrate_v8_to_v9(&mut connection)?;
         }
         1 => {
             migrate_v1_to_v2(&mut connection)?;
@@ -157,6 +214,7 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             migrate_v5_to_v6(&mut connection)?;
             migrate_v6_to_v7(&mut connection)?;
             migrate_v7_to_v8(&mut connection)?;
+            migrate_v8_to_v9(&mut connection)?;
         }
         2 => {
             migrate_v2_to_v3(&mut connection)?;
@@ -165,6 +223,7 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             migrate_v5_to_v6(&mut connection)?;
             migrate_v6_to_v7(&mut connection)?;
             migrate_v7_to_v8(&mut connection)?;
+            migrate_v8_to_v9(&mut connection)?;
         }
         3 => {
             migrate_v3_to_v4(&mut connection)?;
@@ -172,23 +231,31 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             migrate_v5_to_v6(&mut connection)?;
             migrate_v6_to_v7(&mut connection)?;
             migrate_v7_to_v8(&mut connection)?;
+            migrate_v8_to_v9(&mut connection)?;
         }
         4 => {
             migrate_v4_to_v5(&mut connection)?;
             migrate_v5_to_v6(&mut connection)?;
             migrate_v6_to_v7(&mut connection)?;
             migrate_v7_to_v8(&mut connection)?;
+            migrate_v8_to_v9(&mut connection)?;
         }
         5 => {
             migrate_v5_to_v6(&mut connection)?;
             migrate_v6_to_v7(&mut connection)?;
             migrate_v7_to_v8(&mut connection)?;
+            migrate_v8_to_v9(&mut connection)?;
         }
         6 => {
             migrate_v6_to_v7(&mut connection)?;
             migrate_v7_to_v8(&mut connection)?;
+            migrate_v8_to_v9(&mut connection)?;
         }
-        7 => migrate_v7_to_v8(&mut connection)?,
+        7 => {
+            migrate_v7_to_v8(&mut connection)?;
+            migrate_v8_to_v9(&mut connection)?;
+        }
+        8 => migrate_v8_to_v9(&mut connection)?,
         version if version == i64::from(SCHEMA_VERSION) => {}
         found => {
             return Err(TramuriError::UnsupportedSchema {
@@ -355,7 +422,8 @@ fn migrate_schema(connection: &mut Connection) -> Result<()> {
             migrate_v4_to_v5(connection)?;
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
-            migrate_v7_to_v8(connection)
+            migrate_v7_to_v8(connection)?;
+            migrate_v8_to_v9(connection)
         }
         2 => {
             migrate_v2_to_v3(connection)?;
@@ -363,31 +431,40 @@ fn migrate_schema(connection: &mut Connection) -> Result<()> {
             migrate_v4_to_v5(connection)?;
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
-            migrate_v7_to_v8(connection)
+            migrate_v7_to_v8(connection)?;
+            migrate_v8_to_v9(connection)
         }
         3 => {
             migrate_v3_to_v4(connection)?;
             migrate_v4_to_v5(connection)?;
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
-            migrate_v7_to_v8(connection)
+            migrate_v7_to_v8(connection)?;
+            migrate_v8_to_v9(connection)
         }
         4 => {
             migrate_v4_to_v5(connection)?;
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
-            migrate_v7_to_v8(connection)
+            migrate_v7_to_v8(connection)?;
+            migrate_v8_to_v9(connection)
         }
         5 => {
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
-            migrate_v7_to_v8(connection)
+            migrate_v7_to_v8(connection)?;
+            migrate_v8_to_v9(connection)
         }
         6 => {
             migrate_v6_to_v7(connection)?;
-            migrate_v7_to_v8(connection)
+            migrate_v7_to_v8(connection)?;
+            migrate_v8_to_v9(connection)
         }
-        7 => migrate_v7_to_v8(connection),
+        7 => {
+            migrate_v7_to_v8(connection)?;
+            migrate_v8_to_v9(connection)
+        }
+        8 => migrate_v8_to_v9(connection),
         version if version == i64::from(SCHEMA_VERSION) => Ok(()),
         found => Err(TramuriError::UnsupportedSchema {
             found,
@@ -584,6 +661,33 @@ fn migrate_v7_to_v8(connection: &mut Connection) -> Result<()> {
             ON readiness_assessments(mission_id, assessed_at_unix_ms DESC, id DESC);",
     )?;
     transaction.pragma_update(None, "user_version", 8)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v8_to_v9(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(
+        "CREATE TABLE mission_workflows (
+            mission_id TEXT PRIMARY KEY NOT NULL REFERENCES missions(id),
+            perspective TEXT CHECK (perspective IN ('product_engineer', 'fde', 'mixed', 'other')),
+            perspective_source TEXT CHECK (perspective_source IN ('explicit', 'current_intent', 'profile', 'inferred')),
+            next_activity TEXT CHECK (next_activity IS NULL OR length(trim(next_activity)) BETWEEN 1 AND 80),
+            updated_at_unix_ms INTEGER NOT NULL,
+            CHECK ((perspective IS NULL) = (perspective_source IS NULL))
+        );
+        CREATE TABLE mission_work_perspective_history (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            mission_id TEXT NOT NULL REFERENCES missions(id),
+            previous_perspective TEXT CHECK (previous_perspective IN ('product_engineer', 'fde', 'mixed', 'other')),
+            perspective TEXT NOT NULL CHECK (perspective IN ('product_engineer', 'fde', 'mixed', 'other')),
+            source TEXT NOT NULL CHECK (source IN ('explicit', 'current_intent', 'profile', 'inferred')),
+            changed_at_unix_ms INTEGER NOT NULL
+        );
+        CREATE INDEX mission_work_perspective_history_order
+            ON mission_work_perspective_history(mission_id, changed_at_unix_ms, id);",
+    )?;
+    transaction.pragma_update(None, "user_version", 9)?;
     transaction.commit()?;
     Ok(())
 }

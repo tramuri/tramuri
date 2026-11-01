@@ -293,6 +293,205 @@ fn execution_and_evidence_commands_record_without_verifying_outcome() {
 }
 
 #[test]
+fn execution_and_evidence_retrieval_lists_and_shows_json_records() {
+    let project = tempdir().expect("project directory should be created");
+    let path = project.path().to_str().expect("path should be UTF-8");
+    assert!(
+        tramuri()
+            .args(["init", path])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let criteria = project.path().join("criteria.json");
+    fs::write(
+        &criteria,
+        r#"{"criteria":[{"description":"Customer confirms"}]}"#,
+    )
+    .unwrap();
+    let created = tramuri()
+        .args([
+            "mission",
+            "create",
+            "--path",
+            path,
+            "--objective",
+            "FDE handoff",
+            "--criteria-file",
+            criteria.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+    let mission: Value = serde_json::from_slice(&created.stdout).unwrap();
+    let mission_id = mission["id"].as_str().unwrap();
+
+    let mut executions = Vec::new();
+    let mut evidences = Vec::new();
+    for (actor, status, locator) in [
+        ("human", "blocked", "https://example.invalid/blocked"),
+        ("tool", "completed", "https://example.invalid/completed"),
+    ] {
+        let output = tramuri()
+            .args([
+                "execution",
+                "record",
+                "--path",
+                path,
+                "--mission",
+                mission_id,
+                "--contract-revision",
+                "1",
+                "--actor-kind",
+                actor,
+                "--status",
+                status,
+                "--actor",
+                "fde-1",
+                "--notes",
+                "handoff notes",
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let execution: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let evidence = tramuri()
+            .args([
+                "evidence",
+                "add",
+                "--path",
+                path,
+                "--mission",
+                mission_id,
+                "--execution",
+                execution["id"].as_str().unwrap(),
+                "--kind",
+                "external_reference",
+                "--locator",
+                locator,
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            evidence.status.success(),
+            "{}",
+            String::from_utf8_lossy(&evidence.stderr)
+        );
+        executions.push(execution);
+        evidences.push(serde_json::from_slice::<Value>(&evidence.stdout).unwrap());
+    }
+
+    let list = tramuri()
+        .args([
+            "execution",
+            "list",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    let listed_executions: Vec<Value> = serde_json::from_slice(&list.stdout).unwrap();
+    assert_eq!(listed_executions.len(), 2);
+    let mut expected_executions = executions.clone();
+    expected_executions.sort_by(|left, right| {
+        right["started_at_unix_ms"]
+            .as_i64()
+            .cmp(&left["started_at_unix_ms"].as_i64())
+            .then_with(|| right["id"].as_str().cmp(&left["id"].as_str()))
+    });
+    assert_eq!(listed_executions, expected_executions);
+    for execution in &executions {
+        let shown = tramuri()
+            .args([
+                "execution",
+                "show",
+                "--path",
+                path,
+                "--id",
+                execution["id"].as_str().unwrap(),
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert!(shown.status.success());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&shown.stdout).unwrap(),
+            *execution
+        );
+    }
+
+    let list = tramuri()
+        .args([
+            "evidence",
+            "list",
+            "--path",
+            path,
+            "--mission",
+            mission_id,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    let listed_evidences: Vec<Value> = serde_json::from_slice(&list.stdout).unwrap();
+    assert_eq!(listed_evidences.len(), 2);
+    let mut expected_evidences = evidences.clone();
+    expected_evidences.sort_by(|left, right| {
+        right["captured_at_unix_ms"]
+            .as_i64()
+            .cmp(&left["captured_at_unix_ms"].as_i64())
+            .then_with(|| right["id"].as_str().cmp(&left["id"].as_str()))
+    });
+    assert_eq!(listed_evidences, expected_evidences);
+    for evidence in &evidences {
+        let shown = tramuri()
+            .args([
+                "evidence",
+                "show",
+                "--path",
+                path,
+                "--id",
+                evidence["id"].as_str().unwrap(),
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert!(shown.status.success());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&shown.stdout).unwrap(),
+            *evidence
+        );
+    }
+
+    let empty = tramuri()
+        .args([
+            "execution",
+            "list",
+            "--path",
+            path,
+            "--mission",
+            "missing-mission",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!empty.status.success());
+    assert!(String::from_utf8_lossy(&empty.stderr).contains("mission was not found"));
+}
+
+#[test]
 fn outcome_commands_record_assessments_and_report_verified_state() {
     let project = tempdir().expect("project directory should be created");
     let path = project.path().to_str().expect("path should be UTF-8");

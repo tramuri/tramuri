@@ -19,8 +19,9 @@ pub use mission::{
     ActorKind, Criterion, CriterionAssessment, CriterionAssessmentInput, CriterionAssessmentResult,
     CriterionInput, CriterionOutcome, EvidenceInput, EvidenceKind, EvidenceReference, Execution,
     ExecutionInput, ExecutionState, Mission, MissionInput, MissionState, OutcomeState,
-    SuccessContract, VerifiedOutcome, VerifierKind, evidence_add, execution_record, mission_close,
-    mission_contract_revise, mission_create, mission_get, outcome_assess, outcome_get,
+    SuccessContract, VerifiedOutcome, VerifierKind, evidence_add, evidence_get, evidence_list,
+    execution_get, execution_list, execution_record, mission_close, mission_contract_revise,
+    mission_create, mission_get, outcome_assess, outcome_get,
 };
 
 /// The current on-disk SQLite schema version.

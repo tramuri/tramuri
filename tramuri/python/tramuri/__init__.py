@@ -9,8 +9,12 @@ from typing import Any
 
 from ._native import (
     TramuriError,
+    _evidence_get_json,
+    _evidence_list_json,
     _init_json,
     _evidence_add_json,
+    _execution_get_json,
+    _execution_list_json,
     _execution_record_json,
     _knowledge_add_json,
     _knowledge_list_json,
@@ -117,12 +121,54 @@ def execution_record(
     return json.loads(_execution_record_json(encoded_path, mission_id, contract_revision, actor_kind, state, actor_reference, notes))
 
 
+def execution_list(path: PathLike = ".", *, mission_id: str) -> list[dict[str, Any]]:
+    """List a Mission's executions, newest first, through the shared Rust core.
+
+    Opening older local state may apply its supported schema migration before the read.
+    Execution, evidence, and outcome records are not changed by this query.
+    """
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_execution_list_json(encoded_path, mission_id))
+
+
+def execution_get(
+    path: PathLike = ".", *, execution_id: str
+) -> dict[str, Any]:
+    """Retrieve one execution by ID from the selected local Tramuri database.
+
+    Opening older local state may apply its supported schema migration before the read.
+    Execution, evidence, and outcome records are not changed by this query.
+    """
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_execution_get_json(encoded_path, execution_id))
+
+
 def evidence_add(
     path: PathLike = ".", *, mission_id: str, execution_id: str, kind: str, locator: str,
 ) -> dict[str, Any]:
     """Attach a reference without fetching external resources or storing file contents."""
     encoded_path = os.fsdecode(os.fspath(path))
     return json.loads(_evidence_add_json(encoded_path, mission_id, execution_id, kind, locator))
+
+
+def evidence_list(path: PathLike = ".", *, mission_id: str) -> list[dict[str, Any]]:
+    """List stored evidence references for a Mission without following their locators.
+
+    Opening older local state may apply its supported schema migration before the read.
+    Evidence records are not changed, followed, or revalidated by this query.
+    """
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_evidence_list_json(encoded_path, mission_id))
+
+
+def evidence_get(path: PathLike = ".", *, evidence_id: str) -> dict[str, Any]:
+    """Retrieve stored evidence by ID without following or revalidating its locator.
+
+    Opening older local state may apply its supported schema migration before the read.
+    Evidence records are not changed, followed, or revalidated by this query.
+    """
+    encoded_path = os.fsdecode(os.fspath(path))
+    return json.loads(_evidence_get_json(encoded_path, evidence_id))
 
 
 def outcome_assess(
@@ -181,7 +227,11 @@ __all__ = [
     "mission_close",
     "mission_contract_revise",
     "execution_record",
+    "execution_list",
+    "execution_get",
     "evidence_add",
+    "evidence_list",
+    "evidence_get",
     "outcome_assess",
     "outcome_get",
 ]

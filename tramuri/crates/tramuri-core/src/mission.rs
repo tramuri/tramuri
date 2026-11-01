@@ -92,6 +92,15 @@ impl ActorKind {
             Self::Tool => "tool",
         }
     }
+
+    fn from_storage_value(value: &str) -> Option<Self> {
+        match value {
+            "human" => Some(Self::Human),
+            "agent" => Some(Self::Agent),
+            "tool" => Some(Self::Tool),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -112,6 +121,17 @@ impl ExecutionState {
             Self::Blocked => "blocked",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
+        }
+    }
+
+    fn from_storage_value(value: &str) -> Option<Self> {
+        match value {
+            "in_progress" => Some(Self::InProgress),
+            "completed" => Some(Self::Completed),
+            "blocked" => Some(Self::Blocked),
+            "failed" => Some(Self::Failed),
+            "cancelled" => Some(Self::Cancelled),
+            _ => None,
         }
     }
 }
@@ -154,6 +174,15 @@ impl EvidenceKind {
             Self::ProjectFile => "project_file",
             Self::ExternalReference => "external_reference",
             Self::HumanAttestation => "human_attestation",
+        }
+    }
+
+    fn from_storage_value(value: &str) -> Option<Self> {
+        match value {
+            "project_file" => Some(Self::ProjectFile),
+            "external_reference" => Some(Self::ExternalReference),
+            "human_attestation" => Some(Self::HumanAttestation),
+            _ => None,
         }
     }
 }
@@ -417,6 +446,175 @@ pub fn evidence_add(path: impl AsRef<Path>, input: EvidenceInput) -> Result<Evid
         scan_id,
         captured_at_unix_ms: now,
     })
+}
+
+/// List a Mission's executions, newest first with IDs as a deterministic tie-breaker.
+///
+/// Opening the database may migrate an older schema before this read. The query itself is
+/// read-only and does not change execution, evidence, or outcome records.
+pub fn execution_list(path: impl AsRef<Path>, mission_id: &str) -> Result<Vec<Execution>> {
+    let workspace = canonical_workspace(path.as_ref())?;
+    let connection = open_database(&workspace)?;
+    ensure_mission_exists(&connection, mission_id)?;
+
+    let mut statement = connection.prepare(
+        "SELECT id, mission_id, contract_id, contract_revision, actor_kind, actor_reference,
+                state, started_at_unix_ms, ended_at_unix_ms, notes
+         FROM executions
+         WHERE mission_id = ?1
+         ORDER BY started_at_unix_ms DESC, id DESC",
+    )?;
+    let rows = statement.query_map([mission_id], execution_from_row)?;
+    rows.collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(TramuriError::from)
+}
+
+/// Retrieve one execution by ID from the selected local Tramuri database.
+///
+/// Opening the database may migrate an older schema before this read. The query itself is
+/// read-only and does not change execution, evidence, or outcome records.
+pub fn execution_get(path: impl AsRef<Path>, execution_id: &str) -> Result<Execution> {
+    let workspace = canonical_workspace(path.as_ref())?;
+    let connection = open_database(&workspace)?;
+    connection
+        .query_row(
+            "SELECT id, mission_id, contract_id, contract_revision, actor_kind, actor_reference,
+                    state, started_at_unix_ms, ended_at_unix_ms, notes
+             FROM executions WHERE id = ?1",
+            [execution_id],
+            execution_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| TramuriError::ExecutionNotFound(execution_id.to_owned()))
+}
+
+/// List a Mission's evidence references, newest first with IDs as a deterministic tie-breaker.
+///
+/// The query uses the existing Mission and execution indexes. Opening the database may migrate
+/// an older schema before this read. Locators are returned as stored and are never followed.
+pub fn evidence_list(path: impl AsRef<Path>, mission_id: &str) -> Result<Vec<EvidenceReference>> {
+    let workspace = canonical_workspace(path.as_ref())?;
+    let connection = open_database(&workspace)?;
+    ensure_mission_exists(&connection, mission_id)?;
+
+    let mut statement = connection.prepare(
+        "SELECT evidence.id, evidence.mission_id, evidence.execution_id, evidence.kind,
+                evidence.locator, evidence.sha256, evidence.hash_status, evidence.availability,
+                evidence.scan_id, evidence.captured_at_unix_ms
+         FROM executions AS execution
+         INNER JOIN mission_evidence AS evidence ON evidence.execution_id = execution.id
+         WHERE execution.mission_id = ?1 AND evidence.mission_id = ?1
+         ORDER BY evidence.captured_at_unix_ms DESC, evidence.id DESC",
+    )?;
+    let rows = statement.query_map([mission_id], evidence_from_row)?;
+    rows.collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(TramuriError::from)
+}
+
+/// Retrieve one evidence reference by ID from the selected local Tramuri database.
+///
+/// Opening the database may migrate an older schema before this read. The query itself is
+/// read-only; it returns the stored provenance and never follows or revalidates the locator.
+pub fn evidence_get(path: impl AsRef<Path>, evidence_id: &str) -> Result<EvidenceReference> {
+    let workspace = canonical_workspace(path.as_ref())?;
+    let connection = open_database(&workspace)?;
+    connection
+        .query_row(
+            "SELECT id, mission_id, execution_id, kind, locator, sha256, hash_status,
+                    availability, scan_id, captured_at_unix_ms
+             FROM mission_evidence WHERE id = ?1",
+            [evidence_id],
+            evidence_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| TramuriError::EvidenceNotFound(evidence_id.to_owned()))
+}
+
+fn ensure_mission_exists(connection: &rusqlite::Connection, mission_id: &str) -> Result<()> {
+    let exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM missions WHERE id = ?1)",
+        [mission_id],
+        |row| row.get(0),
+    )?;
+    if exists {
+        Ok(())
+    } else {
+        Err(TramuriError::MissionNotFound(mission_id.to_owned()))
+    }
+}
+
+fn execution_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Execution> {
+    let revision: i64 = row.get(3)?;
+    let actor_value: String = row.get(4)?;
+    let actor_kind = ActorKind::from_storage_value(&actor_value)
+        .ok_or_else(|| invalid_storage_value(4, "execution actor kind", &actor_value))?;
+    let state_value: String = row.get(6)?;
+    let state = ExecutionState::from_storage_value(&state_value)
+        .ok_or_else(|| invalid_storage_value(6, "execution state", &state_value))?;
+
+    Ok(Execution {
+        id: row.get(0)?,
+        mission_id: row.get(1)?,
+        contract_id: row.get(2)?,
+        contract_revision: u32::try_from(revision)
+            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(3, revision))?,
+        actor_kind,
+        actor_reference: row.get(5)?,
+        state,
+        started_at_unix_ms: row.get(7)?,
+        ended_at_unix_ms: row.get(8)?,
+        notes: row.get(9)?,
+    })
+}
+
+fn evidence_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EvidenceReference> {
+    let kind_value: String = row.get(3)?;
+    let kind = EvidenceKind::from_storage_value(&kind_value)
+        .ok_or_else(|| invalid_storage_value(3, "evidence kind", &kind_value))?;
+    let hash_status_value: Option<String> = row.get(6)?;
+    let hash_status = hash_status_value
+        .map(|value| match value.as_str() {
+            "hashed" => Ok(HashStatus::Hashed),
+            "too_large" => Ok(HashStatus::TooLarge),
+            _ => Err(invalid_storage_value(6, "evidence hash status", &value)),
+        })
+        .transpose()?;
+    let availability: String = row.get(7)?;
+    if !matches!(
+        availability.as_str(),
+        "observed" | "changed" | "missing" | "unverified"
+    ) {
+        return Err(invalid_storage_value(
+            7,
+            "evidence availability",
+            &availability,
+        ));
+    }
+
+    Ok(EvidenceReference {
+        id: row.get(0)?,
+        mission_id: row.get(1)?,
+        execution_id: row.get(2)?,
+        kind,
+        locator: row.get(4)?,
+        sha256: row.get(5)?,
+        hash_status,
+        availability,
+        scan_id: row.get(8)?,
+        captured_at_unix_ms: row.get(9)?,
+    })
+}
+
+fn invalid_storage_value(index: usize, field: &str, value: &str) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        index,
+        rusqlite::types::Type::Text,
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unknown stored {field}: {value}"),
+        )
+        .into(),
+    )
 }
 
 pub fn outcome_assess(

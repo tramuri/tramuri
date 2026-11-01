@@ -11,7 +11,11 @@ import pytest
 from tramuri import (
     TramuriError,
     evidence_add,
+    evidence_get,
+    evidence_list,
     execution_record,
+    execution_get,
+    execution_list,
     init,
     knowledge_add,
     knowledge_list,
@@ -470,6 +474,172 @@ def test_execution_and_external_evidence_use_rust_core(tmp_path: Path) -> None:
             kind="external_reference",
             locator="https://user:token@example.test/private",
         )
+
+
+def test_product_engineer_can_recover_execution_and_captured_file_provenance(tmp_path: Path) -> None:
+    source = tmp_path / "deliverable.md"
+    source.write_text("initial deliverable\n", encoding="utf-8")
+    init(tmp_path)
+    mission = mission_create(
+        tmp_path,
+        objective="Ship the reviewed onboarding improvement",
+        criteria=[{"description": "Review is complete", "required": True}],
+    )
+    scan(tmp_path)
+    execution = execution_record(
+        tmp_path,
+        mission_id=mission["id"],
+        contract_revision=1,
+        actor_kind="agent",
+        state="blocked",
+        actor_reference="implementation-agent",
+        notes="Waiting for product review",
+    )
+    evidence = evidence_add(
+        tmp_path,
+        mission_id=mission["id"],
+        execution_id=execution["id"],
+        kind="project_file",
+        locator="deliverable.md",
+    )
+    source.write_text("changed after evidence capture\n", encoding="utf-8")
+
+    recovered_executions = execution_list(tmp_path, mission_id=mission["id"])
+    recovered_execution = execution_get(tmp_path, execution_id=execution["id"])
+    recovered_evidences = evidence_list(tmp_path, mission_id=mission["id"])
+    recovered_evidence = evidence_get(tmp_path, evidence_id=evidence["id"])
+
+    assert recovered_executions == [execution]
+    assert recovered_execution == execution
+    assert recovered_evidences == [evidence]
+    assert recovered_evidence == evidence
+    assert recovered_evidence["availability"] == "observed"
+    assert recovered_evidence["sha256"] == evidence["sha256"]
+    assert recovered_evidence["scan_id"] == evidence["scan_id"]
+    assert outcome_get(tmp_path, mission_id=mission["id"])["state"] == "pending"
+
+
+def test_fde_handoff_reads_external_evidence_from_same_database_with_cli_sdk_parity(
+    tmp_path: Path,
+) -> None:
+    cli = _cli_executable()
+    if not cli:
+        pytest.skip("Set TRAMURI_CLI to the built native executable to run CLI/SDK parity.")
+
+    init(tmp_path)
+    mission = mission_create(
+        tmp_path,
+        objective="Integrate the customer's identity provider",
+        context="No source repository is required for this mission.",
+        criteria=[{"description": "Customer confirms the SSO flow", "required": True}],
+    )
+    first_execution = execution_record(
+        tmp_path,
+        mission_id=mission["id"],
+        contract_revision=1,
+        actor_kind="human",
+        state="blocked",
+        actor_reference="fde-1",
+        notes="Waiting for the customer's test account",
+    )
+    second_execution = execution_record(
+        tmp_path,
+        mission_id=mission["id"],
+        contract_revision=1,
+        actor_kind="human",
+        state="in_progress",
+        actor_reference="fde-2",
+        notes="Resumed after handoff",
+    )
+    first_evidence = evidence_add(
+        tmp_path,
+        mission_id=mission["id"],
+        execution_id=first_execution["id"],
+        kind="external_reference",
+        locator="https://example.invalid/customer-test-plan",
+    )
+    second_evidence = evidence_add(
+        tmp_path,
+        mission_id=mission["id"],
+        execution_id=second_execution["id"],
+        kind="human_attestation",
+        locator="customer acceptance still pending",
+    )
+
+    sdk_executions = execution_list(tmp_path, mission_id=mission["id"])
+    cli_executions = json.loads(
+        subprocess.run(
+            [cli, "execution", "list", "--path", str(tmp_path), "--mission", mission["id"], "--json"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        ).stdout
+    )
+    sdk_evidences = evidence_list(tmp_path, mission_id=mission["id"])
+    cli_evidences = json.loads(
+        subprocess.run(
+            [cli, "evidence", "list", "--path", str(tmp_path), "--mission", mission["id"], "--json"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        ).stdout
+    )
+    assert cli_executions == sdk_executions
+    assert cli_evidences == sdk_evidences
+    assert sdk_executions == sorted(
+        sdk_executions,
+        key=lambda item: (item["started_at_unix_ms"], item["id"]),
+        reverse=True,
+    )
+    assert sdk_executions == sorted(
+        [first_execution, second_execution],
+        key=lambda item: (item["started_at_unix_ms"], item["id"]),
+        reverse=True,
+    )
+    assert sdk_evidences == sorted(
+        sdk_evidences,
+        key=lambda item: (item["captured_at_unix_ms"], item["id"]),
+        reverse=True,
+    )
+    assert sdk_evidences == sorted(
+        [first_evidence, second_evidence],
+        key=lambda item: (item["captured_at_unix_ms"], item["id"]),
+        reverse=True,
+    )
+    assert {item["id"] for item in sdk_evidences} == {first_evidence["id"], second_evidence["id"]}
+
+    for execution in sdk_executions:
+        cli_record = subprocess.run(
+            [cli, "execution", "show", "--path", str(tmp_path), "--id", execution["id"], "--json"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        assert json.loads(cli_record.stdout) == execution_get(tmp_path, execution_id=execution["id"])
+    for evidence in sdk_evidences:
+        cli_record = subprocess.run(
+            [cli, "evidence", "show", "--path", str(tmp_path), "--id", evidence["id"], "--json"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        assert json.loads(cli_record.stdout) == evidence_get(tmp_path, evidence_id=evidence["id"])
+
+    empty_mission = mission_create(
+        tmp_path,
+        objective="Empty retrieval test",
+        criteria=[{"description": "Review", "required": True}],
+    )
+    assert execution_list(tmp_path, mission_id=empty_mission["id"]) == []
+    assert evidence_list(tmp_path, mission_id=empty_mission["id"]) == []
+    with pytest.raises(TramuriError, match="execution was not found"):
+        execution_get(tmp_path, execution_id="missing-execution")
+    with pytest.raises(TramuriError, match="evidence reference was not found"):
+        evidence_get(tmp_path, evidence_id="missing-evidence")
 
 
 def test_cli_and_sdk_execution_evidence_have_normalized_parity(tmp_path: Path) -> None:

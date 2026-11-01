@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 tramuri-harness-kit/
+research/
 graphify-out/
 
 # C extensions

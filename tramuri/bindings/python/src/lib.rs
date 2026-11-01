@@ -6,9 +6,10 @@ use serde::Deserialize;
 use tramuri_core::{
     ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
     EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType,
-    MissionInput, TramuriError as CoreError, VerifierKind, evidence_add, execution_record, init,
-    knowledge_add, knowledge_list, knowledge_withdraw, mission_close, mission_contract_revise,
-    mission_create, mission_get, outcome_assess, outcome_get, scan,
+    MissionInput, TramuriError as CoreError, VerifierKind, evidence_add, evidence_get,
+    evidence_list, execution_get, execution_list, execution_record, init, knowledge_add,
+    knowledge_list, knowledge_withdraw, mission_close, mission_contract_revise, mission_create,
+    mission_get, outcome_assess, outcome_get, scan,
 };
 
 create_exception!(_native, TramuriError, PyException);
@@ -234,6 +235,30 @@ fn _evidence_add_json(
     serde_json::to_string(&result).map_err(map_serialization_error)
 }
 
+#[pyfunction]
+fn _execution_list_json(path: &str, mission_id: &str) -> PyResult<String> {
+    let result = execution_list(path, mission_id).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _execution_get_json(path: &str, execution_id: &str) -> PyResult<String> {
+    let result = execution_get(path, execution_id).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _evidence_list_json(path: &str, mission_id: &str) -> PyResult<String> {
+    let result = evidence_list(path, mission_id).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _evidence_get_json(path: &str, evidence_id: &str) -> PyResult<String> {
+    let result = evidence_get(path, evidence_id).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CriterionAssessmentJson {
@@ -311,6 +336,10 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(_mission_contract_revise_json, module)?)?;
     module.add_function(wrap_pyfunction!(_execution_record_json, module)?)?;
     module.add_function(wrap_pyfunction!(_evidence_add_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_execution_list_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_execution_get_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_evidence_list_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_evidence_get_json, module)?)?;
     module.add_function(wrap_pyfunction!(_outcome_assess_json, module)?)?;
     module.add_function(wrap_pyfunction!(_outcome_get_json, module)?)?;
     module.add("TramuriError", module.py().get_type::<TramuriError>())?;

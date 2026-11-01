@@ -63,6 +63,8 @@ pub enum TramuriError {
     InvalidExecutionState,
     #[error("execution was not found: {0}")]
     ExecutionNotFound(String),
+    #[error("evidence reference was not found: {0}")]
+    EvidenceNotFound(String),
     #[error("evidence kind must be project_file, external_reference, or human_attestation")]
     InvalidEvidenceKind,
     #[error("evidence reference is invalid or unsafe: {0}")]

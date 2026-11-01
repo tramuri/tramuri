@@ -97,9 +97,14 @@ def test_wheel_installs_and_sdk_imports_without_a_rust_build(tmp_path: Path) -> 
     source = project / "hello.txt"
     source.write_text("installed wheel smoke test\n", encoding="utf-8")
     smoke = """
+import json
 import tramuri
 from pathlib import Path
 import tramuri._native
+assert callable(tramuri.execution_list)
+assert callable(tramuri.execution_get)
+assert callable(tramuri.evidence_list)
+assert callable(tramuri.evidence_get)
 assert Path(tramuri.__file__).with_name("py.typed").is_file()
 report = tramuri.init(project_path)
 assert report["schema_version"] == 5
@@ -107,14 +112,71 @@ assert Path(report["database_path"]).parent.name == "database"
 scan = tramuri.scan(project_path)
 assert scan["complete"] is True
 assert [item["path"] for item in scan["files"]] == ["hello.txt"]
+mission = tramuri.mission_create(
+    project_path,
+    objective="Installed wheel recovery smoke test",
+    criteria=[{"description": "Reference is recorded", "required": True}],
+)
+execution = tramuri.execution_record(
+    project_path,
+    mission_id=mission["id"],
+    contract_revision=1,
+    actor_kind="tool",
+    state="completed",
+    notes="recovery test",
+)
+evidence = tramuri.evidence_add(
+    project_path,
+    mission_id=mission["id"],
+    execution_id=execution["id"],
+    kind="external_reference",
+    locator="https://example.invalid/recovery-smoke",
+)
+assert tramuri.execution_list(project_path, mission_id=mission["id"]) == [execution]
+assert tramuri.execution_get(project_path, execution_id=execution["id"]) == execution
+assert tramuri.evidence_list(project_path, mission_id=mission["id"]) == [evidence]
+assert tramuri.evidence_get(project_path, evidence_id=evidence["id"]) == evidence
+print(json.dumps({"mission_id": mission["id"], "execution": execution, "evidence": evidence}))
 """
-    subprocess.run(
+    smoke_result = subprocess.run(
         [str(python), "-c", f"project_path = {str(project)!r}\n{smoke}"],
         check=True,
         cwd=tmp_path,
         capture_output=True,
         text=True,
     )
+    smoke_records = json.loads(smoke_result.stdout)
+    execution = smoke_records["execution"]
+    evidence = smoke_records["evidence"]
+    mission_id = smoke_records["mission_id"]
+    listed_executions = subprocess.run(
+        [str(command), "execution", "list", "--path", str(project), "--mission", mission_id, "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(listed_executions.stdout) == [execution]
+    shown_execution = subprocess.run(
+        [str(command), "execution", "show", "--path", str(project), "--id", execution["id"], "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(shown_execution.stdout) == execution
+    listed_evidences = subprocess.run(
+        [str(command), "evidence", "list", "--path", str(project), "--mission", mission_id, "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(listed_evidences.stdout) == [evidence]
+    shown_evidence = subprocess.run(
+        [str(command), "evidence", "show", "--path", str(project), "--id", evidence["id"], "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(shown_evidence.stdout) == evidence
     scan_cli = subprocess.run(
         [str(command), "scan", str(project), "--json"],
         check=True,

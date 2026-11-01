@@ -17,12 +17,16 @@ Cargo workspace manifest and exposed to Python by maturin.
 - Project instructions and a Tramuri skill for Codex, Copilot, Claude Code, and Gemini CLI, with
   safe install, status, and uninstall commands.
 - Versioned local discovery report output under `.tramuri/`.
+- Rust Core, CLI, and Python SDK read operations for retrieving Mission executions and evidence
+  references without following or revalidating stored locators.
 
 ### Changed
 
 - Local SQLite state is organized under `.tramuri/database/`; existing database files are migrated
   from the previous location without replacing a conflicting database.
 - The Python package source now lives in the top-level `tramuri/` directory.
+- The public Rust `TramuriError` enum adds `EvidenceNotFound`. Downstream exhaustive matches must
+  handle this new variant; this is a source-compatibility consideration for Rust consumers.
 
 ## [0.2.0] - 2026-10-31
 

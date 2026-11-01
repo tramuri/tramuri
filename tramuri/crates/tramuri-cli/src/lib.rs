@@ -6,9 +6,10 @@ use serde::Deserialize;
 use tramuri_core::{
     ActorKind, CriterionAssessmentInput, CriterionAssessmentResult, CriterionInput, EvidenceInput,
     EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType,
-    MissionInput, VerifierKind, evidence_add, execution_record, init, knowledge_add,
-    knowledge_list, knowledge_withdraw, mission_close, mission_contract_revise, mission_create,
-    mission_get, outcome_assess, outcome_get, scan,
+    MissionInput, VerifierKind, evidence_add, evidence_get, evidence_list, execution_get,
+    execution_list, execution_record, init, knowledge_add, knowledge_list, knowledge_withdraw,
+    mission_close, mission_contract_revise, mission_create, mission_get, outcome_assess,
+    outcome_get, scan,
 };
 
 mod integrations;
@@ -179,6 +180,24 @@ enum ExecutionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List a Mission's execution history, newest first.
+    List {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Retrieve one execution by ID.
+    Show {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -194,6 +213,24 @@ enum EvidenceCommand {
         kind: String,
         #[arg(long)]
         locator: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List a Mission's evidence references, newest first.
+    List {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Retrieve one stored evidence reference by ID without following its locator.
+    Show {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        id: String,
         #[arg(long)]
         json: bool,
     },
@@ -629,6 +666,55 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 println!("Recorded {} execution {}", status, result.id);
             }
         }
+        Command::Execution {
+            command:
+                ExecutionCommand::List {
+                    path,
+                    mission,
+                    json,
+                },
+        } => {
+            let results = execution_list(path, &mission)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else {
+                for result in results {
+                    println!(
+                        "{}\t{:?}\t{}\trevision {}",
+                        result.id,
+                        result.state,
+                        result.started_at_unix_ms,
+                        result.contract_revision
+                    );
+                }
+            }
+        }
+        Command::Execution {
+            command: ExecutionCommand::Show { path, id, json },
+        } => {
+            let result = execution_get(path, &id)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("Execution: {}", result.id);
+                println!("Mission: {}", result.mission_id);
+                println!(
+                    "Contract: {} revision {}",
+                    result.contract_id, result.contract_revision
+                );
+                println!(
+                    "Actor: {:?} ({})",
+                    result.actor_kind,
+                    result.actor_reference.as_deref().unwrap_or("unspecified")
+                );
+                println!("State: {:?}", result.state);
+                println!("Started: {}", result.started_at_unix_ms);
+                println!("Ended: {:?}", result.ended_at_unix_ms);
+                if let Some(notes) = result.notes {
+                    println!("Notes: {notes}");
+                }
+            }
+        }
         Command::Evidence {
             command:
                 EvidenceCommand::Add {
@@ -653,6 +739,49 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {
                 println!("Recorded evidence reference {}", result.id);
+            }
+        }
+        Command::Evidence {
+            command:
+                EvidenceCommand::List {
+                    path,
+                    mission,
+                    json,
+                },
+        } => {
+            let results = evidence_list(path, &mission)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else {
+                for result in results {
+                    println!(
+                        "{}\t{}\t{:?}\t{}\t{}",
+                        result.id,
+                        result.execution_id,
+                        result.kind,
+                        result.captured_at_unix_ms,
+                        result.availability
+                    );
+                }
+            }
+        }
+        Command::Evidence {
+            command: EvidenceCommand::Show { path, id, json },
+        } => {
+            let result = evidence_get(path, &id)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("Evidence: {}", result.id);
+                println!("Mission: {}", result.mission_id);
+                println!("Execution: {}", result.execution_id);
+                println!("Kind: {:?}", result.kind);
+                println!("Locator: {}", result.locator);
+                println!("SHA-256: {:?}", result.sha256);
+                println!("Hash status: {:?}", result.hash_status);
+                println!("Availability at capture: {}", result.availability);
+                println!("Scan ID: {:?}", result.scan_id);
+                println!("Captured: {}", result.captured_at_unix_ms);
             }
         }
         Command::Outcome { command } => match command {

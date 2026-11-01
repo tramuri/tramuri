@@ -8,6 +8,13 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-01
+
+### Added
+
+- `tramuri status --refresh` regenerates the local HTML, Markdown, and JSON reports without opening a browser.
+- Product Engineering guidance now produces an evidence-labeled Product Brief before asking follow-up questions, separates recommendations from accepted decisions, and continues toward feasible local prototypes when a preferred tool is unavailable.
+
 ## [0.6.0] - 2026-11-01
 
 ### Added

@@ -28,9 +28,10 @@ Before acting on existing work, inspect `tramuri mission list` and resume the re
 relevant Mission exists, start one. Ask one brief question only if the goal, perspective, or Mission
 choice is materially ambiguous. Do not leave the user to discover the next CLI command. Session hooks
 report database presence without reading Mission records or user prompts; platforms without hooks
-still use these instructions and skills. Use `tramuri status --open` at most
-once at the end of a coherent session that changed Mission records, only if it has not already been
-opened in this session and the user has not asked to skip it. Do not reopen after each message. Use
+still use these instructions and skills. At the end of a coherent session that changed Mission
+records, refresh reports once: use `tramuri status --open` if the HTML has not been opened in this
+session and the user has not asked to skip it; otherwise use `tramuri status --refresh` to update
+files without opening the browser again. Do not refresh after each write or message. Use
 `tramuri status` for a read-only status check. Do not scan unless discovery was requested.
 
 When a task depends on project-declared agent resources, consult `tramuri capabilities` after the

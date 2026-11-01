@@ -101,9 +101,11 @@ onboarding” or “I am taking over this customer integration.” The installed
 Mission start or resume even if you do not mention Tramuri. A clear goal initializes the local
 database automatically; tell the assistant your work perspective only if it is not clear from the
 request. You do not need to run `tramuri init` first or learn CLI syntax. Mission and Success Contract
-setup stays exploratory, and a project scan is optional. After a coherent work session changes Mission
-records, the assistant refreshes and opens the local report once. You can also ask “open the Tramuri
-report” or run `tramuri status --open` yourself.
+setup stays exploratory, and a project scan is optional. At the end of a coherent work session that
+changes Mission records, the assistant refreshes the local reports. It opens the HTML only if it has
+not already opened it during that session; otherwise it refreshes the files without opening another
+browser window. You can also ask “open the Tramuri report,” run `tramuri status --open`, or run
+`tramuri status --refresh` to refresh without opening the browser.
 
 The local report opens in English or Brazilian Portuguese and shows work perspective (Product
 Engineer/FDE) separately from the recorded actor. Actor labels are provided by the caller and are
@@ -132,8 +134,9 @@ tramuri install --project --platform gemini
 ```
 
 `tramuri status` summarizes the workspace, `tramuri status --open` generates and opens the local
-report, and `tramuri resume --mission <id>` reconstructs recorded work and readiness for the selected
-next activity. A Mission can start without criteria; its Outcome stays pending until required criteria
+report, `tramuri status --refresh` refreshes the report files without opening a browser, and
+`tramuri resume --mission <id>` reconstructs recorded work and readiness for the selected next
+activity. A Mission can start without criteria; its Outcome stays pending until required criteria
 are added and reviewed. Readiness is advisory and never blocks execution:
 
 ```bash

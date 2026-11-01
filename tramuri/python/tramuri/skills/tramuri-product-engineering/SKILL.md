@@ -37,6 +37,47 @@ perspective silently.
   Brief in the response may show hypotheses and unknowns, clearly labeled. Do not save the whole
   conversation as Knowledge.
 
+## Deliver a useful artifact before a follow-up
+
+Do not turn Product Engineering into a sequence of one-question turns. When the goal is clear, do
+the useful framing or analysis available first and present a concise **Product Brief** in the same response before asking for more input. Use these labels:
+
+- **Intent** — the goal in the user's words.
+- **Known** — details the user explicitly supplied or evidence directly supports.
+- **Hypotheses** — plausible, reversible assumptions that still need validation.
+- **Current decisions** — choices the user explicitly accepted; include their scope and conditions.
+- **Recommendation** — a proposal from the agent, not an approved decision.
+- **Open decisions and risks** — what remains unresolved and why its answer could change the work.
+- **Proposed next step** — the next useful activity or artifact and what it will produce.
+
+For **Product framing**, identify the problem, likely users and buyer, value sought, known
+constraints, hypotheses, and the most important unknowns. Keep unknown audience, market, pricing, or
+business model details as hypotheses or questions; do not invent research or customer evidence.
+
+For **Product definition**, deliver at least:
+
+- a proposed value proposition and primary user journey;
+- a small MVP scope and explicit exclusions;
+- material product, operational, privacy, and financial risks that apply;
+- candidate success criteria labeled **proposed**, not approved;
+- the next artifact or activity that can move the work forward.
+
+If the user asks for help deciding, compare the meaningful options, explain consequences and
+uncertainties, and give a recommendation. An explicit acceptance can be recorded as a user decision;
+do not imply the recommendation is validated by customers or the market. Keep unanswered details as
+open questions without restarting the whole interview.
+
+When the user asked to create or build something, continue toward a useful prototype or local
+artifact after framing if the available tools can do so within the request. Use clearly labeled
+sample data and reversible implementation choices when details are missing. Ask before real
+payments, production deployment, external commitments, or other consequential actions. If a preferred
+creation tool is unavailable, state that briefly and use a feasible local path when one exists; a
+tool failure does not end the user's task.
+
+Before asking a follow-up, check that the answer changes product direction, a significant risk, or a
+costly choice. Otherwise state a reversible assumption and continue. Each clarification should update
+the brief or unlock a concrete next step; do not ask repeated questions merely to perfect a draft.
+
 ## Product phases
 
 Use these as an adaptive guide, not a required checklist or workflow engine:
@@ -48,9 +89,10 @@ Use these as an adaptive guide, not a required checklist or workflow engine:
 2. **Discovery** — inspect relevant existing workspace context when it exists and is in scope. Gather
    authorized evidence about needs, alternatives, and risks. Keep source-backed facts distinct from
    assumptions. Ask only a decision-changing question after this first pass.
-3. **Product definition** — propose a value proposition, primary journey, MVP scope, exclusions,
-   risks, and candidate success criteria. Present proposed scope for user review; do not record it as
-   an approved decision or revise the contract without authorization.
+3. **Product definition** — produce the Product Brief deliverables above, including a value
+   proposition, primary journey, MVP scope, exclusions, risks, and candidate success criteria.
+   Present proposed scope for user review; do not record it as an approved decision or revise the
+   contract without authorization.
 4. **Prototype and delivery** — proceed only as far as the user requested. Select the next activity
    and assess Context Readiness only when useful; readiness is advisory and does not block exploration.
 5. **Validation and learning** — report actual evidence, unresolved criteria, and what was learned.
@@ -72,4 +114,5 @@ that work is complete or Context Ready. Use the matching current-focus display i
 
 Before resuming, use `tramuri mission list` when needed and `tramuri resume --mission <id>` to read
 the recorded Mission. At the end of a coherent session that changed Mission records, follow the
-installed Tramuri skill's at-most-once report rule.
+installed Tramuri skill's report-refresh rule; refresh once, and do not reopen a browser already
+opened during the session.

@@ -24,11 +24,12 @@ evidence, or assessing whether a Mission's Success Contract was met.
   authorized mechanism's actual review.
 - Before recording a `human` review on behalf of an agent, require explicit authorization from the
   responsible person for that review. `verifier_reference` is a declared label, not authentication.
-- After a coherent task has written or assessed Mission records, refresh and open the local report
-  at most once with `tramuri status --open`, only if it has not already been opened in this session
-  and the user has not asked to skip it. Do not reopen it after every
-  individual write or merely to inspect status. Tell the user that the report is local and derived;
-  it does not change Mission or Outcome state.
+- After a coherent task has written or assessed Mission records, refresh reports once at the end.
+  Use `tramuri status --open` if the browser has not been opened in this session and the user has not
+  asked to skip it; otherwise use `tramuri status --refresh`. The latter updates the same local files
+  without reopening the browser. Do not refresh after every individual write or merely to inspect
+  status. Tell the user that reports are local projections; refreshing them does not change Mission
+  or Outcome state.
 
 For provenance, freshness, explicit context selection, and export safety, read the installed
 Tramuri skill's `references/knowledge.md` and `references/context-and-evidence.md` as relevant.

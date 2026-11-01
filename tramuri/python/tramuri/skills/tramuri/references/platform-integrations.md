@@ -28,7 +28,10 @@ configuration. Copilot uses the same always-on instructions and skills but has n
 Capability discovery can catalog project-local `.github/hooks/*.json` declarations when present.
 
 `tramuri status --open` generates `.tramuri/reports/tramauri.html`, `tramauri.md`, and
-`tramauri.json`. The HTML is self-contained and local. Reports omit Mission context, execution
+`tramauri.json`, then opens the HTML. `tramuri status --refresh` updates those three files without
+opening a browser. Use `--open` once when the report should be viewed; after later Mission changes
+in the same session, use `--refresh` to avoid opening another window. The HTML is self-contained
+and local. Reports omit Mission context, execution
 notes, evidence locators, verifier references, and assessment explanations. Mission objectives
 and Success Contract criteria are included as necessary local workspace fields. Knowledge is not
 attached to a Mission unless an explicit stored relationship exists.

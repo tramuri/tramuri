@@ -86,6 +86,9 @@ enum Command {
         /// Generate and open the local HTML report.
         #[arg(long, conflicts_with = "json")]
         open: bool,
+        /// Refresh all local report files without opening a browser.
+        #[arg(long, conflicts_with_all = ["json", "open", "agent", "hint", "hook_format"])]
+        refresh: bool,
         /// Emit a compact, privacy-minimized snapshot for an agent session hook.
         #[arg(long, conflicts_with_all = ["json", "open"])]
         agent: bool,
@@ -985,6 +988,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Status {
             path,
             open,
+            refresh,
             agent,
             hint,
             hook_format,
@@ -1013,6 +1017,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let report = reports::generate_and_open(&path, &snapshot)?;
                 println!("Updated the local Tramuri report and opened it in your browser.");
                 eprintln!("HTML report: {}", report.display());
+            } else if refresh {
+                let report = reports::write_reports(&path, &snapshot)?;
+                println!("Refreshed local Tramuri reports without opening the browser.");
+                if let Some(reports_dir) = report.parent() {
+                    eprintln!("Reports directory: {}", reports_dir.display());
+                }
             } else if agent {
                 print!("{}", agent_context(&snapshot));
             } else if json {

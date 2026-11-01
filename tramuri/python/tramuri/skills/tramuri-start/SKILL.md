@@ -55,14 +55,16 @@ identity; never invent a person's identity or claim there is a current assignee.
 Project Discovery is optional. Run `tramuri scan .` only when the user asks to inspect the project
 or authorizes discovery; report whether it was complete or partial and include warnings.
 
-At the end of a coherent work session that changed Mission records, run `tramuri status --open`
-at most once, only if you have not already opened the report in this session and the user has not
-asked you not to. Do not repeat it after later messages in the same session. Explain that it writes
-`.tramuri/reports/tramauri.html`, `tramauri.md`, and `tramauri.json` locally and opens the HTML.
-Do not open a report just to read status; use `tramuri status` for that. Never run the report before
-the workspace is initialized. End with a concise account of what was recorded, who or what executed
-the work, the actual outcome state, and the next concrete action or unresolved decision. Do not
-leave the user to ask what the normal next step is.
+At the end of a coherent work session that changed Mission records, refresh the local reports once.
+If the HTML has not been opened in this session and the user has not asked you to skip it, run
+`tramuri status --open`; otherwise run `tramuri status --refresh` so the files include the latest
+records without reopening the browser. Do not generate reports at Mission start or after every
+individual write. Explain that both commands write `.tramuri/reports/tramauri.html`, `tramauri.md`,
+and `tramauri.json`; only `--open` launches the browser. Use `tramuri status` for a read-only status
+check. Never refresh before the workspace is initialized. End with a concise account of what was
+recorded, who or what executed the work, the actual outcome state, the next concrete action or
+unresolved decision, and whether the local report was refreshed. Do not leave the user to ask what
+the normal next step is.
 
 For scan safety and exclusions, read the installed Tramuri skill's
 `references/project-discovery.md`.

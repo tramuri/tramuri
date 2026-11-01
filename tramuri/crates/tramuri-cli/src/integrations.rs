@@ -1064,18 +1064,18 @@ mod tests {
                     .join("tramuri/SKILL.md"),
             )
             .unwrap();
-            assert!(main_skill.contains("at most"));
+            assert!(main_skill.contains("refresh reports once"));
             let product_skill = project
                 .path()
                 .join(platform.skill_root())
                 .join("tramuri-product-engineering/SKILL.md");
             assert!(product_skill.is_file());
-            assert!(
-                fs::read_to_string(product_skill)
-                    .unwrap()
-                    .contains("Do not invent interviews")
-            );
-            assert!(main_skill.contains("once at the end"));
+            let product_skill = fs::read_to_string(product_skill).unwrap();
+            assert!(product_skill.contains("Do not invent interviews"));
+            assert!(product_skill.contains("Product Brief"));
+            assert!(product_skill.contains("not an approved decision"));
+            assert!(main_skill.contains("At the end of a coherent session"));
+            assert!(main_skill.contains("tramuri status --refresh"));
             let start_skill = fs::read_to_string(
                 project
                     .path()
@@ -1083,7 +1083,8 @@ mod tests {
                     .join("tramuri-start/SKILL.md"),
             )
             .unwrap();
-            assert!(start_skill.contains("at most once"));
+            assert!(start_skill.contains("refresh the local reports once"));
+            assert!(start_skill.contains("tramuri status --refresh"));
             assert_eq!(skill_paths(platform).len(), 6);
             for (relative, _) in skill_paths(platform) {
                 let skill = fs::read_to_string(project.path().join(&relative)).unwrap();

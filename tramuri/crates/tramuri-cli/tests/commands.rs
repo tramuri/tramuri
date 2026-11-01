@@ -83,6 +83,112 @@ fn start_routes_exploratory_missions_and_keeps_readiness_unassessed() {
 }
 
 #[test]
+fn status_refresh_updates_report_without_opening_browser() {
+    let project = tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    let started = tramuri()
+        .args([
+            "start",
+            "--goal",
+            "Create a course marketplace",
+            "--perspective",
+            "product_engineer",
+            "--json",
+            "--path",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(started.status.success());
+    let started: Value = serde_json::from_slice(&started.stdout).unwrap();
+    let mission_id = started["mission"]["id"].as_str().unwrap();
+
+    let refresh = tramuri()
+        .args(["status", "--refresh", "--path", path])
+        .output()
+        .unwrap();
+    assert!(
+        refresh.status.success(),
+        "{}",
+        String::from_utf8_lossy(&refresh.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&refresh.stdout);
+    assert!(stdout.contains("Refreshed local Tramuri reports"));
+    assert!(!stdout.contains("opened"));
+
+    let report_dir = project.path().join(".tramuri/reports");
+    for filename in ["tramauri.html", "tramauri.md", "tramauri.json"] {
+        assert!(report_dir.join(filename).is_file(), "missing {filename}");
+    }
+    let json: Value = serde_json::from_slice(
+        &fs::read(report_dir.join("tramauri.json")).expect("JSON report should be written"),
+    )
+    .unwrap();
+    assert_eq!(json["missions"][0]["id"], mission_id);
+
+    let changed = tramuri()
+        .args([
+            "mission",
+            "workflow",
+            "activity",
+            "--mission",
+            mission_id,
+            "--activity",
+            "define",
+            "--path",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(changed.status.success());
+
+    let refresh = tramuri()
+        .args(["status", "--refresh", "--path", path])
+        .output()
+        .unwrap();
+    assert!(refresh.status.success());
+    let json: Value = serde_json::from_slice(
+        &fs::read(report_dir.join("tramauri.json")).expect("JSON report should be refreshed"),
+    )
+    .unwrap();
+    assert_eq!(json["missions"][0]["workflow"]["next_activity"], "define");
+    let markdown = fs::read_to_string(report_dir.join("tramauri.md")).unwrap();
+    assert!(markdown.contains("Product definition"));
+}
+
+#[test]
+fn status_refresh_rejects_other_output_modes() {
+    let project = tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    let init = tramuri().args(["init", path]).output().unwrap();
+    assert!(init.status.success());
+
+    for args in [
+        vec!["status", "--refresh", "--json", "--path", path],
+        vec!["status", "--refresh", "--open", "--path", path],
+        vec!["status", "--refresh", "--hint", "--path", path],
+        vec!["status", "--agent", "--refresh", "--path", path],
+        vec![
+            "status",
+            "--refresh",
+            "--hook-format",
+            "claude",
+            "--path",
+            path,
+        ],
+    ] {
+        let output = tramuri().args(args).output().unwrap();
+        assert!(!output.status.success());
+        assert!(
+            !project
+                .path()
+                .join(".tramuri/reports/tramauri.json")
+                .exists()
+        );
+    }
+}
+
+#[test]
 fn workflow_activity_command_updates_product_phase_without_changing_perspective() {
     let project = tempdir().unwrap();
     let path = project.path().to_str().unwrap();

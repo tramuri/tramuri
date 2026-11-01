@@ -37,9 +37,9 @@ discovery before asking a question that would materially change the product:
 The assistant should start the Mission with Tramuri, use the Product Engineering skill, and continue
 without turning discovery into a questionnaire. It should separate user-provided facts, observations,
 hypotheses, and unknowns. Tramuri preserves confirmed context; Codex helps turn the idea into software.
-Answer in natural language and describe the work you did;
-you do not need to assemble commands. At the end of the session, the assistant refreshes and opens
-the local report.
+Answer in natural language and describe the work you did; you do not need to assemble commands. At
+the end of the session, the assistant refreshes the local reports. It opens the HTML only if it has
+not already opened it during that session; otherwise it refreshes without opening another window.
 
 The following commands show the manual alternative and what gets recorded. Use them if you do not
 have an assistant integration or prefer the terminal; you do not need to repeat this sequence in

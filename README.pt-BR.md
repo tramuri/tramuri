@@ -108,9 +108,11 @@ Engineering, uma skill específica conduz framing e discovery, separando fatos, 
 Ela orienta o agente a iniciar ou retomar a Mission antes de explorar o projeto ou usar outras
 ferramentas de criação. Não é necessário rodar
 `tramuri init` antes nem aprender a sintaxe da CLI. A Mission pode começar como exploratória e a
-varredura do projeto é opcional. Ao final de uma sessão coerente que altere registros da
-Mission, o assistente atualiza e abre o relatório local uma vez. Você também pode pedir “abra o
-relatório do Tramuri” ou executar `tramuri status --open`.
+varredura do projeto é opcional. Ao final de uma sessão coerente que altere registros da Mission,
+o assistente atualiza os relatórios. Ele abre o HTML se ainda não o abriu na sessão; caso já esteja
+aberto, atualiza os arquivos sem abrir outra janela. Você também pode pedir “abra o relatório do
+Tramuri”, executar `tramuri status --open`, ou usar `tramuri status --refresh` para atualizar sem
+abrir o navegador.
 
 O relatório local pode ser lido em inglês ou português brasileiro e mostra a perspectiva de trabalho
 (Product Engineer/FDE) separada do executor registrado. O nome do executor é informado por quem faz
@@ -139,8 +141,9 @@ tramuri install --project --platform cursor
 tramuri install --project --platform gemini
 ```
 
-`tramuri status` resume o workspace, `tramuri status --open` gera e abre o relatório local, e
-`tramuri resume --mission <id>` recupera o trabalho registrado e a prontidão para a próxima
+`tramuri status` resume o workspace, `tramuri status --open` gera e abre o relatório local,
+`tramuri status --refresh` atualiza os relatórios sem abrir o navegador, e `tramuri resume --mission <id>`
+recupera o trabalho registrado e a prontidão para a próxima
 atividade escolhida. Uma Mission pode começar sem critérios; o Outcome permanece pendente até que
 critérios obrigatórios sejam definidos e avaliados. A prontidão é consultiva e nunca bloqueia a
 execução:

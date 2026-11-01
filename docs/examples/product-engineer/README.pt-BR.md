@@ -38,8 +38,8 @@ O assistente deve iniciar a Mission com o Tramuri, usar a skill de Product Engin
 sem transformar discovery em um interrogatório. Ele separa fatos informados por você, observações,
 hipóteses e dúvidas. O Tramuri preserva o contexto confirmado; o Codex ajuda a transformar a ideia
 em software. Responda em linguagem natural e descreva o trabalho realizado; não é preciso montar
-comandos. Ao final da sessão, o assistente
-atualiza e abre o relatório local.
+comandos. Ao final da sessão, o assistente atualiza os relatórios. Ele abre o HTML somente se ainda
+não o tiver aberto nessa sessão; se já estiver aberto, atualiza os arquivos sem abrir outra janela.
 
 Os comandos das próximas seções mostram uma alternativa manual e o que fica registrado. Use-os se
 estiver sem assistente ou se quiser operar pelo terminal; não precisa repetir esse fluxo no Codex.
@@ -134,6 +134,9 @@ tramuri mission list
 tramuri resume --mission <MISSION_ID>
 tramuri status --open
 ```
+
+Se o HTML já tiver sido aberto na sessão, use `tramuri status --refresh` para atualizar os arquivos
+sem abrir o navegador novamente.
 
 Peça que identifique a ideia do produto, a decisão vinculada, a execução, a evidência e o critério pendente. O relatório
 fica em `.tramuri/reports/tramauri.html`, com versões Markdown e JSON ao lado. Ele não altera o

@@ -18,11 +18,13 @@ pub use capability::{
     CapabilitySummary, capability_list, capability_snapshot,
 };
 pub use define::{
-    DefineArtifact, DefineArtifactReference, DefineBriefAssessment, DefineBriefCriterionAssessment,
-    DefineEvent, DefineNext, DefineQuestion, DefineState, DefineStatus, DefineStep, DefineStepId,
+    DefineArtifact, DefineArtifactReference, DefineBriefAssessment, DefineBriefAssessmentContract,
+    DefineBriefAssessmentCriterionContract, DefineBriefCriterionAssessment, DefineEvent,
+    DefineNext, DefineQuestion, DefineState, DefineStatus, DefineStep, DefineStepId,
     DefineStepState, DefineSubmitResult, define_artifact_history, define_brief_assess,
-    define_brief_assessment_get, define_next, define_question_answer, define_question_request,
-    define_review, define_start, define_status, define_submit,
+    define_brief_assessment_contract, define_brief_assessment_get, define_next,
+    define_question_answer, define_question_request, define_review, define_start, define_status,
+    define_submit,
 };
 pub use discovery::{FileRecord, InitReport, ScanReport, ScanWarning, init, scan};
 pub use error::{Result, TramuriError};

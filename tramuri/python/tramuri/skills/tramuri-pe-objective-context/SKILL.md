@@ -15,6 +15,9 @@ pricing, stack, market size, or success metrics. Do not scan a new or empty proj
 and authorization. Never invent interviews, customer evidence, or decisions.
 
 Return one JSON object containing `original_intent`, `interpreted_objective`, `known_information`,
-`hypotheses`, and `gaps`; arrays may be empty when that absence is explicit. Include `references`
-and `provenance` when relevant. Submit only through `tramuri mission define submit`. The Core's
-structural acceptance does not prove the interpretation true or verify a Mission Outcome.
+`hypotheses`, and `gaps`. `original_intent` and `interpreted_objective` must be non-empty strings;
+the other required fields must be arrays. This is the first DEFINE step, so omit `references`
+unless an earlier accepted DEFINE artifact genuinely exists. `references` is reserved for Tramuri
+artifact dependencies; use `provenance` for source information. Submit only through
+`tramuri mission define submit`. Core acceptance is structural and does not prove the interpretation
+true or verify a Mission Outcome.

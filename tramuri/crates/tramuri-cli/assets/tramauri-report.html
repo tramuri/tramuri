@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
-  <title>Tramuri · Workspace</title>
+  <title>Tramuri · Mission Control</title>
   <style>
     :root {
       color-scheme: light;
@@ -167,57 +167,257 @@
       .mission-card:not([open]) > .mission-body { display: block; }
       .section { break-inside: avoid; }
     }
+    /* Mission Control: brand-forward, local-first, and useful before scrolling. */
+    :root {
+      --canvas: #f3f7f6; --surface: #fff; --surface-soft: #edf5f3; --ink: #102b33;
+      --muted: #536d72; --line: #d8e5e2; --teal: #006d6a; --teal-bright: #00b3a6;
+      --teal-soft: #dff7f3; --mint: #a8efe1; --green: #176b54; --green-soft: #e3f4eb;
+      --amber: #80500a; --amber-soft: #fff1d8; --red: #9a3734; --red-soft: #ffebe8;
+      --navy: #0b2530; --orange: #ffa229; --shadow: 0 16px 42px rgba(11,37,48,.07);
+      font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    body { color: var(--ink); background: var(--canvas); }
+    :focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+    .skip-link { position: fixed; z-index: 20; top: 8px; left: 8px; transform: translateY(-150%); padding: 10px 14px; color: var(--navy); background: var(--mint); border-radius: 8px; font-weight: 750; }
+    .skip-link:focus { transform: translateY(0); }
+    .app { grid-template-columns: 256px minmax(0,1fr); }
+    .rail { z-index: 2; padding: 24px 16px 18px; color: #e9f7f4; background: var(--navy); border: 0; }
+    .brand { gap: 12px; padding: 0 9px 30px; }
+    .brand-logo { width: 42px; height: 42px; object-fit: cover; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.18); }
+    .brand-name { color: #fff; font-size: 18px; }
+    .brand-tag { color: #a8c2c5; font-size: 10px; }
+    .rail-label { margin: 8px 0 10px; color: #8ba8ad; font-size: 10px; letter-spacing: .14em; }
+    .nav { gap: 5px; }
+    .nav a { display: flex; align-items: center; gap: 11px; min-height: 43px; padding: 9px 12px; color: #c8dadd; border: 1px solid transparent; border-radius: 10px; font-size: 13px; transition: background .18s ease, color .18s ease; }
+    .nav a::before { width: 7px; height: 7px; content: ""; flex: 0 0 auto; border: 1.5px solid #83a7ab; border-radius: 3px; }
+    .nav a:hover, .nav a:focus-visible { color: #fff; background: #123944; }
+    .nav a[href="#overview"]::before { background: var(--teal-bright); border-color: var(--teal-bright); box-shadow: 0 0 0 3px rgba(0,179,166,.16); }
+    .rail-note { padding: 14px; color: #b8ced0; background: rgba(255,255,255,.045); border-color: rgba(168,239,225,.16); border-radius: 12px; font-size: 11px; }
+    .rail-note strong { color: #f3fffc; font-size: 12px; }
+    .topbar { position: sticky; z-index: 1; top: 0; height: 64px; justify-content: space-between; padding: 0 clamp(20px,4vw,54px); background: rgba(255,255,255,.92); border-color: var(--line); backdrop-filter: blur(14px); }
+    .topbar-start, .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .topbar-start { color: var(--muted); font-size: 12px; font-weight: 650; }
+    .local-dot { width: 8px; height: 8px; background: var(--teal-bright); border-radius: 50%; box-shadow: 0 0 0 4px var(--teal-soft); }
+    .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 39px; padding: 8px 13px; color: var(--navy); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 12px; font-weight: 720; transition: transform .16s ease, border-color .16s ease, background .16s ease; }
+    .button:hover { transform: translateY(-1px); border-color: #9acdc4; background: #f5fffc; }
+    .button-primary { color: #fff; background: var(--teal); border-color: var(--teal); }
+    .button-primary:hover { color: #fff; background: #005c59; border-color: #005c59; }
+    .language { padding: 3px; gap: 3px; background: #f0f5f4; border-color: var(--line); border-radius: 9px; }
+    .language button { padding: 5px 9px; color: var(--muted); border-radius: 6px; font-size: 10px; }
+    .language button[aria-pressed="true"] { color: var(--navy); background: var(--mint); }
+    .content { width: min(1320px,100%); padding: 30px clamp(20px,4vw,54px) 68px; }
+    .hero { align-items: center; margin-bottom: 22px; }
+    .eyebrow { color: var(--teal); font-size: 10px; letter-spacing: .16em; }
+    h1 { max-width: 770px; color: var(--navy); font-size: clamp(29px,3.3vw,43px); line-height: 1.08; font-weight: 720; letter-spacing: -.05em; }
+    .hero-copy { max-width: 700px; margin-top: 10px; color: var(--muted); font-size: 14px; }
+    .generated { padding: 10px 13px; background: transparent; border-radius: 10px; font-size: 11px; }
+    .generated strong { color: var(--muted); font-size: 9px; }
+    .section { margin-top: 42px; scroll-margin-top: 84px; }
+    .section-heading { align-items: center; margin-bottom: 15px; }
+    .section-heading h2 { color: var(--navy); font-size: 21px; font-weight: 720; }
+    .section-heading p { font-size: 12px; }
+    .focus-card { position: relative; margin: 21px 0 17px; padding: clamp(20px,3vw,31px); color: #f2fffc; background: var(--navy); border: 1px solid #1a4953; border-radius: 18px; box-shadow: 0 20px 50px rgba(11,37,48,.17); }
+    .focus-card::after { position: absolute; top: 0; right: 0; width: 220px; height: 220px; content: ""; pointer-events: none; border-radius: 0 18px 0 100%; background: radial-gradient(circle at top right,rgba(0,179,166,.18),rgba(0,179,166,0) 72%); }
+    .focus-top { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+    .focus-heading { min-width: 0; }
+    .focus-kicker { margin: 0 0 7px; color: var(--mint); font-size: 10px; font-weight: 780; letter-spacing: .14em; text-transform: uppercase; }
+    .focus-title { max-width: 850px; margin: 0; color: #fff; font-size: clamp(21px,2.4vw,31px); line-height: 1.22; font-weight: 690; letter-spacing: -.035em; overflow-wrap: anywhere; }
+    .focus-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 11px; color: #a8c2c5; font-size: 11px; }
+    .focus-status { flex: 0 0 auto; padding: 6px 10px; color: var(--navy); background: var(--mint); border-radius: 99px; font-size: 10px; font-weight: 780; }
+    .focus-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; margin-top: 25px; }
+    .focus-stat { min-width: 0; min-height: 94px; padding: 13px 14px; background: rgba(255,255,255,.055); border: 1px solid rgba(168,239,225,.16); border-radius: 12px; }
+    .focus-stat-label { display: flex; align-items: center; gap: 7px; color: #a8c2c5; font-size: 10px; font-weight: 650; }
+    .focus-stat-value { display: block; margin-top: 9px; color: #fff; font-size: 15px; line-height: 1.35; font-weight: 730; overflow-wrap: anywhere; }
+    .focus-stat-detail { display: block; margin-top: 4px; color: #abc5c7; font-size: 10px; }
+    .focus-next { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-top: 11px; padding: 15px 16px; color: var(--navy); background: var(--mint); border-radius: 12px; }
+    .focus-next-label { display: block; margin-bottom: 3px; color: #315d60; font-size: 10px; font-weight: 700; }
+    .focus-next-value { display: block; color: var(--navy); font-size: 14px; line-height: 1.4; font-weight: 780; overflow-wrap: anywhere; }
+    .focus-next-copy { display: block; margin-top: 2px; color: #315d60; font-size: 10px; }
+    .focus-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .focus-actions .button { min-height: 36px; padding: 7px 11px; font-size: 11px; }
+    .button-on-mint { color: var(--navy); background: rgba(255,255,255,.68); border-color: rgba(11,37,48,.14); }
+    .button-on-mint:hover { background: #fff; }
+    .focus-actions .button-primary { color: #fff; background: var(--teal); border-color: var(--teal); }
+    .focus-actions .button-primary:hover { color: #fff; background: #005c59; border-color: #005c59; }
+    .define-progress { position: relative; z-index: 1; margin-top: 19px; }
+    .define-progress-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 9px; color: #d2e4e2; font-size: 11px; font-weight: 730; }
+    .define-stepper { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .define-step { position: relative; min-width: 0; min-height: 63px; padding: 10px 10px 9px 31px; color: #bad0d0; background: rgba(255,255,255,.045); border: 1px solid rgba(168,239,225,.13); border-radius: 9px; font-size: 10px; line-height: 1.35; }
+    .define-step::before { position: absolute; top: 12px; left: 11px; width: 11px; height: 11px; content: ""; border: 1.5px solid #71969a; border-radius: 50%; }
+    .define-step.completed { color: #eefffb; border-color: rgba(0,179,166,.48); background: rgba(0,179,166,.11); }
+    .define-step.completed::before { background: var(--teal-bright); border-color: var(--teal-bright); box-shadow: inset 0 0 0 2px var(--navy); }
+    .define-step.in_progress { color: #fff; border-color: var(--orange); }
+    .define-step.in_progress::before { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(255,162,41,.19); }
+    .define-step.blocked, .define-step.validation_failed, .define-step.stale { color: #ffe1db; border-color: #d58c63; }
+    .define-step.blocked::before, .define-step.validation_failed::before, .define-step.stale::before { background: var(--orange); border-color: var(--orange); }
+    .focus-empty { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 23px; color: var(--ink); background: var(--surface); border: 1px dashed #9bb9b7; border-radius: 15px; }
+    .focus-empty h2 { margin: 0; color: var(--navy); font-size: 18px; }
+    .focus-empty p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .metrics { grid-template-columns: repeat(5,minmax(0,1fr)); gap: 9px; margin: 15px 0 23px; }
+    .metric { min-height: 82px; padding: 12px 14px; border-radius: 11px; box-shadow: none; }
+    .metric-label { font-size: 10px; }
+    .metric-value { margin-top: 4px; color: var(--navy); font-size: 24px; }
+    .metric-detail { margin-top: 5px; font-size: 9px; }
+    .notice { padding: 13px 15px; color: #274b52; background: #e4f5f1; border: 1px solid #bde7df; border-radius: 11px; font-size: 11px; }
+    .integrity-notice { display: flex; align-items: flex-start; gap: 11px; }
+    .integrity-icon { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; color: var(--navy); background: var(--mint); border-radius: 8px; font-weight: 850; }
+    .toolbar { align-items: center; gap: 9px; margin: 15px 0; }
+    .search-wrap input, .toolbar select { height: 42px; color: var(--ink); background: var(--surface); border-color: var(--line); border-radius: 10px; font-size: 12px; }
+    .toolbar select { min-width: 162px; }
+    .toolbar-label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; font-weight: 700; }
+    .mission-list { gap: 13px; }
+    .mission-card { border-color: var(--line); border-radius: 15px; box-shadow: 0 5px 18px rgba(11,37,48,.035); }
+    .mission-card[open] { border-color: #9acdc4; box-shadow: var(--shadow); }
+    .mission-card > summary { padding: 18px 20px; }
+    .mission-card > summary::after { content: "⌄"; flex: 0 0 auto; color: var(--teal); font-size: 19px; font-weight: 700; }
+    .mission-card[open] > summary::after { content: "⌃"; }
+    .mission-card > summary:hover { background: #f6fbfa; }
+    .mission-title { color: var(--navy); font-size: 15px; }
+    .mission-meta { font-size: 10px; }
+    .summary-badges { gap: 6px; }
+    .badge { min-height: 25px; padding: 4px 9px; font-size: 10px; }
+    .mission-body { padding: 15px 20px 21px; background: #fbfdfc; }
+    .mission-jumps { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 13px; }
+    .mission-jumps button { display: inline-flex; min-height: 32px; align-items: center; padding: 5px 9px; color: var(--teal); background: #eff8f6; border: 1px solid #d6e9e5; border-radius: 8px; cursor: pointer; font: inherit; font-size: 10px; font-weight: 720; }
+    .mission-jumps button:hover { background: var(--teal-soft); }
+    .readiness-strip { align-items: center; gap: 8px 12px; padding: 13px; background: #f0f7f5; border-color: var(--line); border-radius: 11px; }
+    .readiness-strip strong { font-size: 11px; }
+    .readiness-notes { font-size: 10px; }
+    .panel { padding: 16px; border-color: var(--line); border-radius: 12px; box-shadow: 0 3px 12px rgba(11,37,48,.025); scroll-margin-top: 88px; }
+    .panel h3 { color: var(--navy); font-size: 13px; }
+    .criterion-list, .timeline { gap: 8px; }
+    .criterion { padding: 11px; background: #f6f9f8; border-color: #e6eeec; border-radius: 9px; }
+    .criterion-text { font-size: 11px; }
+    .history { color: var(--teal); font-size: 10px; }
+    .history summary { width: fit-content; padding: 3px 0; font-weight: 680; }
+    .timeline-item { border-left-color: #bad6d0; }
+    .timeline-item::before { background: var(--teal-bright); box-shadow: 0 0 0 3px #dcf6f1; }
+    .activity-row, .capability-row { padding: 13px 15px; border-color: var(--line); border-radius: 11px; }
+    .activity-title, .capability-title { color: var(--navy); font-size: 11px; }
+    .empty { padding: 16px; color: var(--muted); background: #f7faf9; border-color: #cbdad7; border-radius: 10px; }
+    .help { position: relative; display: inline-flex; flex: 0 0 auto; vertical-align: middle; }
+    .help > summary { display: grid; width: 19px; height: 19px; place-items: center; color: #d8f7f0; background: #23515a; border: 1px solid #4b7a7d; border-radius: 50%; cursor: pointer; list-style: none; font-size: 11px; font-weight: 800; }
+    .help > summary::-webkit-details-marker { display: none; }
+    .help[open] > summary { color: var(--navy); background: var(--mint); border-color: var(--mint); }
+    .help-popover { position: absolute; z-index: 10; top: 26px; left: 0; width: min(270px,70vw); padding: 11px 12px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); font-size: 11px; font-weight: 480; }
+    .focus-stat:nth-child(n+3) .help-popover, .define-progress-heading > .help .help-popover { right: 0; left: auto; }
+    .help-popover p { margin: 0; }
+    .footnote { margin-top: 34px; color: var(--muted); border-color: var(--line); font-size: 10px; }
+    @media (max-width: 1080px) { .app { grid-template-columns: 218px minmax(0,1fr); } .focus-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+    @media (max-width: 760px) {
+      .app { display: block; }
+      .rail { position: static; height: auto; padding: 11px 15px 10px; border-bottom: 1px solid #24505a; }
+      .brand { padding: 0 2px 10px; }
+      .brand-logo { width: 34px; height: 34px; border-radius: 9px; }
+      .brand-name { font-size: 16px; }
+      .brand-tag { font-size: 9px; }
+      .rail-label, .rail-note { display: none; }
+      .nav { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 2px; }
+      .nav a { min-height: 34px; flex: 0 0 auto; padding: 6px 9px; font-size: 10px; }
+      .nav a::before { width: 6px; height: 6px; }
+      .topbar { position: static; height: auto; min-height: 52px; padding: 8px 15px; }
+      .topbar-start { font-size: 10px; }
+      .topbar-actions { gap: 6px; }
+      .button { min-height: 34px; padding: 6px 9px; font-size: 10px; }
+      .content { padding: 22px 15px 45px; }
+      .hero { display: block; }
+      .generated { display: inline-block; margin-top: 10px; }
+      .focus-top { display: block; }
+      .focus-status { display: inline-flex; margin-top: 13px; }
+      .focus-next { align-items: flex-start; flex-direction: column; }
+      .focus-actions { width: 100%; }
+      .focus-actions .button { flex: 1 1 auto; }
+      .define-stepper { grid-template-columns: 1fr; }
+      .define-step { min-height: 0; padding: 9px 10px 9px 31px; }
+      .mission-card > summary { align-items: flex-start; padding: 15px; }
+      .mission-body { padding: 13px 13px 16px; }
+      .summary-badges { justify-content: flex-start; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .toolbar { align-items: stretch; flex-direction: column; }
+      .toolbar-label select { width: 100%; }
+    }
+    @media (max-width: 440px) {
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .topbar-actions { justify-content: space-between; width: 100%; }
+      .focus-card { padding: 18px 15px; border-radius: 14px; }
+      .focus-grid { gap: 7px; }
+      .focus-stat { min-height: 88px; padding: 10px; }
+      .focus-stat-value { font-size: 13px; }
+      .metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .mission-card > summary { display: block; }
+      .mission-card > summary::after { position: absolute; right: 27px; }
+      .summary-badges { margin-top: 10px; }
+      .focus-empty { align-items: flex-start; flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+    @media print {
+      body { color: #111; background: #fff; }
+      .app { display: block; }
+      .rail, .topbar, .toolbar, .focus-actions, .mission-jumps, .help, .skip-link { display: none !important; }
+      .content { width: 100%; padding: 0; }
+      .focus-card { color: #111; background: #fff; border: 1px solid #aaa; box-shadow: none; }
+      .focus-title, .focus-stat-value, .focus-next-value { color: #111; }
+      .focus-meta, .focus-stat-label, .focus-stat-detail, .focus-next-copy, .focus-next-label { color: #444; }
+      .focus-stat, .define-step { color: #222; background: #fff; border-color: #aaa; }
+      .mission-card, .metric, .panel { box-shadow: none; break-inside: avoid; }
+      .mission-card:not([open]) > .mission-body { display: block; }
+      .section { break-inside: avoid; }
+    }
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main-content" data-i18n="skipToContent">Ir para o conteúdo</a>
   <script type="application/json" id="report-data">__TRAMURI_REPORT_DATA__</script>
   <div class="app">
     <aside class="rail">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">T</div>
+        <img class="brand-logo" src="__TRAMURI_LOGO_DATA_URI__" alt="Tramuri" width="42" height="42">
         <div><div class="brand-name">Tramuri</div><div class="brand-tag" data-i18n="brandTag">From intent to verified outcomes</div></div>
       </div>
       <div class="rail-label" data-i18n="workspaceLabel">Workspace</div>
-      <nav class="nav" aria-label="Report sections">
-        <a href="#overview" data-i18n="navOverview">Overview</a>
+      <nav class="nav" data-i18n-aria="navAria" aria-label="Navegação do relatório">
+        <a href="#overview" data-i18n="navOverview">Mission Control</a>
         <a href="#missions" data-i18n="navMissions">Missions</a>
         <a href="#activity" data-i18n="navActivity">Activity</a>
         <a href="#capabilities" data-i18n="navCapabilities">Capabilities</a>
       </nav>
-      <div class="rail-note"><strong data-i18n="localTitle">Private by default</strong><span data-i18n="localNote">This report stays in the local workspace. It uses no external services.</span></div>
+      <div class="rail-note"><strong data-i18n="localTitle">Local and private</strong><span data-i18n="localNote">This report stays in the workspace and does not contact external services.</span></div>
     </aside>
     <div class="main">
       <div class="topbar">
-        <span class="local-mark" data-i18n="localReport">Local report</span>
-        <button id="refresh-report" type="button" data-i18n="refreshReport">Refresh report</button>
-        <div class="language" role="group" aria-label="Language">
-    <button id="lang-en" type="button" aria-pressed="true">EN</button>
-          <button id="lang-pt" type="button" aria-pressed="false">PT-BR</button>
+        <div class="topbar-start"><span class="local-dot" aria-hidden="true"></span><span data-i18n="localReport">Relatório local</span></div>
+        <div class="topbar-actions">
+          <button id="refresh-report" class="button" type="button" data-i18n="refreshReport">Atualizar relatório</button>
+          <div class="language" role="group" data-i18n-aria="languageAria" aria-label="Idioma">
+            <button id="lang-en" type="button" aria-pressed="false">EN</button>
+            <button id="lang-pt" type="button" aria-pressed="false">PT-BR</button>
+          </div>
         </div>
       </div>
-      <main class="content">
+      <main class="content" id="main-content">
         <section id="overview">
           <div class="hero">
             <div>
-              <p class="eyebrow" data-i18n="eyebrow">WORKSPACE / OVERVIEW</p>
-              <h1 data-i18n="pageTitle">Your work, in context.</h1>
-              <p class="hero-copy" data-i18n="pageDescription">A local view of Missions, recorded work, evidence, and reviewed outcomes.</p>
+              <p class="eyebrow" data-i18n="eyebrow">TRAMURI / MISSION CONTROL</p>
+              <h1 data-i18n="pageTitle">Veja onde o trabalho está e continue daqui.</h1>
+              <p class="hero-copy" data-i18n="pageDescription">Missões, etapas, decisões, evidências e resultados registrados neste workspace.</p>
             </div>
             <div class="generated"><strong data-i18n="generatedLabel">Report generated</strong><span id="generated"></span></div>
           </div>
-          <section class="metrics" id="metrics" aria-label="Workspace summary"></section>
-          <div class="notice"><strong data-i18n="integrityTitle">Execution completed is not outcome verified.</strong> <span data-i18n="integrityNote">Required criteria need supported assessments.</span></div>
+          <div id="mission-focus" aria-live="polite"></div>
+          <section class="metrics" id="metrics" data-i18n-aria="metricsAria" aria-label="Resumo do workspace"></section>
+          <div class="notice integrity-notice"><span class="integrity-icon" aria-hidden="true">i</span><div><strong data-i18n="integrityTitle">Execução concluída não é resultado verificado.</strong> <span data-i18n="integrityNote">Uma execução registra trabalho; o resultado depende da avaliação dos critérios com evidências.</span><details class="help"><summary data-i18n-aria="outcomeHelpAria" aria-label="Sobre resultado verificado">?</summary><div class="help-popover"><p data-i18n="outcomeHelp">O Tramuri só mostra um Outcome como verificado quando os critérios obrigatórios têm avaliações positivas registradas. Isso não comprova sozinho a disponibilidade externa da evidência.</p></div></details></div></div>
         </section>
 
         <section class="section" id="missions">
-          <div class="section-heading"><div><h2 data-i18n="missionsTitle">Missions</h2><p data-i18n="missionsDescription">Open a Mission to review its current Success Contract and recorded work.</p></div></div>
+          <div class="section-heading"><div><h2 data-i18n="missionsTitle">Missions</h2><p data-i18n="missionsDescription">Abra uma Mission para consultar critérios, execuções, evidências e histórico registrados.</p></div></div>
           <div class="toolbar">
-            <label class="search-wrap"><span class="search-icon" aria-hidden="true">⌕</span><input id="search" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="Search Missions and capabilities" aria-label="Search"></label>
-            <select id="state" aria-label="Mission state">
-              <option value="all" data-i18n="filterAll">All Missions</option>
-              <option value="open" data-i18n="filterOpen">Open</option>
-              <option value="closed" data-i18n="filterClosed">Closed</option>
-            </select>
+            <label class="search-wrap"><span class="search-icon" aria-hidden="true">⌕</span><input id="search" type="search" data-i18n-placeholder="searchPlaceholder" data-i18n-aria="searchPlaceholder" placeholder="Buscar Mission ou capacidade" aria-label="Buscar Mission ou capacidade"></label>
+            <label class="toolbar-label"><span data-i18n="filterLabel">Mostrar</span><select id="state" data-i18n-aria="filterLabel" aria-label="Estado da Mission">
+              <option value="all" data-i18n="filterAll">Todas as Missions</option>
+              <option value="open" data-i18n="filterOpen">Abertas</option>
+              <option value="closed" data-i18n="filterClosed">Fechadas</option>
+            </select></label>
           </div>
           <div class="mission-list" id="mission-list"></div>
         </section>
@@ -240,14 +440,23 @@
     const actorLabels = new Map((report.execution_actors || []).map(item => [item.execution_id, item.actor_reference]));
     const strings = {
       en: {
-        documentTitle: "Tramuri · Workspace", brandTag: "From intent to verified outcomes", workspaceLabel: "Workspace",
-        navOverview: "Overview", navMissions: "Missions", navActivity: "Activity", navCapabilities: "Capabilities",
-        localTitle: "Private by default", localNote: "This report stays in the local workspace. It uses no external services.", localReport: "Local report",
-        eyebrow: "WORKSPACE / OVERVIEW", pageTitle: "Your work, in context.",
-        pageDescription: "A local view of Missions, recorded work, evidence, and reviewed outcomes.", generatedLabel: "Report generated",
-        integrityTitle: "Execution completed is not outcome verified.", integrityNote: "A result is verified only when required criteria have recorded assessments supported by evidence.",
+        documentTitle: "Tramuri · Mission Control", brandTag: "From intent to verified outcomes", workspaceLabel: "Workspace",
+        navOverview: "Mission Control", navMissions: "Missions", navActivity: "Activity", navCapabilities: "Capabilities", navAria: "Report navigation", languageAria: "Language", metricsAria: "Workspace summary",
+        localTitle: "Local and private", localNote: "This report stays in the workspace and does not contact external services.", localReport: "Local report",
+        eyebrow: "TRAMURI / MISSION CONTROL", pageTitle: "See where the work stands. Continue from here.",
+        pageDescription: "Missions, steps, decisions, evidence, and outcomes recorded in this workspace.", generatedLabel: "Report updated",
+        integrityTitle: "Execution completed is not outcome verified.", integrityNote: "An execution records work. An outcome depends on reviewing criteria against evidence.",
         missionsTitle: "Missions", missionsDescription: "Open a Mission to review its current Success Contract and recorded work.",
-        searchPlaceholder: "Search Missions and capabilities", filterAll: "All Missions", filterOpen: "Open", filterClosed: "Closed",
+        searchPlaceholder: "Search Missions or capabilities", filterLabel: "Show", filterAll: "All Missions", filterOpen: "Open", filterClosed: "Closed",
+        skipToContent: "Skip to main content", focusKicker: "Work continuity", focusOpenKicker: "Latest open Mission · workspace highlight", focusClosedKicker: "Latest recorded Mission · closed",
+        focusNoMissionTitle: "No Mission has been recorded", focusNoMissionCopy: "Start or resume a Mission in Tramuri to see its objective, stage, and recorded next step here.",
+        focusOpen: "Open Mission", focusClosed: "Closed Mission", focusPerspective: "Work perspective", focusStage: "Current stage / step", focusActivity: "Recorded focus", focusReadiness: "Context readiness", focusOutcome: "Mission outcome",
+        focusNext: "Next step recorded", focusNoNext: "No next step recorded", focusNoNextCopy: "The report does not invent a next action. Check the Mission details for pending work.",
+        focusNextDefine: "Authorized DEFINE step", focusNextBlocked: "Resolve the recorded blocker", focusNextCorrection: "Correct the current step", focusNextStale: "Revalidate outdated steps", focusDefineDone: "DEFINE complete · Mission outcome remains separate",
+        focusDefineProgress: "Product Engineering DEFINE", focusStepsValid: "validated steps", focusViewMission: "Open Mission details", focusViewBrief: "View Product Brief", focusViewCriteria: "View criteria", focusViewWork: "View executions and evidence", focusViewHistory: "View Mission history", focusBriefNextAction: "Next action recorded in the Product Brief", focusActivityRecorded: "Activity recorded in the Mission", criteriaRecorded: "criteria recorded", missionDetailsNav: "Mission details navigation", noMissionHistory: "No additional workflow or contract history is recorded.",
+        focusSelectionHelp: "This highlight is the most recently created open Mission in the report. Tramuri does not track who is actively working on it.", perspectiveHelp: "This describes the work perspective selected for the Mission. It is separate from the person or tool recorded as executor.",
+        readinessHelp: "Readiness describes the recorded context for a planned activity. It can be unassessed or stale and does not verify the Mission outcome.", outcomeHelpAria: "About verified outcomes", outcomeHelp: "An outcome is shown as verified only when all required criteria have positive recorded assessments. This does not independently confirm an external evidence source.",
+        readinessHelpAria: "About context readiness", perspectiveHelpAria: "About work perspective", focusSelectionHelpAria: "How the highlighted Mission was selected", defineHelpAria: "About DEFINE progress", defineHelp: "Progress counts only steps accepted by Tramuri Core. Completing DEFINE creates a Product Brief; it does not mean the product shipped.",
         activityTitle: "Recent activity", activityDescription: "Recorded events, newest first.", capabilitiesTitle: "Declared capabilities",
         capabilitiesDescription: "Resources recognized in the latest authorized scan.", capabilityCaveatTitle: "Declarations are not operational checks.",
         capabilityCaveat: "Tramuri does not execute hooks, connect to MCP servers, or verify declared resources.",
@@ -276,17 +485,27 @@
         outcomeExplanationVerified: "All required criteria have recorded successful assessments.",
         outcomeExplanationNotAchieved: "At least one required criterion is recorded as not met."
         ,defineTitle: "Product Engineering · DEFINE", defineProgress: "validated steps", defineQuestions: "Clarifications used", defineNextStep: "Authorized step", defineStepObjective: "Understand objective and context", defineStepBusiness: "Discover problem, audience, and business", defineStepRequirements: "Identify requirements and criteria", defineStepSynthesis: "Consolidate facts, hypotheses, and gaps", defineStepBrief: "Create Product Brief", defineStateInProgress: "In progress", defineStateBlocked: "Blocked", defineStateValidationFailed: "Needs correction", defineStateCompleted: "DEFINE complete", defineStateStale: "Needs revalidation", defineStatePending: "Pending", defineCaveat: "A completed DEFINE is not a shipped product or a verified Mission Outcome.", defineHistory: "Workflow history", defineNoEvents: "No workflow events recorded."
-        ,refreshReport: "Refresh report", defineBriefSummary: "Product Brief summary", defineObjective: "Objective", defineProblem: "Problem", defineAudience: "Target audience", defineValue: "Value proposition", defineMvp: "Proposed MVP", defineConstraints: "Constraints", defineRisks: "Risks", defineHypotheses: "Important hypotheses", definePending: "Pending decisions or questions", defineNextAction: "Next action recorded", defineNoBrief: "No Product Brief artifact is available.", defineAssessment: "Semantic review", defineAssessmentBoundary: "Host assessment, not a Core-verified truth", defineAssessmentCurrent: "Current", defineAssessmentStale: "Stale"
+        ,refreshReport: "Refresh report", defineBriefSummary: "Product Brief summary", defineObjective: "Objective", defineProblem: "Problem", defineAudience: "Target audience", defineValue: "Value proposition", defineMvp: "Proposed MVP", defineConstraints: "Constraints", defineRisks: "Risks", defineHypotheses: "Important hypotheses", definePending: "Pending decisions or questions", defineNextAction: "Next action recorded", defineNoBrief: "No Product Brief artifact is available.", defineAssessment: "Semantic review", defineAssessmentBoundary: "Host assessment, not a Core-verified truth", defineAssessmentCurrent: "Current", defineAssessmentStale: "Stale",
+        defineHistoryStarted: "DEFINE started", defineHistoryStepStarted: "Step started", defineHistorySubmitted: "Result submitted", defineHistoryCompleted: "Step validated", defineHistoryRejected: "Validation needs correction", defineHistoryBlocked: "Step blocked", defineHistoryStale: "Step needs revalidation", defineHistoryFinished: "DEFINE completed", defineHistoryQuestion: "Clarification requested", defineHistoryDecision: "Decision recorded", defineHistoryUpdated: "Workflow updated"
       },
       pt: {
-        documentTitle: "Tramuri · Workspace", brandTag: "Da intenção a resultados verificados", workspaceLabel: "Workspace",
-        navOverview: "Visão geral", navMissions: "Missions", navActivity: "Atividade", navCapabilities: "Capacidades",
+        documentTitle: "Tramuri · Mission Control", brandTag: "Da intenção a resultados verificados", workspaceLabel: "Workspace",
+        navOverview: "Visão geral", navMissions: "Missions", navActivity: "Atividade", navCapabilities: "Capacidades", navAria: "Navegação do relatório", languageAria: "Idioma", metricsAria: "Resumo do workspace",
         localTitle: "Privado por padrão", localNote: "Este relatório fica no workspace local. Nenhum serviço externo é usado.", localReport: "Relatório local",
-        eyebrow: "WORKSPACE / VISÃO GERAL", pageTitle: "Seu trabalho, com contexto.",
-        pageDescription: "Uma visão local das Missions, do trabalho registrado, das evidências e dos resultados avaliados.", generatedLabel: "Relatório gerado",
+        eyebrow: "TRAMURI / MISSION CONTROL", pageTitle: "Veja onde o trabalho está. Continue daqui.",
+        pageDescription: "Missions, etapas, decisões, evidências e resultados registrados neste workspace.", generatedLabel: "Relatório atualizado",
         integrityTitle: "Execução concluída não significa resultado verificado.", integrityNote: "Critérios obrigatórios precisam de avaliações registradas com evidências.",
         missionsTitle: "Missions", missionsDescription: "Abra uma Mission para revisar o Success Contract vigente e o trabalho registrado.",
-        searchPlaceholder: "Buscar Missions e capacidades", filterAll: "Todas as Missions", filterOpen: "Abertas", filterClosed: "Fechadas",
+        searchPlaceholder: "Buscar Missions ou capacidades", filterLabel: "Mostrar", filterAll: "Todas as Missions", filterOpen: "Abertas", filterClosed: "Fechadas",
+        skipToContent: "Ir para o conteúdo principal", focusKicker: "Continuidade do trabalho", focusOpenKicker: "Mission aberta mais recente · destaque do workspace", focusClosedKicker: "Mission registrada mais recente · fechada",
+        focusNoMissionTitle: "Nenhuma Mission foi registrada", focusNoMissionCopy: "Inicie ou retome uma Mission no Tramuri para ver aqui o objetivo, a etapa e a próxima ação registrada.",
+        focusOpen: "Mission aberta", focusClosed: "Mission fechada", focusPerspective: "Perspectiva de trabalho", focusStage: "Fase ou etapa atual", focusActivity: "Foco registrado", focusReadiness: "Prontidão do contexto", focusOutcome: "Resultado da Mission",
+        focusNext: "Próxima ação registrada", focusNoNext: "Nenhuma próxima ação registrada", focusNoNextCopy: "O relatório não inventa uma próxima ação. Consulte os detalhes da Mission para ver o trabalho pendente.",
+        focusNextDefine: "Etapa DEFINE autorizada", focusNextBlocked: "Resolver o bloqueio registrado", focusNextCorrection: "Corrigir a etapa atual", focusNextStale: "Revalidar etapas desatualizadas", focusDefineDone: "DEFINE concluído · resultado da Mission é independente",
+        focusDefineProgress: "Product Engineering · DEFINE", focusStepsValid: "etapas validadas", focusViewMission: "Abrir detalhes da Mission", focusViewBrief: "Ver Product Brief", focusViewCriteria: "Ver critérios", focusViewWork: "Ver execuções e evidências", focusViewHistory: "Ver histórico da Mission", focusBriefNextAction: "Próxima ação registrada no Product Brief", focusActivityRecorded: "Atividade registrada na Mission", criteriaRecorded: "critérios registrados", missionDetailsNav: "Navegação dos detalhes da Mission", noMissionHistory: "Não há outro histórico de workflow ou contrato registrado.",
+        focusSelectionHelp: "Este destaque mostra a Mission aberta criada mais recentemente. O Tramuri não registra quem está trabalhando nela neste momento.", perspectiveHelp: "Indica a perspectiva escolhida para a Mission. Ela é diferente da pessoa ou ferramenta registrada como executora.",
+        readinessHelp: "A prontidão descreve o contexto registrado para uma atividade planejada. Pode estar sem avaliação ou desatualizada e não verifica o resultado da Mission.", outcomeHelpAria: "Sobre resultados verificados", outcomeHelp: "O resultado só aparece como verificado quando todos os critérios obrigatórios têm avaliações positivas registradas. Isso não confirma por conta própria uma evidência externa.",
+        readinessHelpAria: "Sobre prontidão do contexto", perspectiveHelpAria: "Sobre perspectiva de trabalho", focusSelectionHelpAria: "Como a Mission em destaque foi escolhida", defineHelpAria: "Sobre o progresso do DEFINE", defineHelp: "A contagem inclui apenas etapas aceitas pelo Tramuri Core. Concluir o DEFINE gera um Product Brief; não significa que o produto foi lançado.",
         activityTitle: "Atividade recente", activityDescription: "Eventos registrados, do mais recente ao mais antigo.", capabilitiesTitle: "Capacidades declaradas",
         capabilitiesDescription: "Recursos reconhecidos na última varredura autorizada.", capabilityCaveatTitle: "Declaração não comprova funcionamento.",
         capabilityCaveat: "O Tramuri não executa hooks, conecta a servidores MCP nem verifica recursos declarados.",
@@ -315,10 +534,11 @@
         outcomeExplanationVerified: "Todos os critérios obrigatórios têm avaliações positivas registradas.",
         outcomeExplanationNotAchieved: "Pelo menos um critério obrigatório está registrado como não atendido."
         ,defineTitle: "Product Engineering · DEFINE", defineProgress: "etapas validadas", defineQuestions: "Esclarecimentos usados", defineNextStep: "Etapa autorizada", defineStepObjective: "Compreender objetivos e contexto", defineStepBusiness: "Descobrir problema, público e negócio", defineStepRequirements: "Identificar requisitos e critérios", defineStepSynthesis: "Consolidar fatos, hipóteses e lacunas", defineStepBrief: "Criar Product Brief", defineStateInProgress: "Em andamento", defineStateBlocked: "Bloqueado", defineStateValidationFailed: "Precisa de correção", defineStateCompleted: "DEFINE concluído", defineStateStale: "Precisa revalidar", defineStatePending: "Pendente", defineCaveat: "DEFINE concluído não significa produto lançado nem Outcome da Mission verificado.", defineHistory: "Histórico do workflow", defineNoEvents: "Nenhum evento do workflow registrado."
-        ,refreshReport: "Atualizar relatório", defineBriefSummary: "Resumo do Product Brief", defineObjective: "Objetivo", defineProblem: "Problema", defineAudience: "Público-alvo", defineValue: "Proposta de valor", defineMvp: "MVP proposto", defineConstraints: "Restrições", defineRisks: "Riscos", defineHypotheses: "Hipóteses importantes", definePending: "Decisões ou perguntas pendentes", defineNextAction: "Próxima ação registrada", defineNoBrief: "Nenhum artefato Product Brief disponível.", defineAssessment: "Avaliação semântica", defineAssessmentBoundary: "Avaliação do host, sem verificação semântica pelo Core", defineAssessmentCurrent: "Atual", defineAssessmentStale: "Desatualizada"
+        ,refreshReport: "Atualizar relatório", defineBriefSummary: "Resumo do Product Brief", defineObjective: "Objetivo", defineProblem: "Problema", defineAudience: "Público-alvo", defineValue: "Proposta de valor", defineMvp: "MVP proposto", defineConstraints: "Restrições", defineRisks: "Riscos", defineHypotheses: "Hipóteses importantes", definePending: "Decisões ou perguntas pendentes", defineNextAction: "Próxima ação registrada", defineNoBrief: "Nenhum artefato Product Brief disponível.", defineAssessment: "Avaliação semântica", defineAssessmentBoundary: "Avaliação do host, sem verificação semântica pelo Core", defineAssessmentCurrent: "Atual", defineAssessmentStale: "Desatualizada",
+        defineHistoryStarted: "DEFINE iniciado", defineHistoryStepStarted: "Etapa iniciada", defineHistorySubmitted: "Resultado enviado", defineHistoryCompleted: "Etapa validada", defineHistoryRejected: "Validação precisa de correção", defineHistoryBlocked: "Etapa bloqueada", defineHistoryStale: "Etapa precisa de revalidação", defineHistoryFinished: "DEFINE concluído", defineHistoryQuestion: "Esclarecimento solicitado", defineHistoryDecision: "Decisão registrada", defineHistoryUpdated: "Workflow atualizado"
       }
     };
-    let language = "en";
+    let language = navigator.language.toLocaleLowerCase().startsWith("pt") ? "pt" : "en";
     const text = key => strings[language][key] || strings.en[key] || key;
     const make = (tag, value, className) => {
       const item = document.createElement(tag);
@@ -370,11 +590,143 @@
       document.title = text("documentTitle");
       document.querySelectorAll("[data-i18n]").forEach(item => { item.textContent = text(item.dataset.i18n); });
       document.querySelectorAll("[data-i18n-placeholder]").forEach(item => { item.placeholder = text(item.dataset.i18nPlaceholder); });
+      document.querySelectorAll("[data-i18n-aria]").forEach(item => { item.setAttribute("aria-label", text(item.dataset.i18nAria)); });
       document.getElementById("generated").textContent = date(data.generated_at_unix_ms);
       document.getElementById("lang-en").setAttribute("aria-pressed", String(next === "en"));
       document.getElementById("lang-pt").setAttribute("aria-pressed", String(next === "pt"));
       try { localStorage.setItem("tramuri-report-language", next); } catch (_) {}
       render();
+    }
+    function helpControl(messageKey, ariaKey) {
+      const help = make("details", undefined, "help");
+      const summary = make("summary", "?");
+      summary.dataset.i18nAria = ariaKey;
+      summary.setAttribute("aria-label", text(ariaKey));
+      const popover = make("div", undefined, "help-popover");
+      popover.append(make("p", text(messageKey)));
+      help.append(summary, popover);
+      return help;
+    }
+    function focusStat(labelKey, value, detail, helpKey, helpAriaKey) {
+      const stat = make("div", undefined, "focus-stat");
+      const label = make("div", undefined, "focus-stat-label");
+      label.append(make("span", text(labelKey)));
+      if (helpKey && helpAriaKey) label.append(helpControl(helpKey, helpAriaKey));
+      stat.append(label, make("strong", value, "focus-stat-value"));
+      if (detail) stat.append(make("span", detail, "focus-stat-detail"));
+      return stat;
+    }
+    function focusButton(labelKey, missionId, targetId, primary) {
+      const button = make("button", text(labelKey), "button button-on-mint" + (primary ? " button-primary" : ""));
+      button.type = "button";
+      button.dataset.openMission = missionId;
+      if (targetId) button.dataset.openSection = targetId;
+      return button;
+    }
+    function renderMissionFocus() {
+      const host = document.getElementById("mission-focus");
+      host.replaceChildren();
+      const candidates = [...data.missions].filter(mission => mission.state === "open");
+      const mission = (candidates.length ? candidates : [...data.missions])
+        .sort((a, b) => b.created_at_unix_ms - a.created_at_unix_ms || String(a.id).localeCompare(String(b.id)))[0];
+      if (!mission) {
+        const empty = make("section", undefined, "focus-empty");
+        const copy = make("div");
+        copy.append(make("h2", text("focusNoMissionTitle")), make("p", text("focusNoMissionCopy")));
+        empty.append(copy);
+        host.append(empty);
+        return;
+      }
+      const index = data.missions.indexOf(mission);
+      const missionId = mission.id;
+      const define = mission.define;
+      const defineState = define?.state;
+      const workflow = mission.workflow || {};
+      const readiness = mission.readiness || { activity: null, state: "not_assessed" };
+      const stepNames = {
+        objective_context: "defineStepObjective", business_discovery: "defineStepBusiness", requirements: "defineStepRequirements",
+        knowledge_synthesis: "defineStepSynthesis", product_brief: "defineStepBrief"
+      };
+      const stepName = define?.current_step ? text(stepNames[define.current_step] || "notRecorded") : null;
+      const plannedActivity = workflow.next_activity || readiness.activity;
+      const stage = stepName || (plannedActivity ? missionActivityLabel(plannedActivity) : text("activityNotSelected"));
+      const activityFocus = define && defineState !== "completed"
+        ? text("defineTitle")
+        : plannedActivity ? missionActivityLabel(plannedActivity) : text("activityNotSelected");
+      const outcome = stateLabel(mission.outcome.state);
+      const status = stateLabel(mission.state);
+      const defineDetail = (report.define_details || []).find(item => item.mission_id === missionId);
+      const brief = defineDetail?.brief;
+      let nextAction = null;
+      let nextActionDetail = null;
+      if (defineState === "blocked") nextAction = text("focusNextBlocked");
+      else if (defineState === "validation_failed") nextAction = text("focusNextCorrection");
+      else if (defineState === "stale") nextAction = text("focusNextStale");
+      else if (define && defineState !== "completed" && define.current_step) {
+        nextAction = text("focusNextDefine") + " · " + (stepName || text("notRecorded"));
+      } else if (brief?.next_action && brief.state === "completed") {
+        nextAction = brief.next_action;
+        nextActionDetail = text("focusBriefNextAction");
+      } else if (plannedActivity) {
+        nextAction = missionActivityLabel(plannedActivity);
+        nextActionDetail = text("focusActivityRecorded");
+      }
+
+      const card = make("section", undefined, "focus-card");
+      const top = make("div", undefined, "focus-top");
+      const heading = make("div", undefined, "focus-heading");
+      const kicker = make("div", text(mission.state === "open" ? "focusOpenKicker" : "focusClosedKicker"), "focus-kicker");
+      kicker.append(helpControl("focusSelectionHelp", "focusSelectionHelpAria"));
+      heading.append(kicker, make("h2", mission.objective, "focus-title"));
+      const meta = make("div", undefined, "focus-meta");
+      meta.append(make("span", text("missionId") + ": " + mission.id.slice(0, 8)), make("span", date(mission.created_at_unix_ms)));
+      heading.append(meta);
+      top.append(heading, make("span", status, "focus-status"));
+      card.append(top);
+
+      const stats = make("div", undefined, "focus-grid");
+      stats.append(
+        focusStat("focusPerspective", workflow.perspective ? perspectiveLabel(workflow.perspective) : text("notRecorded"),
+          workflow.perspective_source ? perspectiveSourceLabel(workflow.perspective_source) : null, "perspectiveHelp", "perspectiveHelpAria"),
+        focusStat("focusStage", stage, activityFocus, "defineHelp", "defineHelpAria"),
+        focusStat("focusReadiness", readinessLabel(readiness.state), plannedActivity ? missionActivityLabel(plannedActivity) : null, "readinessHelp", "readinessHelpAria"),
+        focusStat("focusOutcome", outcome, mission.outcome.criteria.length + " " + text("criteriaRecorded"), "outcomeHelp", "outcomeHelpAria")
+      );
+      card.append(stats);
+
+      const next = make("div", undefined, "focus-next");
+      const nextCopy = make("div");
+      nextCopy.append(make("span", text("focusNext"), "focus-next-label"));
+      nextCopy.append(make("strong", nextAction || text("focusNoNext"), "focus-next-value"));
+      nextCopy.append(make("span", nextActionDetail || text("focusNoNextCopy"), "focus-next-copy"));
+      const actions = make("div", undefined, "focus-actions");
+      actions.append(focusButton("focusViewMission", missionId, null, true));
+      if (brief) actions.append(focusButton("focusViewBrief", missionId, "brief-" + index, false));
+      actions.append(focusButton("focusViewCriteria", missionId, "criteria-" + index, false));
+      actions.append(focusButton("focusViewWork", missionId, "work-" + index, false));
+      actions.append(focusButton("focusViewHistory", missionId, "history-" + index, false));
+      next.append(nextCopy, actions);
+      card.append(next);
+
+      if (define) {
+        const progress = make("section", undefined, "define-progress");
+        const progressHeading = make("div", undefined, "define-progress-heading");
+        progressHeading.append(make("span", text("focusDefineProgress")), make("span", define.completed + "/" + define.total + " " + text("focusStepsValid")));
+        progressHeading.append(helpControl("defineHelp", "defineHelpAria"));
+        progress.append(progressHeading);
+        const stepper = make("ol", undefined, "define-stepper");
+        for (const step of define.steps || []) {
+          const name = stepNames[step.id] || "notRecorded";
+          const item = make("li", text(name) + " · " + text(({
+            completed: "defineStateCompleted", in_progress: "defineStateInProgress", blocked: "defineStateBlocked",
+            validation_failed: "defineStateValidationFailed", stale: "defineStateStale", pending: "defineStatePending"
+          })[step.state] || "defineStatePending"), "define-step " + step.state);
+          stepper.append(item);
+        }
+        progress.append(stepper);
+        card.append(progress);
+      }
+      host.append(card);
     }
     function renderMetrics() {
       const values = [
@@ -405,7 +757,9 @@
       }
       let opened = false;
       for (const mission of matching) {
+        const index = data.missions.indexOf(mission);
         const card = make("details", undefined, "mission-card");
+        card.dataset.missionId = mission.id;
         card.open = mission.state === "open" && !opened;
         opened ||= card.open;
         const summary = make("summary");
@@ -427,6 +781,22 @@
         card.append(summary);
 
         const body = make("div", undefined, "mission-body");
+        const jumps = make("nav", undefined, "mission-jumps");
+        jumps.dataset.i18nAria = "missionDetailsNav";
+        jumps.setAttribute("aria-label", text("missionDetailsNav"));
+        const jump = (key, target) => {
+          const button = make("button", text(key));
+          button.type = "button";
+          button.dataset.openMission = mission.id;
+          button.dataset.openSection = target;
+          jumps.append(button);
+        };
+        const missionBrief = (report.define_details || []).find(item => item.mission_id === mission.id)?.brief;
+        if (missionBrief) jump("focusViewBrief", "brief-" + index);
+        jump("focusViewCriteria", "criteria-" + index);
+        jump("focusViewWork", "work-" + index);
+        jump("focusViewHistory", "history-" + index);
+        body.append(jumps);
         const readiness = mission.readiness || { activity: null, state: "not_assessed", assessment: null };
         const workflow = mission.workflow || {};
         const readinessPanel = make("div", undefined, "readiness-strip");
@@ -463,6 +833,7 @@
         body.append(readinessPanel);
         if (mission.define) {
           const definePanel = make("section", undefined, "panel");
+          definePanel.id = "define-panel-" + index;
           definePanel.style.marginTop = "13px";
           const define = mission.define;
           const stateKey = ({ in_progress: "defineStateInProgress", blocked: "defineStateBlocked", validation_failed: "defineStateValidationFailed", completed: "defineStateCompleted", stale: "defineStateStale" })[define.state] || "defineStateInProgress";
@@ -481,6 +852,7 @@
           const defineDetail = (report.define_details || []).find(item => item.mission_id === mission.id);
           if (defineDetail) {
             const details = make("details", undefined, "history");
+            details.id = "brief-" + index;
             details.append(make("summary", text("defineBriefSummary")));
             for (const hypothesis of defineDetail.hypotheses || []) details.append(make("div", text("defineHypotheses") + ": " + hypothesis, "history-item"));
             for (const pending of defineDetail.pending_decisions || []) details.append(make("div", text("definePending") + ": " + pending, "history-item"));
@@ -503,13 +875,7 @@
             }
             definePanel.append(details);
           }
-          const events = make("details", undefined, "history");
-          events.append(make("summary", text("defineHistory") + " (" + (define.events || []).length + ")"));
-          for (const event of [...(define.events || [])].reverse().slice(0, 20)) {
-            events.append(make("div", (event.step || "workflow") + " · " + event.event_type + " · " + date(event.occurred_at_unix_ms), "history-item"));
-          }
-          if (!(define.events || []).length) events.append(make("div", text("defineNoEvents"), "history-item"));
-          definePanel.append(events, make("div", text("defineCaveat"), "activity-meta"));
+          definePanel.append(make("div", text("defineCaveat"), "activity-meta"));
           body.append(definePanel);
         }
         const assessed = mission.outcome.criteria.filter(review => review.assessments.length > 0).length;
@@ -532,6 +898,7 @@
 
         const grid = make("div", undefined, "detail-grid");
         const criteriaPanel = make("section", undefined, "panel");
+        criteriaPanel.id = "criteria-" + index;
         criteriaPanel.append(make("h3", text("criteria") + " · " + mission.outcome.criteria.length));
         const criteriaList = make("ul", undefined, "criterion-list");
         if (!mission.outcome.criteria.length) criteriaList.append(make("li", text("noCriteria"), "empty"));
@@ -559,6 +926,7 @@
         criteriaPanel.append(criteriaList);
 
         const workPanel = make("section", undefined, "panel");
+        workPanel.id = "work-" + index;
         workPanel.append(make("h3", text("executions") + " & " + text("evidence") + " · " + (mission.executions.length + mission.evidence.length)));
         const activeExecutions = mission.executions.filter(execution => execution.state === "in_progress").length;
         if (activeExecutions) workPanel.append(make("p", activeExecutions + " " + text("openExecutions"), "small-note"));
@@ -599,14 +967,26 @@
         grid.append(criteriaPanel, workPanel);
         body.append(grid);
 
-        if (mission.contract_history.length > 1) {
-          const history = make("details", undefined, "history");
-          history.append(make("summary", text("contractHistory") + " (" + (mission.contract_history.length - 1) + ")"));
-          for (const revision of [...mission.contract_history].reverse().slice(1)) {
-            history.append(make("div", text("contractRevision") + " " + revision.contract_revision + " · " + stateLabel(revision.state), "history-item"));
-          }
-          body.append(history);
+        const history = make("details", undefined, "history");
+        history.id = "history-" + index;
+        const defineEvents = mission.define?.events || [];
+        const eventCount = defineEvents.length + Math.max(0, mission.contract_history.length - 1);
+        history.append(make("summary", text("focusViewHistory") + " (" + eventCount + ")"));
+        for (const revision of [...mission.contract_history].reverse().slice(1)) {
+          history.append(make("div", text("contractRevision") + " " + revision.contract_revision + " · " + stateLabel(revision.state), "history-item"));
         }
+        const eventNames = {
+          define_started: "defineHistoryStarted", step_started: "defineHistoryStepStarted", step_submitted: "defineHistorySubmitted",
+          step_completed: "defineHistoryCompleted", step_validation_failed: "defineHistoryRejected", step_blocked: "defineHistoryBlocked",
+          step_invalidated: "defineHistoryStale", define_completed: "defineHistoryFinished", decision_requested: "defineHistoryQuestion",
+          decision_recorded: "defineHistoryDecision"
+        };
+        for (const event of [...defineEvents].reverse().slice(0, 20)) {
+          const step = event.step ? text(stepNames[event.step] || "notRecorded") : text("defineTitle");
+          history.append(make("div", step + " · " + text(eventNames[event.event_type] || "defineHistoryUpdated") + " · " + date(event.occurred_at_unix_ms), "history-item"));
+        }
+        if (!eventCount) history.append(make("div", text("noMissionHistory"), "history-item"));
+        body.append(history);
         card.append(body);
         host.append(card);
       }
@@ -649,6 +1029,7 @@
     }
     function render() {
       const query = document.getElementById("search").value.trim().toLocaleLowerCase();
+      renderMissionFocus();
       renderMetrics();
       renderMissions(query, document.getElementById("state").value);
       renderActivity(query);
@@ -659,7 +1040,28 @@
     document.getElementById("lang-en").addEventListener("click", () => applyLanguage("en"));
     document.getElementById("lang-pt").addEventListener("click", () => applyLanguage("pt"));
     document.getElementById("refresh-report").addEventListener("click", () => window.location.reload());
-    try { if (localStorage.getItem("tramuri-report-language") === "pt") language = "pt"; } catch (_) {}
+    document.addEventListener("click", event => {
+      const button = event.target.closest("[data-open-mission]");
+      if (!button) return;
+      document.getElementById("search").value = "";
+      document.getElementById("state").value = "all";
+      render();
+      const card = [...document.querySelectorAll(".mission-card")].find(item => item.dataset.missionId === button.dataset.openMission);
+      if (!card) return;
+      card.open = true;
+      const target = button.dataset.openSection ? document.getElementById(button.dataset.openSection) : card;
+      if (target?.tagName === "DETAILS") target.open = true;
+      for (let parent = target?.parentElement; parent; parent = parent.parentElement) if (parent.tagName === "DETAILS") parent.open = true;
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const focusTarget = target?.matches("details") ? target.querySelector("summary") : target?.querySelector("h3");
+      const finalTarget = focusTarget || card.querySelector("summary");
+      if (finalTarget && !finalTarget.hasAttribute("tabindex")) finalTarget.setAttribute("tabindex", "-1");
+      finalTarget?.focus({ preventScroll: true });
+    });
+    try {
+      const storedLanguage = localStorage.getItem("tramuri-report-language");
+      if (storedLanguage === "pt" || storedLanguage === "en") language = storedLanguage;
+    } catch (_) {}
     applyLanguage(language);
   </script>
 </body>

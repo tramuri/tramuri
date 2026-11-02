@@ -1,9 +1,9 @@
 use serde_json::{Value, json};
 use tramuri_core::{
     DefineStepId, IntentRouteSource, KnowledgeFilter, MissionPerspective, define_artifact_history,
-    define_brief_assess, define_brief_assessment_get, define_next, define_question_answer,
-    define_question_request, define_review, define_start, define_status, define_submit,
-    knowledge_list, mission_start,
+    define_brief_assess, define_brief_assessment_contract, define_brief_assessment_get,
+    define_next, define_question_answer, define_question_request, define_review, define_start,
+    define_status, define_submit, knowledge_list, mission_start,
 };
 
 fn mission(path: &std::path::Path) -> String {
@@ -416,6 +416,33 @@ fn semantic_brief_assessment_is_host_declared_traced_and_does_not_complete_domai
     let brief = define_artifact_history(workspace.path(), &id, Some(DefineStepId::ProductBrief))
         .unwrap()
         .remove(0);
+    let contract = define_brief_assessment_contract(workspace.path(), &id).unwrap();
+    assert_eq!(
+        contract.contract_schema,
+        "tramuri.product-brief-assessment-contract.v1"
+    );
+    assert_eq!(contract.brief_artifact_id, brief.id);
+    assert_eq!(contract.brief_revision, brief.revision);
+    assert_eq!(contract.criteria.len(), 7);
+    assert_eq!(contract.maximum_limitations, 5);
+    assert_eq!(contract.maximum_limitation_characters, 500);
+    assert_eq!(contract.maximum_rationale_characters, 1000);
+    assert!(
+        contract
+            .criteria
+            .iter()
+            .all(|criterion| !criterion.guidance.is_empty())
+    );
+    assert_eq!(
+        contract.assessment_template["criteria"][0]["criterion"],
+        "goal_alignment"
+    );
+    assert_eq!(
+        define_next(workspace.path(), &id)
+            .unwrap()
+            .brief_assessment_contract,
+        Some(contract.clone())
+    );
     let criteria = [
         ("goal_alignment", "pass", "objective"),
         ("target_consistency", "concern", "target_audience"),
@@ -462,9 +489,21 @@ fn semantic_brief_assessment_is_host_declared_traced_and_does_not_complete_domai
     );
     assert_eq!(define_status(workspace.path(), &id).unwrap().completed, 5);
 
+    let mut incomplete_rubric = assessment.clone();
+    incomplete_rubric["criteria"].as_array_mut().unwrap().pop();
+    let incomplete_error = define_brief_assess(workspace.path(), &id, incomplete_rubric)
+        .unwrap_err()
+        .to_string();
+    assert!(incomplete_error.contains("criteria must contain exactly 7 entries"));
+    assert!(incomplete_error.contains("goal_alignment"));
+    assert!(incomplete_error.contains("internal_consistency"));
+
     let mut falsely_positive = assessment;
     falsely_positive["overall"] = json!("pass");
-    assert!(define_brief_assess(workspace.path(), &id, falsely_positive).is_err());
+    let false_positive_error = define_brief_assess(workspace.path(), &id, falsely_positive)
+        .unwrap_err()
+        .to_string();
+    assert!(false_positive_error.contains("overall cannot be pass"));
 }
 
 #[test]
@@ -638,6 +677,27 @@ fn later_step_contracts_require_typed_references_to_accepted_predecessors() {
     )
     .unwrap();
 
+    let contract = define_next(workspace.path(), &id).unwrap();
+    let rules = contract
+        .current_step
+        .as_ref()
+        .unwrap()
+        .validation_rules
+        .join(" ");
+    assert!(
+        contract
+            .current_step
+            .as_ref()
+            .unwrap()
+            .required_fields
+            .iter()
+            .any(|field| field == "references"),
+        "the CLI contract must list references because Core validation requires them"
+    );
+    assert!(rules.contains("problem, value_proposition"));
+    assert!(rules.contains("target_audience, business_objectives"));
+    assert!(rules.contains("references must include the latest accepted `objective_context`"));
+
     let without_reference = define_submit(
         workspace.path(),
         &id,
@@ -671,6 +731,84 @@ fn later_step_contracts_require_typed_references_to_accepted_predecessors() {
             .iter()
             .any(|error| { error.code == "invalid_field_type" && error.field == "references" })
     );
+
+    assert!(
+        define_submit(
+            workspace.path(),
+            &id,
+            DefineStepId::BusinessDiscovery,
+            result(DefineStepId::BusinessDiscovery),
+            None,
+            None,
+        )
+        .unwrap()
+        .accepted
+    );
+    let requirements = define_next(workspace.path(), &id).unwrap();
+    let requirements = requirements.current_step.unwrap();
+    assert_eq!(requirements.id, DefineStepId::Requirements);
+    assert!(
+        requirements
+            .required_fields
+            .iter()
+            .any(|field| field == "references"),
+        "the requirements contract must list references because Core validation requires them"
+    );
+}
+
+#[test]
+fn define_next_contract_reports_allowed_knowledge_classifications() {
+    let workspace = tempfile::tempdir().expect("workspace should be created");
+    let id = mission(workspace.path());
+    define_start(workspace.path(), &id).unwrap();
+    for step in [
+        DefineStepId::ObjectiveContext,
+        DefineStepId::BusinessDiscovery,
+        DefineStepId::Requirements,
+    ] {
+        assert!(
+            define_submit(workspace.path(), &id, step, result(step), None, None)
+                .unwrap()
+                .accepted
+        );
+    }
+
+    let next = define_next(workspace.path(), &id).unwrap();
+    let rules = next
+        .current_step
+        .as_ref()
+        .unwrap()
+        .validation_rules
+        .join(" ");
+    for kind in [
+        "user_provided",
+        "observed",
+        "hypothesis",
+        "recommendation",
+        "approved_decision",
+        "open_question",
+        "risk",
+    ] {
+        assert!(
+            rules.contains(kind),
+            "contract omitted supported kind {kind}"
+        );
+    }
+
+    let mut invalid = result(DefineStepId::KnowledgeSynthesis);
+    invalid["classifications"][0]["kind"] = json!("fact");
+    let rejected = define_submit(
+        workspace.path(),
+        &id,
+        DefineStepId::KnowledgeSynthesis,
+        invalid,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(!rejected.accepted);
+    assert!(rejected.errors[0].message.contains("user_provided"));
+    assert!(rejected.errors[0].message.contains("approved_decision"));
 }
 
 #[test]

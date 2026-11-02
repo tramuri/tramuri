@@ -8,6 +8,19 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-02
+
+### Added
+
+- A Mission Control view in the existing local HTML report, with a focused open Mission, recorded work perspective and stage, validated DEFINE progress, next action, and shortcuts to criteria, evidence, and history.
+- Brazilian Portuguese and English report text, contextual help, responsive layout, keyboard focus treatment, and the Tramuri logo embedded for offline use.
+- A versioned Product Brief assessment contract returned by `tramuri mission define next --json`, including the rubric guidance, accepted Brief revision, allowed results, and assessment template.
+
+### Fixed
+
+- Product Brief assessment submissions now have CLI and skill guidance matching the Core's complete rubric contract, reducing invalid assessments caused by guessed or incomplete schemas.
+- The report keeps its existing privacy-minimized data projection and report filenames while adding links to the relevant Mission sections.
+
 ## [0.10.0] - 2026-11-02
 
 ### Added

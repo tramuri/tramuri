@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -16,15 +16,42 @@ use crate::{Result, TramuriError};
 pub const DEFINE_WORKFLOW_VERSION: &str = "tramuri.define.v1";
 pub const DEFINE_BRIEF_RUBRIC_VERSION: &str = "tramuri.product-brief-rubric.v1";
 const MAX_QUESTIONS: u32 = 2;
-const BRIEF_ASSESSMENT_CRITERIA: [&str; 7] = [
-    "goal_alignment",
-    "target_consistency",
-    "evidence_assumption_separation",
-    "success_criteria_fit",
-    "requirements_traceability",
-    "decision_authorization",
-    "internal_consistency",
+const BRIEF_ASSESSMENT_CRITERIA: [(&str, &str); 7] = [
+    (
+        "goal_alignment",
+        "The brief objective and main content align with the user's original intent.",
+    ),
+    (
+        "target_consistency",
+        "The target audience is consistent between accepted discovery and the Product Brief.",
+    ),
+    (
+        "evidence_assumption_separation",
+        "User-provided or observed information is distinguished from hypotheses and assumptions.",
+    ),
+    (
+        "success_criteria_fit",
+        "Candidate success criteria meaningfully assess the objective without claiming an outcome.",
+    ),
+    (
+        "requirements_traceability",
+        "Brief requirements trace to the accepted requirements artifact and declared dependencies.",
+    ),
+    (
+        "decision_authorization",
+        "Only explicitly approved decisions are presented as approved; proposals remain proposals.",
+    ),
+    (
+        "internal_consistency",
+        "The Product Brief sections do not materially contradict each other.",
+    ),
 ];
+const BRIEF_ASSESSMENT_RESULTS: [&str; 3] = ["pass", "concern", "not_assessed"];
+const BRIEF_ASSESSMENT_OVERALL_RESULTS: [&str; 3] = ["pass", "concerns", "incomplete"];
+const BRIEF_ASSESSMENT_EVALUATION_BOUNDARY: &str = "host_semantic_assessment_not_core_verified";
+const BRIEF_ASSESSMENT_MAX_LIMITATIONS: usize = 5;
+const BRIEF_ASSESSMENT_MAX_LIMITATION_CHARACTERS: usize = 500;
+const BRIEF_ASSESSMENT_MAX_RATIONALE_CHARACTERS: usize = 1000;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -113,6 +140,7 @@ impl DefineStepId {
                 "acceptance_criteria",
                 "success_criteria",
                 "gaps",
+                "references",
             ],
             Self::KnowledgeSynthesis => &["classifications", "references", "open_questions"],
             Self::ProductBrief => &[
@@ -141,6 +169,45 @@ impl DefineStepId {
             Self::Requirements | Self::KnowledgeSynthesis => &[],
             Self::ProductBrief => &["objective", "problem", "value_proposition", "next_action"],
         }
+    }
+
+    fn validation_rules(self) -> Vec<String> {
+        let string_fields = self.string_fields();
+        let array_fields = self
+            .required_fields()
+            .iter()
+            .filter(|field| !string_fields.contains(field))
+            .copied()
+            .collect::<Vec<_>>();
+        let mut rules = Vec::new();
+        if !string_fields.is_empty() {
+            rules.push(format!(
+                "these fields must be non-empty JSON strings: {}",
+                string_fields.join(", ")
+            ));
+        }
+        if !array_fields.is_empty() {
+            rules.push(format!(
+                "these fields must be JSON arrays (empty arrays are structurally accepted): {}",
+                array_fields.join(", ")
+            ));
+        }
+        if self == Self::KnowledgeSynthesis {
+            rules.push(
+                "each classifications item must have a supported `kind` and non-empty `statement`; kinds: user_provided, observed, hypothesis, recommendation, approved_decision, open_question, risk".to_owned(),
+            );
+        }
+        if self.order() == 1 {
+            rules.push(
+                "references may be omitted at objective_context; references are reserved for earlier accepted DEFINE artifacts, while external source metadata belongs in provenance".to_owned(),
+            );
+        } else {
+            let previous = Self::all()[usize::from(self.order() - 2)].as_str();
+            rules.push(format!(
+                "references must include the latest accepted `{previous}` artifact as {{\"step\":\"{previous}\",\"revision\":<revision>}}; every supplied reference must point to an accepted earlier step"
+            ));
+        }
+        rules
     }
 
     fn contract_version(self) -> String {
@@ -219,6 +286,32 @@ pub struct DefineBriefAssessment {
     pub occurred_at_unix_ms: i64,
 }
 
+/// Read-only contract and draft returned to a host before it reviews the current Product Brief.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DefineBriefAssessmentContract {
+    pub contract_schema: String,
+    pub assessment_schema: String,
+    pub mission_id: String,
+    pub brief_artifact_id: String,
+    pub brief_revision: u32,
+    pub rubric_version: String,
+    pub criteria: Vec<DefineBriefAssessmentCriterionContract>,
+    pub criterion_results: Vec<String>,
+    pub overall_results: Vec<String>,
+    pub reference_shape: Value,
+    pub maximum_limitations: usize,
+    pub maximum_limitation_characters: usize,
+    pub maximum_rationale_characters: usize,
+    pub evaluation_boundary: String,
+    pub assessment_template: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DefineBriefAssessmentCriterionContract {
+    pub id: String,
+    pub guidance: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DefineStep {
     pub id: DefineStepId,
@@ -274,6 +367,7 @@ pub struct DefineNext {
     pub state: DefineState,
     pub current_step: Option<DefineStepContract>,
     pub accepted_inputs: Vec<DefineArtifact>,
+    pub brief_assessment_contract: Option<DefineBriefAssessmentContract>,
     pub questions: Vec<DefineQuestion>,
     pub progress: DefineProgress,
     pub clarification_budget: DefineClarificationBudget,
@@ -451,10 +545,7 @@ pub fn define_next(path: impl AsRef<Path>, mission_id: &str) -> Result<DefineNex
                 DefineStepId::all()[usize::from(id.order() - 2)].as_str()
             )]
         },
-        validation_rules: vec![
-            "required fields must be present and non-empty".to_owned(),
-            "references must point to previously accepted artifacts when supplied".to_owned(),
-        ],
+        validation_rules: id.validation_rules(),
         limitations: vec![
             "Structural validation does not establish the truth of product or market claims"
                 .to_owned(),
@@ -462,14 +553,20 @@ pub fn define_next(path: impl AsRef<Path>, mission_id: &str) -> Result<DefineNex
         ],
     });
     let accepted_inputs = load_current_artifacts(&connection, mission_id)?;
+    let brief_assessment_contract = if status.state == DefineState::Completed {
+        Some(build_brief_assessment_contract(&connection, mission_id)?)
+    } else {
+        None
+    };
     let questions = load_questions(&connection, mission_id)?;
     Ok(DefineNext {
-        schema: "tramuri.define.step.v2".to_owned(),
+        schema: "tramuri.define.step.v3".to_owned(),
         mission_id: mission_id.to_owned(),
         workflow_version: status.workflow_version.clone(),
         state: status.state,
         current_step,
         accepted_inputs,
+        brief_assessment_contract,
         questions,
         progress: DefineProgress {
             completed: status.completed,
@@ -543,45 +640,59 @@ pub fn define_brief_assess(
                 .to_owned(),
         ));
     }
-    if !matches!(parsed.overall.as_str(), "pass" | "concerns" | "incomplete")
-        || parsed.criteria.len() != BRIEF_ASSESSMENT_CRITERIA.len()
-        || parsed.limitations.len() > 5
-        || parsed
-            .limitations
-            .iter()
-            .any(|item| item.trim().is_empty() || item.chars().count() > 500)
-    {
+    if !BRIEF_ASSESSMENT_OVERALL_RESULTS.contains(&parsed.overall.as_str()) {
         return Err(TramuriError::InvalidDefine(
-            "assessment must use the complete v1 rubric, a valid overall result, and bounded limitations".to_owned(),
+            "overall must be one of: pass, concerns, incomplete".to_owned(),
         ));
+    }
+    let expected_criteria = BRIEF_ASSESSMENT_CRITERIA
+        .iter()
+        .map(|(id, _)| *id)
+        .collect::<Vec<_>>();
+    if parsed.criteria.len() != expected_criteria.len() {
+        return Err(TramuriError::InvalidDefine(format!(
+            "criteria must contain exactly {} entries, one for each v1 rubric ID: {}",
+            expected_criteria.len(),
+            expected_criteria.join(", ")
+        )));
+    }
+    if parsed.limitations.len() > BRIEF_ASSESSMENT_MAX_LIMITATIONS {
+        return Err(TramuriError::InvalidDefine(format!(
+            "limitations accepts at most {} entries",
+            BRIEF_ASSESSMENT_MAX_LIMITATIONS
+        )));
+    }
+    if parsed.limitations.iter().any(|item| {
+        item.trim().is_empty() || item.chars().count() > BRIEF_ASSESSMENT_MAX_LIMITATION_CHARACTERS
+    }) {
+        return Err(TramuriError::InvalidDefine(format!(
+            "each limitation must be non-empty and at most {} characters",
+            BRIEF_ASSESSMENT_MAX_LIMITATION_CHARACTERS
+        )));
     }
     let names: std::collections::HashSet<&str> = parsed
         .criteria
         .iter()
         .map(|item| item.criterion.as_str())
         .collect();
-    if names.len() != BRIEF_ASSESSMENT_CRITERIA.len()
-        || BRIEF_ASSESSMENT_CRITERIA
-            .iter()
-            .any(|name| !names.contains(name))
+    if names.len() != expected_criteria.len()
+        || expected_criteria.iter().any(|name| !names.contains(name))
     {
-        return Err(TramuriError::InvalidDefine(
-            "assessment criteria must match every criterion in the v1 rubric exactly once"
-                .to_owned(),
-        ));
+        return Err(TramuriError::InvalidDefine(format!(
+            "criteria must use each v1 rubric ID exactly once: {}",
+            expected_criteria.join(", ")
+        )));
     }
     let mut has_concern = false;
     let mut has_not_assessed = false;
     for criterion in &parsed.criteria {
-        if !matches!(
-            criterion.result.as_str(),
-            "pass" | "concern" | "not_assessed"
-        ) || criterion.rationale.trim().is_empty()
-            || criterion.rationale.chars().count() > 1000
+        if !BRIEF_ASSESSMENT_RESULTS.contains(&criterion.result.as_str())
+            || criterion.rationale.trim().is_empty()
+            || criterion.rationale.chars().count() > BRIEF_ASSESSMENT_MAX_RATIONALE_CHARACTERS
         {
             return Err(TramuriError::InvalidDefine(format!(
-                "criterion {} has an invalid result or rationale",
-                criterion.criterion
+                "criterion {} result must be pass, concern, or not_assessed; rationale must be non-empty and at most {} characters",
+                criterion.criterion, BRIEF_ASSESSMENT_MAX_RATIONALE_CHARACTERS
             )));
         }
         has_concern |= criterion.result == "concern";
@@ -632,13 +743,15 @@ pub fn define_brief_assess(
             )));
         }
     }
-    if (has_concern && parsed.overall == "pass")
-        || (has_not_assessed && parsed.overall == "pass")
-        || parsed.evaluation_boundary != "host_semantic_assessment_not_core_verified"
-    {
+    if (has_concern || has_not_assessed) && parsed.overall == "pass" {
         return Err(TramuriError::InvalidDefine(
-            "overall result or evaluation boundary conflicts with criterion results".to_owned(),
+            "overall cannot be pass when any criterion is concern or not_assessed".to_owned(),
         ));
+    }
+    if parsed.evaluation_boundary != BRIEF_ASSESSMENT_EVALUATION_BOUNDARY {
+        return Err(TramuriError::InvalidDefine(format!(
+            "evaluation_boundary must be `{BRIEF_ASSESSMENT_EVALUATION_BOUNDARY}`; this report is not Core verification"
+        )));
     }
 
     let now = now_ms()?;
@@ -657,6 +770,90 @@ pub fn define_brief_assess(
     )?;
     transaction.commit()?;
     Ok(parsed)
+}
+
+/// Return the exact rubric and a non-submittable draft for the current accepted Product Brief.
+pub fn define_brief_assessment_contract(
+    path: impl AsRef<Path>,
+    mission_id: &str,
+) -> Result<DefineBriefAssessmentContract> {
+    let connection = open_database(path.as_ref())?;
+    build_brief_assessment_contract(&connection, mission_id)
+}
+
+fn build_brief_assessment_contract(
+    connection: &Connection,
+    mission_id: &str,
+) -> Result<DefineBriefAssessmentContract> {
+    let (brief_artifact_id, brief_revision): (String, i64) = connection
+        .query_row(
+            "SELECT a.id,a.revision FROM define_workflows w
+             JOIN define_steps s ON s.workflow_id=w.id AND s.step_id='product_brief' AND s.state='completed'
+             JOIN define_artifacts a ON a.id=s.current_artifact_id AND a.accepted=1
+             WHERE w.mission_id=?1",
+            [mission_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| {
+            TramuriError::InvalidDefine(
+                "assessment contract requires a current, completed Product Brief".to_owned(),
+            )
+        })?;
+    let brief_revision = u32::try_from(brief_revision).map_err(|_| {
+        TramuriError::InvalidDefine("current Product Brief revision is invalid".to_owned())
+    })?;
+    let criteria = BRIEF_ASSESSMENT_CRITERIA
+        .iter()
+        .map(|(id, guidance)| DefineBriefAssessmentCriterionContract {
+            id: (*id).to_owned(),
+            guidance: (*guidance).to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let assessment_template = json!({
+        "schema": "tramuri.product-brief-assessment.v1",
+        "mission_id": mission_id,
+        "brief_artifact_id": brief_artifact_id,
+        "brief_revision": brief_revision,
+        "evaluator": "<declared-host-or-reviewer; overwritten by --evaluator>",
+        "rubric_version": DEFINE_BRIEF_RUBRIC_VERSION,
+        "overall": "<pass|concerns|incomplete>",
+        "criteria": BRIEF_ASSESSMENT_CRITERIA.iter().map(|(criterion, _)| json!({
+            "criterion": criterion,
+            "result": "<pass|concern|not_assessed>",
+            "rationale": "<non-empty rationale, at most 1000 characters>",
+            "references": [{"step":"product_brief","revision":brief_revision,"field":"<accepted JSON field path>"}]
+        })).collect::<Vec<_>>(),
+        "limitations": [],
+        "evaluation_boundary": BRIEF_ASSESSMENT_EVALUATION_BOUNDARY
+    });
+    Ok(DefineBriefAssessmentContract {
+        contract_schema: "tramuri.product-brief-assessment-contract.v1".to_owned(),
+        assessment_schema: "tramuri.product-brief-assessment.v1".to_owned(),
+        mission_id: mission_id.to_owned(),
+        brief_artifact_id,
+        brief_revision,
+        rubric_version: DEFINE_BRIEF_RUBRIC_VERSION.to_owned(),
+        criteria,
+        criterion_results: BRIEF_ASSESSMENT_RESULTS
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
+        overall_results: BRIEF_ASSESSMENT_OVERALL_RESULTS
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
+        reference_shape: json!({
+            "step": "<accepted DEFINE step>",
+            "revision": "<accepted revision number>",
+            "field": "<existing JSON field path>"
+        }),
+        maximum_limitations: BRIEF_ASSESSMENT_MAX_LIMITATIONS,
+        maximum_limitation_characters: BRIEF_ASSESSMENT_MAX_LIMITATION_CHARACTERS,
+        maximum_rationale_characters: BRIEF_ASSESSMENT_MAX_RATIONALE_CHARACTERS,
+        evaluation_boundary: BRIEF_ASSESSMENT_EVALUATION_BOUNDARY.to_owned(),
+        assessment_template,
+    })
 }
 
 /// Read the newest host-produced semantic assessment without treating it as Core verification.
@@ -1332,11 +1529,11 @@ fn validate_payload(step: DefineStepId, payload: &Value) -> Vec<DefineValidation
                 },
                 field,
                 &format!(
-                    "required field `{field}` must be a non-empty {}",
+                    "required field `{field}` must be a {}",
                     if step.string_fields().contains(field) {
-                        "string"
+                        "non-empty string"
                     } else {
-                        "array"
+                        "JSON array (empty arrays are structurally accepted)"
                     }
                 ),
             ));
@@ -1360,7 +1557,7 @@ fn validate_payload(step: DefineStepId, payload: &Value) -> Vec<DefineValidation
                     errors.push(validation_error(
                         "invalid_classification",
                         &format!("classifications[{i}].kind"),
-                        "classification kind is not supported",
+                        "classification kind must be one of: user_provided, observed, hypothesis, recommendation, approved_decision, open_question, risk",
                     ));
                 }
                 if item

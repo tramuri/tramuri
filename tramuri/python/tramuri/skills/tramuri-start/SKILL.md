@@ -87,10 +87,12 @@ retrieve the current step and revision, then submit a replacement with a reason 
 Do not edit SQLite or overwrite an artifact file as a substitute. The Core preserves prior revisions,
 revalidates the step, and marks dependent steps stale when their accepted input revisions changed.
 Re-run stale steps in order. Review of a Product Brief is distinct from semantic assessment:
-submit a host-produced, rubric-versioned assessment with `review --assessment-file <file>
---evaluator <label>`. The Core checks its structure and references; it does not certify semantic
-truth. After any write, the report files refresh best-effort without reopening the browser. A report
-already open is a static snapshot; use its refresh control to reload the current files.
+after DEFINE completes, `tramuri mission define next --mission <id> --json` returns the current
+`brief_assessment_contract`. Use its exact rubric, current Brief revision, and draft to create a
+host-produced assessment, then submit it with `review --assessment-file <file> --evaluator <label>`.
+The Core checks structure and references; it does not certify semantic truth. After any write, the
+report files refresh best-effort without reopening the browser. A report already open is a static
+snapshot; use its refresh control to reload the current files.
 
 Keep work perspective separate from actor attribution. The perspective describes the professional
 role for that Execution. Record who or what actually did the work using `actor_kind` (`human`,

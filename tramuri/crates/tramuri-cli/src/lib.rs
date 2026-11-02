@@ -747,10 +747,13 @@ enum DefineCommand {
         step: Option<String>,
         #[arg(long)]
         file: Option<PathBuf>,
-        /// Submit a host-produced semantic assessment for the current Product Brief.
-        #[arg(long)]
+        /// Submit JSON following `brief_assessment_contract` in `mission define next --json`.
+        #[arg(
+            long,
+            help = "Submit host assessment JSON using `brief_assessment_contract` from `mission define next --json`"
+        )]
         assessment_file: Option<PathBuf>,
-        #[arg(long)]
+        #[arg(long, help = "Declared evaluator label; not authenticated by Tramuri")]
         evaluator: Option<String>,
         #[arg(long)]
         reason: Option<String>,

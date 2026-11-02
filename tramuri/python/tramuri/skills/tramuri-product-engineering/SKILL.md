@@ -20,6 +20,12 @@ the contract. A completed DEFINE is a Product Brief milestone, not a shipped pro
 Mission Outcome. For unsupported or unverified tool work, state the limitation and keep the step
 open; do not fabricate evidence.
 
+The `define next` response includes exact field types, dependency-reference rules, and any supported
+classification values. Follow those rules before submitting; on rejection, use the returned `field`
+and `message` rather than guessing the schema. After Product Brief acceptance, its `next --json`
+response includes the current `brief_assessment_contract`; use that instead of reconstructing the
+rubric from memory.
+
 Accepted DEFINE artifacts are revised only through `tramuri mission define review`, with a reason
 and declared author; the author label is not authenticated. Check the accepted revision/history
 before preparing a review. The Core keeps prior revisions and marks dependent steps `stale` when

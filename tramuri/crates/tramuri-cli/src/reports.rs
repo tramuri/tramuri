@@ -14,6 +14,7 @@ const JSON_FILE: &str = "tramauri.json";
 const MARKDOWN_FILE: &str = "tramauri.md";
 const HTML_FILE: &str = "tramauri.html";
 const REPORT_HTML: &str = include_str!("../assets/tramauri-report.html");
+const REPORT_LOGO_PNG: &[u8] = include_bytes!("../assets/tramuri-logo-mark.png");
 
 #[derive(serde::Serialize)]
 struct ReportDocument<'a> {
@@ -851,7 +852,32 @@ fn render_html(document: &ReportDocument<'_>) -> Result<String, serde_json::Erro
         .replace('>', "\\u003e")
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
-    Ok(REPORT_HTML.replace("__TRAMURI_REPORT_DATA__", &json))
+    let logo = format!("data:image/png;base64,{}", encode_base64(REPORT_LOGO_PNG));
+    let html = REPORT_HTML.replace("__TRAMURI_LOGO_DATA_URI__", &logo);
+    Ok(html.replace("__TRAMURI_REPORT_DATA__", &json))
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or_default();
+        let third = chunk.get(2).copied().unwrap_or_default();
+        encoded.push(ALPHABET[(first >> 2) as usize] as char);
+        encoded.push(ALPHABET[(((first & 0b11) << 4) | (second >> 4)) as usize] as char);
+        encoded.push(if chunk.len() > 1 {
+            ALPHABET[(((second & 0b1111) << 2) | (third >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        encoded.push(if chunk.len() > 2 {
+            ALPHABET[(third & 0b111111) as usize] as char
+        } else {
+            '='
+        });
+    }
+    encoded
 }
 
 fn state_name(value: MissionState) -> &'static str {
@@ -994,8 +1020,21 @@ mod tests {
         assert!(html.contains("Product Engineer"));
         assert!(html.contains("Current focus / next activity"));
         assert!(html.contains("PT-BR"));
-        assert!(html.contains("Your work, in context."));
-        assert!(html.contains("Seu trabalho, com contexto."));
+        assert!(html.contains("See where the work stands. Continue from here."));
+        assert!(html.contains("Veja onde o trabalho está. Continue daqui."));
+        assert!(html.contains("Mission Control"));
+        assert!(html.contains(&format!(
+            "data:image/png;base64,{}",
+            encode_base64(REPORT_LOGO_PNG)
+        )));
+        assert!(!html.contains("__TRAMURI_LOGO_DATA_URI__"));
+        assert!(html.contains("id=\"mission-focus\""));
+        assert!(html.contains("focusSelectionHelpAria"));
+        let mut marker_snapshot = snapshot.clone();
+        marker_snapshot.missions[0].objective = "__TRAMURI_LOGO_DATA_URI__".to_owned();
+        let marker_html =
+            render_html(&report_document(&marker_snapshot, &capabilities, &[])).unwrap();
+        assert!(marker_html.contains("\"objective\":\"__TRAMURI_LOGO_DATA_URI__\""));
         let markdown = render_markdown(&snapshot, &capabilities);
         assert!(markdown.contains("&lt;script&gt;"));
         assert!(markdown.contains("Blocker: &lt;script&gt;do not execute&lt;/script&gt;"));
@@ -1016,5 +1055,29 @@ mod tests {
         assert_eq!(json["capabilities"][0]["name"], "test");
         assert_eq!(json["capability_summary"]["total"], 1);
         assert_eq!(json["workspace"]["mission_count"], 1);
+    }
+
+    #[test]
+    fn base64_encoder_matches_rfc_4648_examples() {
+        assert_eq!(encode_base64(b""), "");
+        assert_eq!(encode_base64(b"M"), "TQ==");
+        assert_eq!(encode_base64(b"Ma"), "TWE=");
+        assert_eq!(encode_base64(b"Man"), "TWFu");
+    }
+
+    #[test]
+    fn report_template_is_standalone_responsive_and_accessible() {
+        assert!(REPORT_HTML.contains("<main class=\"content\" id=\"main-content\">"));
+        assert!(REPORT_HTML.contains("data-i18n-aria"));
+        assert!(REPORT_HTML.contains("@media (max-width: 760px)"));
+        assert!(REPORT_HTML.contains("@media (prefers-reduced-motion: reduce)"));
+        assert!(REPORT_HTML.contains(":focus-visible"));
+        assert!(REPORT_HTML.contains("#00b3a6"));
+        assert!(REPORT_HTML.contains("#0b2530"));
+        assert!(REPORT_HTML.contains("#006d6a"));
+        assert!(REPORT_HTML.contains("#ffa229"));
+        assert!(!REPORT_HTML.contains("<script src="));
+        assert!(!REPORT_HTML.contains("<link rel="));
+        assert!(REPORT_HTML.contains("@media print"));
     }
 }

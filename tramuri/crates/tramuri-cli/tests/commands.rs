@@ -40,6 +40,19 @@ fn help_is_available() {
 }
 
 #[test]
+fn define_assessment_help_points_to_the_rubric_contract() {
+    let output = tramuri()
+        .args(["mission", "define", "review", "--help"])
+        .output()
+        .expect("CLI should launch");
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("help should be UTF-8");
+    assert!(stdout.contains("brief_assessment_contract"));
+    assert!(stdout.contains("mission define next --json"));
+    assert!(stdout.contains("Declared evaluator label; not authenticated by Tramuri"));
+}
+
+#[test]
 fn native_hook_cli_blocks_then_unlocks_only_after_successful_start() {
     let project = tempdir().unwrap();
     let cwd = project.path().to_str().unwrap();
@@ -1124,6 +1137,58 @@ fn define_review_cli_preserves_previous_accepted_artifact() {
             .accepted
         );
     }
+    let next = tramuri()
+        .args([
+            "mission",
+            "define",
+            "next",
+            "--path",
+            path,
+            "--mission",
+            &mission_id,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        next.status.success(),
+        "{}",
+        String::from_utf8_lossy(&next.stderr)
+    );
+    let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+    assert_eq!(next["schema"], "tramuri.define.step.v3");
+    let contract = &next["brief_assessment_contract"];
+    assert!(contract.is_object());
+    assert_eq!(
+        contract["contract_schema"],
+        "tramuri.product-brief-assessment-contract.v1"
+    );
+    assert_eq!(
+        contract["assessment_schema"],
+        "tramuri.product-brief-assessment.v1"
+    );
+    assert_eq!(
+        contract["rubric_version"],
+        "tramuri.product-brief-rubric.v1"
+    );
+    assert_eq!(contract["criteria"].as_array().unwrap().len(), 7);
+    assert_eq!(contract["brief_revision"], 1);
+    assert_eq!(
+        contract["assessment_template"]["brief_artifact_id"],
+        contract["brief_artifact_id"]
+    );
+    assert!(
+        contract["criteria"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|criterion| criterion["id"] == "internal_consistency"
+                && !criterion["guidance"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .is_empty())
+    );
+
     let artifact_path = project.path().join("brief-review.json");
     let mut revised = entries[4].1.clone();
     revised["next_action"] = serde_json::json!("prototipar jornada do instrutor");

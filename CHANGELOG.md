@@ -8,6 +8,23 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-02
+
+### Added
+
+- A Core-controlled five-step Product Engineering DEFINE workflow with persisted artifacts, ordered transitions, retryable validation, a two-question clarification budget, and six focused packaged skills.
+- Explicit review of accepted DEFINE artifacts with immutable revision history, declared provenance, dependency-aware `stale` propagation, and current-input enforcement.
+- Versioned host semantic assessments for Product Briefs, kept separate from deterministic Core validation and Mission Outcome verification.
+- Product Brief summaries and DEFINE progress in the existing `tramauri.html`, `tramauri.md`, and `tramauri.json` reports.
+- Safe exact-objective Mission reuse and explicit selection errors for duplicate or perspective-conflicting candidates.
+
+### Changed
+
+- SQLite schema v10 adds the persistent DEFINE workflow and artifact tables; the migration is additive and preserves existing Mission, Knowledge, Execution, Evidence, Readiness, and Outcome records.
+- Status and report contracts include DEFINE state; the report JSON contract is `tramuri.report.v5`.
+- `mission_start` returns `tramuri.mission.start.v2` with a `mission_reused` flag, and the public Rust error enum adds `MissionSelectionRequired`. Downstream Rust callers constructing public structs or exhaustively matching errors may need source updates.
+- DEFINE writes refresh local report files best-effort without opening another browser window. An already-open HTML report remains a static snapshot until refreshed.
+
 ## [0.8.0] - 2026-11-01
 
 ### Added

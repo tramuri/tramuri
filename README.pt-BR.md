@@ -155,6 +155,37 @@ tramuri readiness assess --mission <id> --activity discover --state needs_review
 tramuri status --open
 ```
 
+### Workflow Product Engineering DEFINE
+
+Ao iniciar uma Mission com perspectiva `product_engineer`, o Core cria automaticamente um workflow
+DEFINE persistente. O agente integrado consulta a etapa autorizada, usa a skill indicada e envia o
+resultado estruturado para validação. As cinco etapas são: objetivo e contexto; problema, público e
+negócio; requisitos e critérios; síntese de fatos e hipóteses; Product Brief. O usuário não precisa
+criar essas etapas manualmente nem completar um Success Contract para começar.
+
+```bash
+tramuri start --goal "Quero criar um SaaS para vender cursos online" --perspective product_engineer --json
+tramuri mission define status --mission <id> --json
+tramuri mission define next --mission <id> --json
+```
+
+`next` retorna a etapa liberada, a skill correspondente e o contrato de saída. Depois de produzir o
+JSON, o host envia-o a `tramuri mission define submit --mission <id> --step <etapa> --file
+<resultado.json>`. O Core rejeita campos obrigatórios ausentes, referências inválidas e submissões
+fora de ordem; uma rejeição mantém a etapa atual aberta. Para uma decisão material, o host pode
+registrar uma pergunta e sua resposta com `tramuri mission define question request` e
+`tramuri mission define question answer`. O limite de duas perguntas comuns persiste entre sessões.
+
+`status` e `next` retomam o progresso salvo. Cada transição pela CLI tenta atualizar
+`.tramuri/reports/tramauri.html`, `tramauri.md` e `tramauri.json` sem reabrir o navegador. O SDK
+Python oferece as mesmas operações `mission_define_*`; ao usá-lo diretamente, atualize os relatórios
+com `tramuri status --refresh`.
+
+O Core controla sequência, validação estrutural e persistência. Ele não prova que o host carregou
+uma skill, que uma pesquisa é verdadeira ou que o Product Brief está correto. O host realiza a
+análise e usa as ferramentas disponíveis. Concluir DEFINE salva o Product Brief, mas não constrói,
+publica nem verifica o produto e não marca o Outcome da Mission como alcançado.
+
 Use `tramuri readiness show --mission <id>` para consultar a avaliação atual e o histórico.
 Mudanças no objetivo, Success Contract ou Knowledge/Capabilities associados explicitamente marcam
 a avaliação mais recente como desatualizada, sem apagar seu registro. `tramuri mission list` descobre as

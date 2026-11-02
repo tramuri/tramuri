@@ -11,6 +11,24 @@ Use this skill after `tramuri-start` when a Mission's work perspective is Produc
 user asks to create, shape, or improve a product. Keep working in the same Mission; do not create a
 second Mission or turn this skill into an autonomous workflow engine.
 
+For new Product Engineer Missions, the Rust Core starts a fixed five-step DEFINE workflow. The Core
+is authoritative: call `tramuri mission define next --mission <id> --json`, load the returned skill,
+and submit its structured output with `tramuri mission define submit`. Advance only after an accepted
+response. On a rejected result, fix the current artifact and resubmit; on resume, continue the
+persisted current step. Do not claim that a skill ran merely because it is installed or returned by
+the contract. A completed DEFINE is a Product Brief milestone, not a shipped product or verified
+Mission Outcome. For unsupported or unverified tool work, state the limitation and keep the step
+open; do not fabricate evidence.
+
+Accepted DEFINE artifacts are revised only through `tramuri mission define review`, with a reason
+and declared author; the author label is not authenticated. Check the accepted revision/history
+before preparing a review. The Core keeps prior revisions and marks dependent steps `stale` when
+they consumed older upstream revisions. Revalidate stale steps in order using the current references
+from `define next`; never reuse an old Product Brief as current. A host may separately submit a
+semantic Product Brief assessment through `review --assessment-file <file> --evaluator <label>`.
+This is an explicit evaluator report with a versioned rubric, not a Core guarantee, market validation,
+or approval by a human. Do not label it as such.
+
 When resuming a relevant older Mission whose perspective is not recorded, a clear product-shaping
 request may be recorded as a suggestion with source `inferred` and focus `product_framing`; explain
 that it is a work-perspective suggestion and let the user correct it. Never overwrite an existing
@@ -113,6 +131,7 @@ that work is complete or Context Ready. Use the matching current-focus display i
 `tramuri resume`, and the local report. Keep Success Contract evaluation and Outcome status separate.
 
 Before resuming, use `tramuri mission list` when needed and `tramuri resume --mission <id>` to read
-the recorded Mission. At the end of a coherent session that changed Mission records, follow the
-installed Tramuri skill's report-refresh rule; refresh once, and do not reopen a browser already
-opened during the session.
+the recorded Mission. DEFINE CLI writes refresh the report files best-effort without opening a
+browser; do not issue an extra refresh after each step. At the end of a coherent session, follow the
+installed Tramuri skill's report-opening rule. Direct SDK writes need `tramuri status --refresh` if
+the user wants reports updated.

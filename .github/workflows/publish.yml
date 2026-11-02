@@ -233,7 +233,7 @@ jobs:
 
           workspace = Path(tempfile.mkdtemp())
           report = tramuri.init(workspace)
-          assert report["schema_version"] == 9
+          assert report["schema_version"] == 10
           assert Path(report["database_path"]).parent.name == "database"
           assert tramuri.__version__
           product_skill = Path(tramuri.__file__).parent / "skills" / "tramuri-product-engineering" / "SKILL.md"

@@ -108,12 +108,27 @@ assert callable(tramuri.evidence_get)
 assert callable(tramuri.mission_relationships)
 assert callable(tramuri.mission_resume)
 assert callable(tramuri.mission_workflow_activity_set)
+assert callable(tramuri.mission_define_review)
+assert callable(tramuri.mission_define_history)
+assert callable(tramuri.mission_define_assess_brief)
+assert callable(tramuri.mission_define_brief_assessment)
 assert Path(tramuri.__file__).with_name("py.typed").is_file()
 product_skill = Path(tramuri.__file__).parent / "skills" / "tramuri-product-engineering" / "SKILL.md"
 assert product_skill.is_file()
 assert "agent hypothesis" in product_skill.read_text(encoding="utf-8").lower()
+for skill_name in (
+    "tramuri-pe-objective-context",
+    "tramuri-pe-business-discovery",
+    "tramuri-pe-requirements",
+    "tramuri-pe-evidence-hypotheses",
+    "tramuri-pe-product-brief",
+    "tramuri-pe-decision-support",
+):
+    define_skill = Path(tramuri.__file__).parent / "skills" / skill_name / "SKILL.md"
+    assert define_skill.is_file()
+    assert f"name: {skill_name}" in define_skill.read_text(encoding="utf-8")
 report = tramuri.init(project_path)
-assert report["schema_version"] == 9
+assert report["schema_version"] == 10
 assert Path(report["database_path"]).parent.name == "database"
 exploratory = tramuri.mission_create(
     project_path,
@@ -266,6 +281,12 @@ print(json.dumps({"mission_id": mission["id"], "execution": execution, "evidence
         "tramuri-discovery",
         "tramuri-missions",
         "tramuri-integrity",
+        "tramuri-pe-objective-context",
+        "tramuri-pe-business-discovery",
+        "tramuri-pe-requirements",
+        "tramuri-pe-evidence-hypotheses",
+        "tramuri-pe-product-brief",
+        "tramuri-pe-decision-support",
     ):
         focused_skill = integration_project / ".gemini" / "skills" / skill_name / "SKILL.md"
         assert focused_skill.is_file()

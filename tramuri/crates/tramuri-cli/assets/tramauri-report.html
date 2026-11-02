@@ -189,8 +189,9 @@
     <div class="main">
       <div class="topbar">
         <span class="local-mark" data-i18n="localReport">Local report</span>
+        <button id="refresh-report" type="button" data-i18n="refreshReport">Refresh report</button>
         <div class="language" role="group" aria-label="Language">
-          <button id="lang-en" type="button" aria-pressed="true">EN</button>
+    <button id="lang-en" type="button" aria-pressed="true">EN</button>
           <button id="lang-pt" type="button" aria-pressed="false">PT-BR</button>
         </div>
       </div>
@@ -274,6 +275,8 @@
         missionId: "Mission ID", assessedCount: "assessed", outcomeExplanationPending: "Recorded work is not a verified outcome; criteria still need review.",
         outcomeExplanationVerified: "All required criteria have recorded successful assessments.",
         outcomeExplanationNotAchieved: "At least one required criterion is recorded as not met."
+        ,defineTitle: "Product Engineering · DEFINE", defineProgress: "validated steps", defineQuestions: "Clarifications used", defineNextStep: "Authorized step", defineStepObjective: "Understand objective and context", defineStepBusiness: "Discover problem, audience, and business", defineStepRequirements: "Identify requirements and criteria", defineStepSynthesis: "Consolidate facts, hypotheses, and gaps", defineStepBrief: "Create Product Brief", defineStateInProgress: "In progress", defineStateBlocked: "Blocked", defineStateValidationFailed: "Needs correction", defineStateCompleted: "DEFINE complete", defineStateStale: "Needs revalidation", defineStatePending: "Pending", defineCaveat: "A completed DEFINE is not a shipped product or a verified Mission Outcome.", defineHistory: "Workflow history", defineNoEvents: "No workflow events recorded."
+        ,refreshReport: "Refresh report", defineBriefSummary: "Product Brief summary", defineObjective: "Objective", defineProblem: "Problem", defineAudience: "Target audience", defineValue: "Value proposition", defineMvp: "Proposed MVP", defineConstraints: "Constraints", defineRisks: "Risks", defineHypotheses: "Important hypotheses", definePending: "Pending decisions or questions", defineNextAction: "Next action recorded", defineNoBrief: "No Product Brief artifact is available.", defineAssessment: "Semantic review", defineAssessmentBoundary: "Host assessment, not a Core-verified truth", defineAssessmentCurrent: "Current", defineAssessmentStale: "Stale"
       },
       pt: {
         documentTitle: "Tramuri · Workspace", brandTag: "Da intenção a resultados verificados", workspaceLabel: "Workspace",
@@ -311,6 +314,8 @@
         missionId: "ID da Mission", assessedCount: "avaliados", outcomeExplanationPending: "Trabalho registrado ainda não é resultado verificado; faltam avaliações dos critérios.",
         outcomeExplanationVerified: "Todos os critérios obrigatórios têm avaliações positivas registradas.",
         outcomeExplanationNotAchieved: "Pelo menos um critério obrigatório está registrado como não atendido."
+        ,defineTitle: "Product Engineering · DEFINE", defineProgress: "etapas validadas", defineQuestions: "Esclarecimentos usados", defineNextStep: "Etapa autorizada", defineStepObjective: "Compreender objetivos e contexto", defineStepBusiness: "Descobrir problema, público e negócio", defineStepRequirements: "Identificar requisitos e critérios", defineStepSynthesis: "Consolidar fatos, hipóteses e lacunas", defineStepBrief: "Criar Product Brief", defineStateInProgress: "Em andamento", defineStateBlocked: "Bloqueado", defineStateValidationFailed: "Precisa de correção", defineStateCompleted: "DEFINE concluído", defineStateStale: "Precisa revalidar", defineStatePending: "Pendente", defineCaveat: "DEFINE concluído não significa produto lançado nem Outcome da Mission verificado.", defineHistory: "Histórico do workflow", defineNoEvents: "Nenhum evento do workflow registrado."
+        ,refreshReport: "Atualizar relatório", defineBriefSummary: "Resumo do Product Brief", defineObjective: "Objetivo", defineProblem: "Problema", defineAudience: "Público-alvo", defineValue: "Proposta de valor", defineMvp: "MVP proposto", defineConstraints: "Restrições", defineRisks: "Riscos", defineHypotheses: "Hipóteses importantes", definePending: "Decisões ou perguntas pendentes", defineNextAction: "Próxima ação registrada", defineNoBrief: "Nenhum artefato Product Brief disponível.", defineAssessment: "Avaliação semântica", defineAssessmentBoundary: "Avaliação do host, sem verificação semântica pelo Core", defineAssessmentCurrent: "Atual", defineAssessmentStale: "Desatualizada"
       }
     };
     let language = "en";
@@ -456,6 +461,57 @@
           readinessPanel.append(history);
         }
         body.append(readinessPanel);
+        if (mission.define) {
+          const definePanel = make("section", undefined, "panel");
+          definePanel.style.marginTop = "13px";
+          const define = mission.define;
+          const stateKey = ({ in_progress: "defineStateInProgress", blocked: "defineStateBlocked", validation_failed: "defineStateValidationFailed", completed: "defineStateCompleted", stale: "defineStateStale" })[define.state] || "defineStateInProgress";
+          definePanel.append(make("h3", text("defineTitle") + " · " + text(stateKey)));
+          definePanel.append(make("div", define.completed + "/" + define.total + " " + text("defineProgress") + " · " + text("defineQuestions") + ": " + define.clarification_count + "/" + define.clarification_maximum, "activity-meta"));
+          const list = make("ul", undefined, "criterion-list");
+          const names = ["defineStepObjective", "defineStepBusiness", "defineStepRequirements", "defineStepSynthesis", "defineStepBrief"];
+          for (const step of define.steps || []) {
+            const item = make("li", undefined, "criterion");
+            const label = names[step.order - 1] || step.id;
+            item.append(make("span", (step.state === "completed" ? "✓ " : step.state === "in_progress" ? "◉ " : step.state === "blocked" ? "! " : "○ ") + text(label), "criterion-text"));
+            item.append(make("span", text(({ completed: "defineStateCompleted", in_progress: "defineStateInProgress", blocked: "defineStateBlocked", validation_failed: "defineStateValidationFailed", stale: "defineStateStale", pending: "defineStatePending" })[step.state] || "defineStatePending"), "badge badge-" + step.state));
+            list.append(item);
+          }
+          definePanel.append(list);
+          const defineDetail = (report.define_details || []).find(item => item.mission_id === mission.id);
+          if (defineDetail) {
+            const details = make("details", undefined, "history");
+            details.append(make("summary", text("defineBriefSummary")));
+            for (const hypothesis of defineDetail.hypotheses || []) details.append(make("div", text("defineHypotheses") + ": " + hypothesis, "history-item"));
+            for (const pending of defineDetail.pending_decisions || []) details.append(make("div", text("definePending") + ": " + pending, "history-item"));
+            if (defineDetail.brief) {
+              const brief = defineDetail.brief;
+              details.append(make("div", "revision " + brief.revision + " · " + text(({
+                completed: "defineStateCompleted", stale: "defineStateStale", pending: "defineStatePending"
+              })[brief.state] || "defineStatePending"), "history-item"));
+              for (const [key, value] of [["defineObjective", brief.objective], ["defineProblem", brief.problem], ["defineValue", brief.value_proposition]]) if (value) details.append(make("div", text(key) + ": " + value, "history-item"));
+              for (const [key, values] of [["defineAudience", brief.target_audience], ["defineMvp", brief.mvp_scope], ["defineConstraints", brief.constraints], ["defineRisks", brief.risks]]) if ((values || []).length) details.append(make("div", text(key) + ": " + values.join("; "), "history-item"));
+              if (brief.next_action) details.append(make("div", text("defineNextAction") + ": " + brief.next_action, "history-item"));
+            } else {
+              details.append(make("div", text("defineNoBrief"), "history-item"));
+            }
+            if (defineDetail.brief_assessment) {
+              const assessment = defineDetail.brief_assessment;
+              details.append(make("div", text("defineAssessment") + " · " + assessment.overall + " · " + text(assessment.state === "current" ? "defineAssessmentCurrent" : "defineAssessmentStale"), "history-item"));
+              details.append(make("div", assessment.evaluator + " · " + assessment.rubric_version + " · " + text("defineAssessmentBoundary"), "history-item"));
+              for (const criterion of assessment.criteria || []) details.append(make("div", criterion.criterion + ": " + criterion.result, "history-item"));
+            }
+            definePanel.append(details);
+          }
+          const events = make("details", undefined, "history");
+          events.append(make("summary", text("defineHistory") + " (" + (define.events || []).length + ")"));
+          for (const event of [...(define.events || [])].reverse().slice(0, 20)) {
+            events.append(make("div", (event.step || "workflow") + " · " + event.event_type + " · " + date(event.occurred_at_unix_ms), "history-item"));
+          }
+          if (!(define.events || []).length) events.append(make("div", text("defineNoEvents"), "history-item"));
+          definePanel.append(events, make("div", text("defineCaveat"), "activity-meta"));
+          body.append(definePanel);
+        }
         const assessed = mission.outcome.criteria.filter(review => review.assessments.length > 0).length;
         const missionSummary = make("div", undefined, "mission-summary");
         const contract = make("div");
@@ -602,6 +658,7 @@
     document.getElementById("state").addEventListener("change", render);
     document.getElementById("lang-en").addEventListener("click", () => applyLanguage("en"));
     document.getElementById("lang-pt").addEventListener("click", () => applyLanguage("pt"));
+    document.getElementById("refresh-report").addEventListener("click", () => window.location.reload());
     try { if (localStorage.getItem("tramuri-report-language") === "pt") language = "pt"; } catch (_) {}
     applyLanguage(language);
   </script>

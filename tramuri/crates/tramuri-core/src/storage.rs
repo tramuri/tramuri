@@ -256,6 +256,7 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
             migrate_v8_to_v9(&mut connection)?;
         }
         8 => migrate_v8_to_v9(&mut connection)?,
+        9 => {}
         version if version == i64::from(SCHEMA_VERSION) => {}
         found => {
             return Err(TramuriError::UnsupportedSchema {
@@ -263,6 +264,12 @@ pub(crate) fn initialize_database(root: &Path) -> Result<bool> {
                 supported: SCHEMA_VERSION,
             });
         }
+    }
+
+    let migrated_version: i64 =
+        connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if migrated_version == 9 {
+        migrate_v9_to_v10(&mut connection)?;
     }
 
     Ok(already_initialized)
@@ -423,7 +430,7 @@ fn migrate_schema(connection: &mut Connection) -> Result<()> {
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
             migrate_v7_to_v8(connection)?;
-            migrate_v8_to_v9(connection)
+            migrate_v8_to_v9(connection)?;
         }
         2 => {
             migrate_v2_to_v3(connection)?;
@@ -432,7 +439,7 @@ fn migrate_schema(connection: &mut Connection) -> Result<()> {
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
             migrate_v7_to_v8(connection)?;
-            migrate_v8_to_v9(connection)
+            migrate_v8_to_v9(connection)?;
         }
         3 => {
             migrate_v3_to_v4(connection)?;
@@ -440,37 +447,47 @@ fn migrate_schema(connection: &mut Connection) -> Result<()> {
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
             migrate_v7_to_v8(connection)?;
-            migrate_v8_to_v9(connection)
+            migrate_v8_to_v9(connection)?;
         }
         4 => {
             migrate_v4_to_v5(connection)?;
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
             migrate_v7_to_v8(connection)?;
-            migrate_v8_to_v9(connection)
+            migrate_v8_to_v9(connection)?;
         }
         5 => {
             migrate_v5_to_v6(connection)?;
             migrate_v6_to_v7(connection)?;
             migrate_v7_to_v8(connection)?;
-            migrate_v8_to_v9(connection)
+            migrate_v8_to_v9(connection)?;
         }
         6 => {
             migrate_v6_to_v7(connection)?;
             migrate_v7_to_v8(connection)?;
-            migrate_v8_to_v9(connection)
+            migrate_v8_to_v9(connection)?;
         }
         7 => {
             migrate_v7_to_v8(connection)?;
-            migrate_v8_to_v9(connection)
+            migrate_v8_to_v9(connection)?;
         }
-        8 => migrate_v8_to_v9(connection),
-        version if version == i64::from(SCHEMA_VERSION) => Ok(()),
-        found => Err(TramuriError::UnsupportedSchema {
-            found,
-            supported: SCHEMA_VERSION,
-        }),
+        8 => migrate_v8_to_v9(connection)?,
+        9 => {}
+        version if version == i64::from(SCHEMA_VERSION) => {}
+        found => {
+            return Err(TramuriError::UnsupportedSchema {
+                found,
+                supported: SCHEMA_VERSION,
+            });
+        }
     }
+
+    let migrated_version: i64 =
+        connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if migrated_version == 9 {
+        migrate_v9_to_v10(connection)?;
+    }
+    Ok(())
 }
 
 fn create_v3_schema(connection: &mut Connection) -> Result<()> {
@@ -688,6 +705,87 @@ fn migrate_v8_to_v9(connection: &mut Connection) -> Result<()> {
             ON mission_work_perspective_history(mission_id, changed_at_unix_ms, id);",
     )?;
     transaction.pragma_update(None, "user_version", 9)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_v9_to_v10(connection: &mut Connection) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(
+        "CREATE TABLE define_workflows (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            mission_id TEXT NOT NULL UNIQUE REFERENCES missions(id),
+            workflow_version TEXT NOT NULL,
+            perspective_source TEXT CHECK (perspective_source IN ('explicit', 'current_intent', 'profile', 'inferred')),
+            profile_config_fingerprint TEXT,
+            state TEXT NOT NULL CHECK (state IN ('in_progress', 'blocked', 'validation_failed', 'stale', 'completed')),
+            current_step_id TEXT CHECK (current_step_id IS NULL OR current_step_id IN ('objective_context', 'business_discovery', 'requirements', 'knowledge_synthesis', 'product_brief')),
+            clarification_count INTEGER NOT NULL DEFAULT 0 CHECK (clarification_count BETWEEN 0 AND 2),
+            revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+            started_at_unix_ms INTEGER NOT NULL,
+            updated_at_unix_ms INTEGER NOT NULL,
+            completed_at_unix_ms INTEGER
+        );
+        CREATE TABLE define_steps (
+            workflow_id TEXT NOT NULL REFERENCES define_workflows(id),
+            step_id TEXT NOT NULL CHECK (step_id IN ('objective_context', 'business_discovery', 'requirements', 'knowledge_synthesis', 'product_brief')),
+            position INTEGER NOT NULL CHECK (position BETWEEN 1 AND 5),
+            state TEXT NOT NULL CHECK (state IN ('pending', 'in_progress', 'blocked', 'validation_failed', 'completed', 'stale')),
+            contract_version TEXT NOT NULL,
+            attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+            current_artifact_id TEXT,
+            dependency_fingerprint TEXT,
+            validation_json TEXT NOT NULL DEFAULT '[]',
+            started_at_unix_ms INTEGER,
+            updated_at_unix_ms INTEGER NOT NULL,
+            completed_at_unix_ms INTEGER,
+            PRIMARY KEY (workflow_id, step_id),
+            UNIQUE (workflow_id, position),
+            CHECK (json_valid(validation_json))
+        );
+        CREATE TABLE define_artifacts (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            workflow_id TEXT NOT NULL REFERENCES define_workflows(id),
+            step_id TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision > 0),
+            contract_version TEXT NOT NULL,
+            payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+            provenance_json TEXT NOT NULL CHECK (json_valid(provenance_json)),
+            dependencies_json TEXT NOT NULL CHECK (json_valid(dependencies_json)),
+            validation_json TEXT NOT NULL CHECK (json_valid(validation_json)),
+            expected_skill_id TEXT NOT NULL,
+            host_reported_skill_id TEXT,
+            accepted INTEGER NOT NULL CHECK (accepted IN (0, 1)),
+            created_at_unix_ms INTEGER NOT NULL,
+            UNIQUE (workflow_id, step_id, revision),
+            FOREIGN KEY (workflow_id, step_id) REFERENCES define_steps(workflow_id, step_id)
+        );
+        CREATE TABLE define_questions (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            workflow_id TEXT NOT NULL REFERENCES define_workflows(id),
+            step_id TEXT NOT NULL,
+            rationale TEXT NOT NULL CHECK (length(trim(rationale)) > 0),
+            alternatives_json TEXT NOT NULL CHECK (json_valid(alternatives_json)),
+            answer TEXT,
+            answer_source TEXT CHECK (answer_source IS NULL OR answer_source IN ('user_explicit', 'declared_other')),
+            state TEXT NOT NULL CHECK (state IN ('requested', 'answered', 'deferred', 'blocked')),
+            created_at_unix_ms INTEGER NOT NULL,
+            updated_at_unix_ms INTEGER NOT NULL,
+            FOREIGN KEY (workflow_id, step_id) REFERENCES define_steps(workflow_id, step_id)
+        );
+        CREATE TABLE define_events (
+            id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),
+            workflow_id TEXT NOT NULL REFERENCES define_workflows(id),
+            step_id TEXT,
+            event_type TEXT NOT NULL CHECK (event_type IN ('define_started', 'step_started', 'step_submitted', 'step_validation_failed', 'step_completed', 'step_blocked', 'decision_requested', 'decision_recorded', 'step_invalidated', 'define_completed')),
+            artifact_id TEXT REFERENCES define_artifacts(id),
+            payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+            occurred_at_unix_ms INTEGER NOT NULL
+        );
+        CREATE INDEX define_events_order ON define_events(workflow_id, occurred_at_unix_ms, id);
+        CREATE INDEX define_artifacts_latest ON define_artifacts(workflow_id, step_id, revision DESC);",
+    )?;
+    transaction.pragma_update(None, "user_version", 10)?;
     transaction.commit()?;
     Ok(())
 }

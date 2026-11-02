@@ -5,17 +5,19 @@ use pyo3::wrap_pyfunction;
 use serde::Deserialize;
 use tramuri_core::{
     ActorKind, AskWorkPerspective, CriterionAssessmentInput, CriterionAssessmentResult,
-    CriterionInput, EvidenceInput, EvidenceKind, ExecutionInput, ExecutionState, KnowledgeFilter,
-    KnowledgeInput, KnowledgeType, MissionInput, MissionPerspective, ReadinessAssessmentInput,
-    ReadinessDecision, TramuriError as CoreError, VerifierKind, WorkPerspective, WorkProfile,
-    WorkProfilePreference, capability_list, evidence_add, evidence_get, evidence_list,
-    execution_get, execution_list, execution_record, execution_transition, init, knowledge_add,
-    knowledge_list, knowledge_withdraw, mission_capability_link, mission_capability_unlink,
-    mission_close, mission_contract_revise, mission_create, mission_get, mission_knowledge_link,
-    mission_knowledge_unlink, mission_list, mission_relationships, mission_resume, mission_start,
-    mission_workflow_activity_set, mission_workflow_get, mission_workflow_set, outcome_assess,
-    outcome_get, profile_get, profile_set, readiness_assess, readiness_get, readiness_history,
-    scan, status_snapshot,
+    CriterionInput, DefineStepId, EvidenceInput, EvidenceKind, ExecutionInput, ExecutionState,
+    KnowledgeFilter, KnowledgeInput, KnowledgeType, MissionInput, MissionPerspective,
+    ReadinessAssessmentInput, ReadinessDecision, TramuriError as CoreError, VerifierKind,
+    WorkPerspective, WorkProfile, WorkProfilePreference, capability_list, define_artifact_history,
+    define_brief_assess, define_brief_assessment_get, define_next, define_question_answer,
+    define_question_request, define_review, define_start, define_status, define_submit,
+    evidence_add, evidence_get, evidence_list, execution_get, execution_list, execution_record,
+    execution_transition, init, knowledge_add, knowledge_list, knowledge_withdraw,
+    mission_capability_link, mission_capability_unlink, mission_close, mission_contract_revise,
+    mission_create, mission_get, mission_knowledge_link, mission_knowledge_unlink, mission_list,
+    mission_relationships, mission_resume, mission_start, mission_workflow_activity_set,
+    mission_workflow_get, mission_workflow_set, outcome_assess, outcome_get, profile_get,
+    profile_set, readiness_assess, readiness_get, readiness_history, scan, status_snapshot,
 };
 
 create_exception!(_native, TramuriError, PyException);
@@ -192,6 +194,153 @@ fn _mission_start_json(
 ) -> PyResult<String> {
     let explicit = perspective.map(parse_mission_perspective).transpose()?;
     let result = mission_start(path, objective, context, explicit).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+fn parse_define_step(value: &str) -> PyResult<DefineStepId> {
+    match value {
+        "objective_context" => Ok(DefineStepId::ObjectiveContext),
+        "business_discovery" => Ok(DefineStepId::BusinessDiscovery),
+        "requirements" => Ok(DefineStepId::Requirements),
+        "knowledge_synthesis" => Ok(DefineStepId::KnowledgeSynthesis),
+        "product_brief" => Ok(DefineStepId::ProductBrief),
+        _ => Err(TramuriError::new_err("unknown DEFINE step")),
+    }
+}
+
+#[pyfunction]
+fn _define_start_json(path: &str, mission_id: &str) -> PyResult<String> {
+    serde_json::to_string(&define_start(path, mission_id).map_err(map_core_error)?)
+        .map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _define_status_json(path: &str, mission_id: &str) -> PyResult<String> {
+    serde_json::to_string(&define_status(path, mission_id).map_err(map_core_error)?)
+        .map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _define_next_json(path: &str, mission_id: &str) -> PyResult<String> {
+    serde_json::to_string(&define_next(path, mission_id).map_err(map_core_error)?)
+        .map_err(map_serialization_error)
+}
+
+#[pyfunction]
+#[pyo3(signature = (path, mission_id, step, payload_json, expected_revision=None, host_reported_skill_id=None))]
+fn _define_submit_json(
+    path: &str,
+    mission_id: &str,
+    step: &str,
+    payload_json: &str,
+    expected_revision: Option<u64>,
+    host_reported_skill_id: Option<&str>,
+) -> PyResult<String> {
+    let payload: serde_json::Value = serde_json::from_str(payload_json)
+        .map_err(|error| TramuriError::new_err(format!("invalid DEFINE payload JSON: {error}")))?;
+    let result = define_submit(
+        path,
+        mission_id,
+        parse_define_step(step)?,
+        payload,
+        expected_revision,
+        host_reported_skill_id,
+    )
+    .map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+#[pyo3(signature = (path, mission_id, step, payload_json, reason, declared_author, origin, expected_revision=None, authorize_decision_changes=false, host_reported_skill_id=None))]
+#[allow(clippy::too_many_arguments)] // Keep the review provenance explicit in the SDK API.
+fn _define_review_json(
+    path: &str,
+    mission_id: &str,
+    step: &str,
+    payload_json: &str,
+    reason: &str,
+    declared_author: &str,
+    origin: &str,
+    expected_revision: Option<u64>,
+    authorize_decision_changes: bool,
+    host_reported_skill_id: Option<&str>,
+) -> PyResult<String> {
+    let payload: serde_json::Value = serde_json::from_str(payload_json)
+        .map_err(|error| TramuriError::new_err(format!("invalid DEFINE review JSON: {error}")))?;
+    let result = define_review(
+        path,
+        mission_id,
+        parse_define_step(step)?,
+        payload,
+        reason,
+        declared_author,
+        origin,
+        expected_revision,
+        authorize_decision_changes,
+        host_reported_skill_id,
+    )
+    .map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _define_history_json(path: &str, mission_id: &str, step: Option<&str>) -> PyResult<String> {
+    let step = step.map(parse_define_step).transpose()?;
+    let result = define_artifact_history(path, mission_id, step).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _define_brief_assess_json(
+    path: &str,
+    mission_id: &str,
+    assessment_json: &str,
+) -> PyResult<String> {
+    let assessment: serde_json::Value = serde_json::from_str(assessment_json).map_err(|error| {
+        TramuriError::new_err(format!("invalid brief assessment JSON: {error}"))
+    })?;
+    let result = define_brief_assess(path, mission_id, assessment).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _define_brief_assessment_get_json(path: &str, mission_id: &str) -> PyResult<String> {
+    let result = define_brief_assessment_get(path, mission_id).map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _define_question_request_json(
+    path: &str,
+    mission_id: &str,
+    step: &str,
+    rationale: &str,
+    alternatives: Vec<String>,
+    material_decision: bool,
+) -> PyResult<String> {
+    let result = define_question_request(
+        path,
+        mission_id,
+        parse_define_step(step)?,
+        rationale,
+        &alternatives,
+        material_decision,
+    )
+    .map_err(map_core_error)?;
+    serde_json::to_string(&result).map_err(map_serialization_error)
+}
+
+#[pyfunction]
+fn _define_question_answer_json(
+    path: &str,
+    mission_id: &str,
+    question_id: &str,
+    answer: &str,
+    explicit_user_answer: bool,
+) -> PyResult<String> {
+    let result =
+        define_question_answer(path, mission_id, question_id, answer, explicit_user_answer)
+            .map_err(map_core_error)?;
     serde_json::to_string(&result).map_err(map_serialization_error)
 }
 
@@ -624,6 +773,16 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(_knowledge_withdraw_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_create_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_start_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_start_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_status_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_next_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_submit_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_review_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_history_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_brief_assess_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_brief_assessment_get_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_question_request_json, module)?)?;
+    module.add_function(wrap_pyfunction!(_define_question_answer_json, module)?)?;
     module.add_function(wrap_pyfunction!(_profile_get_json, module)?)?;
     module.add_function(wrap_pyfunction!(_profile_set_json, module)?)?;
     module.add_function(wrap_pyfunction!(_mission_workflow_get_json, module)?)?;

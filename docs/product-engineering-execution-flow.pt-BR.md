@@ -4,6 +4,9 @@ Este diagrama mostra como o Tramuri organiza uma Mission de Product Engineering,
 até a entrega e o aprendizado. Ele distingue as operações locais do Tramuri das ações realizadas
 pelo agente hospedeiro e suas ferramentas.
 
+Para os contratos de revisão de etapas aceitas, propagação `stale` e avaliação do Product Brief,
+consulte [DEFINE: revisão, validade e avaliação](define-hardening.pt-BR.md).
+
 ```mermaid
 flowchart TD
     A[Usuário descreve o objetivo em linguagem natural] --> B{Integração Tramuri ativa<br/>e hook nativo habilitado?}
@@ -22,50 +25,55 @@ flowchart TD
     H --> D
     G -- Sim --> I[Gate libera ferramentas locais<br/>neste turno]
 
-    subgraph INICIO[Início · DEFINE]
-        I --> J[Carregar tramuri-product-engineering<br/>se a perspectiva for Product Engineer]
-        J --> K[Agente prepara Product Brief:<br/>intenção, conhecidos, hipóteses, decisões,<br/>riscos, recomendação e próximo passo]
-        K --> L{Há decisão material<br/>que o agente não pode inferir?}
-        L -- Sim --> M[Apresentar opções, consequências<br/>e uma pergunta objetiva]
-        M --> N[Registrar como decisão somente<br/>após confirmação do usuário]
-        L -- Não --> O[Continuar com hipótese reversível<br/>claramente identificada]
-        N --> P[Atualizar foco da Mission<br/>e registrar conhecimento autorizado]
-        O --> P
+    subgraph INICIO[Início · DEFINE determinístico]
+        I --> J{Perspectiva Product Engineer?}
+        J -- Sim --> K[Core cria estado DEFINE persistente<br/>ao iniciar a Mission]
+        K --> L[Agente chama mission define next]
+        L --> M[Core autoriza uma etapa<br/>e retorna contrato + skill]
+        M --> N[Agente carrega a skill indicada<br/>e produz JSON estruturado]
+        N --> O[mission define submit<br/>valida estrutura e referências]
+        O --> P{Aceito pelo Core?}
+        P -- Não --> Q[Permanece na etapa<br/>corrigir e submeter novamente]
+        Q --> L
+        P -- Sim --> R{DEFINE completo?}
+        R -- Não --> L
+        R -- Sim --> S[Product Brief persistido;<br/>Outcome da Mission continua separado]
+        J -- FDE / outro --> T[Fluxo existente de Mission<br/>sem workflow PE obrigatório]
     end
 
     subgraph MEIO[Meio · BUILD]
-        P --> R{Usuário pediu construção<br/>ou próximo artefato?}
-        R -- Não --> S[Entregar definição, MVP proposto,<br/>exclusões, riscos e critérios candidatos]
-        R -- Sim --> T[Agente usa ferramentas disponíveis<br/>no host para criar protótipo ou produto]
-        T --> U[Executar testes apropriados<br/>no ambiente do projeto]
-        U --> V[Registrar execução e resultado observado<br/>com as interfaces do Tramuri]
-        V --> W[Anexar evidência e proveniência;<br/>não declarar sucesso sem resultado real]
+        S --> U{Usuário pediu construção<br/>ou próximo artefato?}
+        U -- Não --> V[Mostrar Product Brief, hipóteses,<br/>lacunas e critérios candidatos]
+        U -- Sim --> T[Agente usa ferramentas disponíveis<br/>no host para criar protótipo ou produto]
+        T --> W[Executar testes apropriados<br/>no ambiente do projeto]
+        W --> X[Registrar execução e resultado observado<br/>com as interfaces do Tramuri]
+        X --> Y[Anexar evidência e proveniência;<br/>não declarar sucesso sem resultado real]
     end
 
     subgraph FIM[Fim · SHIP, VERIFY e LEARN]
-        S --> X{Há critérios e evidências<br/>suficientes para avaliar?}
-        W --> X
-        X -- Não --> Y[Manter pendências explícitas;<br/>definir próximo passo ou handoff]
-        X -- Sim --> Z[Avaliar cada critério<br/>com responsável e evidência]
-        Z --> AA{Resultado agregado verificado?}
-        AA -- Não --> Y
-        AA -- Sim --> AB[Registrar Outcome verificado<br/>com as limitações da evidência]
-        Y --> AC[Atualizar foco e registros autorizados]
-        AB --> AC
-        AC --> AD[Atualizar tramauri.html, .md e .json<br/>sem reabrir o navegador se já foi aberto]
-        AD --> AE[Resumo de encerramento:<br/>o que mudou, pendências, resultado<br/>e próxima ação concreta]
-        AE --> AF[Retomada futura: preflight e<br/>tramuri resume --mission ID]
-        AF --> D
+        V --> AA{Há critérios e evidências<br/>suficientes para avaliar?}
+        Y --> AA
+        AA -- Não --> AB[Manter pendências explícitas;<br/>definir próximo passo ou handoff]
+        AA -- Sim --> Z[Avaliar cada critério<br/>com responsável e evidência]
+        Z --> AC{Resultado agregado verificado?}
+        AC -- Não --> AB
+        AC -- Sim --> AD[Registrar Outcome verificado<br/>com as limitações da evidência]
+        AB --> AE[Atualizar foco e registros autorizados]
+        AD --> AE
+        AE --> AF[Atualizar tramauri.html, .md e .json<br/>sem reabrir o navegador se já foi aberto]
+        AF --> AG[Resumo de encerramento:<br/>o que mudou, pendências, resultado<br/>e próxima ação concreta]
+        AG --> AH[Retomada futura: preflight e<br/>tramuri resume --mission ID]
+        AH --> D
     end
 
     classDef tramuri fill:#e9f2ff,stroke:#2456a6,color:#13294b;
     classDef agent fill:#f3eaff,stroke:#7241a6,color:#30144f;
     classDef user fill:#fff3d6,stroke:#ad7612,color:#3e2c05;
     classDef caveat fill:#fff0f0,stroke:#b43b3b,color:#4b1515;
-    class A,Q,M,N user;
-    class C,D,E,F,G,I,P,V,W,Z,AB,AC,AD,AF tramuri;
-    class J,K,L,O,R,S,T,U,X,AA,AE agent;
-    class B,C2,H,Y caveat;
+    class A,Q user;
+    class C,D,E,F,G,I,K,L,M,O,P,R,S,X,AD,AE,AF,AH tramuri;
+    class J,N,T,U,V,W,Y,Z,AA,AC,AG agent;
+    class B,C2,H,Q,AB caveat;
 ```
 
 ## O que o diagrama significa na prática
@@ -79,13 +87,22 @@ flowchart TD
   já existentes; o hook não executa migrations por conta própria.
 - Se existir Mission compatível, o agente retoma aquela Mission. Se não existir, inicia uma nova.
   Quando a escolha for realmente ambígua, pergunta antes de selecionar.
-- Para Product Engineering, o Core inicia o foco em `product_framing`. Isso não significa que o
-  Product Brief foi produzido: essa análise é feita pelo agente usando a skill pertinente.
+- Para Product Engineering, `tramuri start` cria a Mission exploratória e inicia no Core o workflow
+  persistido DEFINE, com a etapa `objective_context` autorizada. O usuário não precisa configurar
+  Success Contract completo para começar.
+- O agente chama `tramuri mission define next --mission <id> --json`, carrega exatamente a skill
+  indicada, produz o JSON estruturado e o envia com `tramuri mission define submit`. O Core rejeita
+  etapas fora de ordem e não libera a próxima após uma rejeição. Cada aceitação atualiza SQLite e os
+  relatórios locais sem abrir o navegador.
+- As cinco etapas são `objective_context`, `business_discovery`, `requirements`,
+  `knowledge_synthesis` e `product_brief`. O Core valida forma e referências; não prova que análise
+  de mercado seja verdadeira, nem verifica que uma skill foi executada pelo host.
 
 ### Meio
 
-- A skill instrui o agente a apresentar primeiro um Product Brief e distinguir informação fornecida,
-  observação com fonte, hipótese, recomendação e decisão aprovada.
+- As skills especializadas guiam o trabalho cognitivo; o Core é autoridade sobre sequência,
+  aceitação, persistência e progresso. `tramuri mission define status` e `next` permitem retomar a
+  etapa autorizada sem repetir as aceitas.
 - A CLI registra estado, foco, conhecimento, execução, evidência e avaliação. Ela não chama por si
   só o Codex, Claude Code, Cursor, Gemini CLI ou Copilot, não implementa o SaaS e não executa seus
   testes.
@@ -97,6 +114,8 @@ flowchart TD
 - Um teste só pode ser relatado como executado se uma ferramenta o executou e seu resultado foi
   observado. A referência registrada no Tramuri não valida o sistema externo automaticamente.
 - `Execution Completed`, evidência registrada e `Outcome Verified` são estados distintos.
+- Concluir DEFINE significa que há um Product Brief estruturado persistido. Não inicia BUILD,
+  não cria testes ou código e não marca o Outcome da Mission como verificado.
 - O relatório é atualizado ao final de uma sessão coerente que alterou registros. Gerar/atualizar o
   relatório não exige abrir o navegador novamente.
 - Em um próximo turno, o hook bloqueia novamente as ferramentas locais até um `start` ou `resume`
@@ -106,7 +125,7 @@ flowchart TD
 
 Este fluxo combina comportamento determinístico do Core/CLI com orientação executada pelo modelo.
 O hook pode impor a ordem de ferramentas locais dentro dos limites de cada plataforma; ele não
-garante que o agente produza um Product Brief de qualidade, carregue corretamente a skill, use uma
+  garante que o agente produza uma análise de produto correta, carregue a skill retornada, use uma
 ferramenta externa, execute todos os testes, faça deploy ou valide um resultado de negócio.
 Esses comportamentos ainda precisam de testes end-to-end em runtimes reais e pilotos com
 Product Engineers.

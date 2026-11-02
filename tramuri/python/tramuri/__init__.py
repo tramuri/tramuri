@@ -24,6 +24,16 @@ from ._native import (
     _mission_close_json,
     _mission_create_json,
     _mission_start_json,
+    _define_start_json,
+    _define_status_json,
+    _define_next_json,
+    _define_submit_json,
+    _define_review_json,
+    _define_history_json,
+    _define_brief_assess_json,
+    _define_brief_assessment_get_json,
+    _define_question_request_json,
+    _define_question_answer_json,
     _profile_get_json,
     _profile_set_json,
     _mission_workflow_get_json,
@@ -123,6 +133,95 @@ def mission_start(
 ) -> dict[str, Any]:
     """Start an exploratory Mission; ambiguous routing raises TramuriError."""
     return json.loads(_mission_start_json(os.fsdecode(os.fspath(path)), objective, perspective, context))
+
+
+def mission_define_start(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
+    """Start the fixed five-step Product Engineering DEFINE workflow for a Mission."""
+    return json.loads(_define_start_json(os.fsdecode(os.fspath(path)), mission_id))
+
+
+def mission_define_status(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
+    """Read persisted DEFINE progress without advancing its current step."""
+    return json.loads(_define_status_json(os.fsdecode(os.fspath(path)), mission_id))
+
+
+def mission_define_next(path: PathLike = ".", *, mission_id: str) -> dict[str, Any]:
+    """Return the currently authorized DEFINE step contract and accepted inputs."""
+    return json.loads(_define_next_json(os.fsdecode(os.fspath(path)), mission_id))
+
+
+def mission_define_submit(
+    path: PathLike = ".", *, mission_id: str, step: str,
+    payload: dict[str, Any], expected_revision: int | None = None,
+    host_reported_skill_id: str | None = None,
+) -> dict[str, Any]:
+    """Submit a structured step result; the Rust Core validates and controls progression."""
+    return json.loads(_define_submit_json(
+        os.fsdecode(os.fspath(path)), mission_id, step, json.dumps(payload),
+        expected_revision, host_reported_skill_id,
+    ))
+
+
+def mission_define_review(
+    path: PathLike = ".", *, mission_id: str, step: str,
+    payload: dict[str, Any], reason: str, declared_author: str,
+    origin: str = "user_request", expected_revision: int | None = None,
+    authorize_decision_changes: bool = False,
+    host_reported_skill_id: str | None = None,
+) -> dict[str, Any]:
+    """Review a completed DEFINE artifact, preserving its history and invalidating dependents."""
+    return json.loads(_define_review_json(
+        os.fsdecode(os.fspath(path)), mission_id, step, json.dumps(payload),
+        reason, declared_author, origin, expected_revision,
+        authorize_decision_changes, host_reported_skill_id,
+    ))
+
+
+def mission_define_history(
+    path: PathLike = ".", *, mission_id: str, step: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return all accepted DEFINE artifact revisions, including stale history."""
+    return json.loads(_define_history_json(
+        os.fsdecode(os.fspath(path)), mission_id, step,
+    ))
+
+
+def mission_define_assess_brief(
+    path: PathLike = ".", *, mission_id: str, assessment: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist a versioned host semantic review; the Core validates shape, not truth."""
+    return json.loads(_define_brief_assess_json(
+        os.fsdecode(os.fspath(path)), mission_id, json.dumps(assessment),
+    ))
+
+
+def mission_define_brief_assessment(
+    path: PathLike = ".", *, mission_id: str,
+) -> dict[str, Any] | None:
+    """Read the latest host-produced semantic review without treating it as Core verification."""
+    return json.loads(_define_brief_assessment_get_json(os.fsdecode(os.fspath(path)), mission_id))
+
+
+def mission_define_question_request(
+    path: PathLike = ".", *, mission_id: str, step: str, rationale: str,
+    alternatives: list[str] | tuple[str, ...] = (), material_decision: bool = False,
+) -> dict[str, Any]:
+    """Record one explicit clarification request against the persisted two-question budget."""
+    return json.loads(_define_question_request_json(
+        os.fsdecode(os.fspath(path)), mission_id, step, rationale,
+        list(alternatives), material_decision,
+    ))
+
+
+def mission_define_question_answer(
+    path: PathLike = ".", *, mission_id: str, question_id: str,
+    answer: str, explicit_user_answer: bool = True,
+) -> dict[str, Any]:
+    """Persist a declared answer; the flag records its source, not authenticated identity."""
+    return json.loads(_define_question_answer_json(
+        os.fsdecode(os.fspath(path)), mission_id, question_id, answer,
+        explicit_user_answer,
+    ))
 
 
 def profile_get(path: PathLike = ".") -> dict[str, Any]:

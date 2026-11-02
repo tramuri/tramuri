@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::Value;
 use tempfile::tempdir;
+use tramuri_core::{DefineStepId, MissionPerspective, define_start, define_submit, mission_start};
 
 fn tramuri() -> Command {
     Command::new(env!("CARGO_BIN_EXE_tramuri"))
@@ -161,6 +162,26 @@ fn start_routes_exploratory_missions_and_keeps_readiness_unassessed() {
         "product_framing"
     );
     assert_eq!(status["missions"][0]["readiness"]["state"], "not_assessed");
+
+    let resumed = tramuri()
+        .args([
+            "start",
+            "--goal",
+            "Criar um produto para pequenos negócios",
+            "--json",
+            "--path",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stderr)
+    );
+    let resumed: Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    assert_eq!(resumed["mission_reused"], true);
+    assert_eq!(resumed["mission"]["id"], result["mission"]["id"]);
 
     let ambiguous = tempdir().unwrap();
     let ambiguous_path = ambiguous.path().to_str().unwrap();
@@ -616,6 +637,22 @@ fn install_status_and_uninstall_manage_only_tramuri_content() {
             .join(".agents/skills/tramuri/references/project-discovery.md")
             .is_file()
     );
+    for skill in [
+        "tramuri-pe-objective-context",
+        "tramuri-pe-business-discovery",
+        "tramuri-pe-requirements",
+        "tramuri-pe-evidence-hypotheses",
+        "tramuri-pe-product-brief",
+        "tramuri-pe-decision-support",
+    ] {
+        assert!(
+            project
+                .path()
+                .join(format!(".agents/skills/{skill}/SKILL.md"))
+                .is_file(),
+            "managed integration should package {skill}"
+        );
+    }
     assert!(project.path().join(".codex/hooks.json").is_file());
     let install_output = String::from_utf8_lossy(&install.stdout);
     assert!(install_output.contains("TRAMURI"));
@@ -844,7 +881,7 @@ fn mission_list_status_and_resume_share_safe_workspace_state() {
         .unwrap();
     assert!(status.status.success());
     let status: Value = serde_json::from_slice(&status.stdout).unwrap();
-    assert_eq!(status["schema"], "tramuri.status.v3");
+    assert_eq!(status["schema"], "tramuri.status.v4");
     assert_eq!(status["missions"][0]["outcome"]["state"], "pending");
     assert!(status["missions"][0].get("context").is_none());
     assert!(!status.to_string().contains("private-context"));
@@ -874,6 +911,334 @@ fn mission_list_status_and_resume_share_safe_workspace_state() {
     let ambiguous = tramuri().args(["resume", "--path", path]).output().unwrap();
     assert!(!ambiguous.status.success());
     assert!(String::from_utf8_lossy(&ambiguous.stderr).contains("multiple open Missions"));
+}
+
+#[test]
+fn product_engineering_start_initializes_define_and_cli_gates_progression() {
+    let project = tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    let started = tramuri()
+        .args([
+            "start",
+            "--path",
+            path,
+            "--goal",
+            "Quero criar um SaaS para vender cursos online",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        started.status.success(),
+        "{}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    let started: Value = serde_json::from_slice(&started.stdout).unwrap();
+    let id = started["mission"]["id"].as_str().unwrap();
+    let report_dir = project.path().join(".tramuri/reports");
+    assert_eq!(started["define"]["current_step"], "objective_context");
+
+    let next = tramuri()
+        .args([
+            "mission",
+            "define",
+            "next",
+            "--path",
+            path,
+            "--mission",
+            id,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(next.status.success());
+    let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+    assert_eq!(next["current_step"]["id"], "objective_context");
+    assert_eq!(
+        next["current_step"]["skill"],
+        "tramuri-pe-objective-context"
+    );
+
+    let artifact = project.path().join("objective.json");
+    fs::write(&artifact, r#"{"original_intent":"short","interpreted_objective":"","known_information":[],"hypotheses":[],"gaps":[]}"#).unwrap();
+    let rejected = tramuri()
+        .args([
+            "mission",
+            "define",
+            "submit",
+            "--path",
+            path,
+            "--mission",
+            id,
+            "--step",
+            "objective_context",
+            "--file",
+            artifact.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(rejected.status.success());
+    let rejected: Value = serde_json::from_slice(&rejected.stdout).unwrap();
+    assert_eq!(rejected["accepted"], false);
+    assert_eq!(rejected["progress"]["completed"], 0);
+    fs::write(&artifact, r#"{"original_intent":"Quero criar um SaaS para vender cursos online","interpreted_objective":"Explorar uma plataforma de cursos","known_information":["SaaS","cursos online"],"hypotheses":["instrutores são compradores"],"gaps":["mercado inicial"]}"#).unwrap();
+    let accepted = tramuri()
+        .args([
+            "mission",
+            "define",
+            "submit",
+            "--path",
+            path,
+            "--mission",
+            id,
+            "--step",
+            "objective_context",
+            "--file",
+            artifact.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(accepted.status.success());
+    let accepted: Value = serde_json::from_slice(&accepted.stdout).unwrap();
+    assert_eq!(accepted["accepted"], true);
+    assert_eq!(accepted["next_step"], "business_discovery");
+    let report: Value = serde_json::from_slice(
+        &fs::read(project.path().join(".tramuri/reports/tramauri.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(report["missions"][0]["define"]["completed"], 1);
+    let html = fs::read_to_string(report_dir.join("tramauri.html")).unwrap();
+    assert!(html.contains("defineTitle"));
+    assert!(html.contains("DEFINE"));
+    let markdown = fs::read_to_string(report_dir.join("tramauri.md")).unwrap();
+    assert!(markdown.contains("Product Engineering DEFINE"));
+    assert!(markdown.contains("1/5"));
+}
+
+#[test]
+fn define_review_cli_preserves_previous_accepted_artifact() {
+    let project = tempdir().unwrap();
+    let path = project.path().to_str().unwrap();
+    let mission_id = mission_start(
+        project.path(),
+        "Quero criar um SaaS para cursos",
+        None,
+        Some(MissionPerspective::ProductEngineer),
+    )
+    .unwrap()
+    .mission
+    .id;
+    define_start(project.path(), &mission_id).unwrap();
+    let entries = [
+        (
+            DefineStepId::ObjectiveContext,
+            serde_json::json!({"original_intent":"Cursos","interpreted_objective":"Explorar plataforma","known_information":["SaaS"],"hypotheses":["instrutores compram"],"gaps":["mercado" ]}),
+        ),
+        (
+            DefineStepId::BusinessDiscovery,
+            serde_json::json!({"problem":"Venda fragmentada","target_audience":["instrutores"],"business_objectives":["validar demanda"],"value_proposition":"vender cursos","uncertainties":["mercado"],"references":[{"step":"objective_context","revision":1}]}),
+        ),
+        (
+            DefineStepId::Requirements,
+            serde_json::json!({"functional_requirements":["publicar curso"],"non_functional_requirements":["privacidade"],"constraints":["sem cobrança real"],"dependencies":[],"acceptance_criteria":["ver curso"],"success_criteria":["jornada funciona"],"gaps":[],"references":[{"step":"business_discovery","revision":1}]}),
+        ),
+        (
+            DefineStepId::KnowledgeSynthesis,
+            serde_json::json!({"classifications":[{"kind":"hypothesis","statement":"instrutores compram"}],"references":[{"step":"requirements","revision":1}],"open_questions":["mercado inicial"]}),
+        ),
+        (
+            DefineStepId::ProductBrief,
+            serde_json::json!({"objective":"definir plataforma","problem":"venda fragmentada","target_audience":["instrutores"],"value_proposition":"vender cursos","main_journey":["publicar","comprar","assistir"],"requirements":[{"step":"requirements","revision":1}],"mvp_scope":["catálogo"],"exclusions":["pagamentos reais"],"risks":["aquisição"],"assumptions":["web"],"approved_decisions":[],"candidate_success_criteria":["aluno assiste aula"],"next_action":"prototipar","references":[{"step":"knowledge_synthesis","revision":1}]}),
+        ),
+    ];
+    for (step, payload) in &entries {
+        assert!(
+            define_submit(
+                project.path(),
+                &mission_id,
+                *step,
+                payload.clone(),
+                None,
+                None
+            )
+            .unwrap()
+            .accepted
+        );
+    }
+    let artifact_path = project.path().join("brief-review.json");
+    let mut revised = entries[4].1.clone();
+    revised["next_action"] = serde_json::json!("prototipar jornada do instrutor");
+    fs::write(&artifact_path, serde_json::to_vec(&revised).unwrap()).unwrap();
+    let output = tramuri()
+        .args([
+            "mission",
+            "define",
+            "review",
+            "--path",
+            path,
+            "--mission",
+            &mission_id,
+            "--step",
+            "product_brief",
+            "--file",
+            artifact_path.to_str().unwrap(),
+            "--reason",
+            "detalhar a jornada",
+            "--author",
+            "Product Engineer",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["accepted"], true);
+    assert_eq!(result["workflow_state"], "completed");
+    let history = tramuri()
+        .args([
+            "mission",
+            "define",
+            "next",
+            "--path",
+            path,
+            "--mission",
+            &mission_id,
+            "--history",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    let history: Value = serde_json::from_slice(&history.stdout).unwrap();
+    let briefs: Vec<_> = history
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["step"] == "product_brief")
+        .collect();
+    assert_eq!(briefs.len(), 2);
+    assert_eq!(briefs[1]["revision"], 2);
+    assert_eq!(
+        briefs[1]["payload"]["next_action"],
+        "prototipar jornada do instrutor"
+    );
+    let brief_id = briefs[1]["id"].as_str().unwrap();
+    let assessment_file = project.path().join("brief-assessment.json");
+    let assessment = serde_json::json!({
+        "schema":"tramuri.product-brief-assessment.v1",
+        "brief_artifact_id":brief_id,
+        "brief_revision":2,
+        "rubric_version":"tramuri.product-brief-rubric.v1",
+        "overall":"concerns",
+        "criteria":[
+            {"criterion":"goal_alignment","result":"pass","rationale":"synthetic review","references":[{"step":"product_brief","revision":2,"field":"objective"}]},
+            {"criterion":"target_consistency","result":"concern","rationale":"synthetic audience mismatch","references":[{"step":"business_discovery","revision":1,"field":"target_audience"},{"step":"product_brief","revision":2,"field":"target_audience"}]},
+            {"criterion":"evidence_assumption_separation","result":"pass","rationale":"synthetic review","references":[{"step":"product_brief","revision":2,"field":"assumptions"}]},
+            {"criterion":"success_criteria_fit","result":"pass","rationale":"synthetic review","references":[{"step":"product_brief","revision":2,"field":"candidate_success_criteria"}]},
+            {"criterion":"requirements_traceability","result":"pass","rationale":"synthetic review","references":[{"step":"product_brief","revision":2,"field":"requirements"}]},
+            {"criterion":"decision_authorization","result":"pass","rationale":"synthetic review","references":[{"step":"product_brief","revision":2,"field":"approved_decisions"}]},
+            {"criterion":"internal_consistency","result":"pass","rationale":"synthetic review","references":[{"step":"product_brief","revision":2,"field":"main_journey"}]}
+        ],
+        "limitations":["No real customer validation."],
+        "evaluation_boundary":"host_semantic_assessment_not_core_verified"
+    });
+    fs::write(&assessment_file, serde_json::to_vec(&assessment).unwrap()).unwrap();
+    let assessment_output = tramuri()
+        .args([
+            "mission",
+            "define",
+            "review",
+            "--path",
+            path,
+            "--mission",
+            &mission_id,
+            "--assessment-file",
+            assessment_file.to_str().unwrap(),
+            "--evaluator",
+            "synthetic Codex evaluator",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        assessment_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&assessment_output.stderr)
+    );
+    let assessment_result: Value = serde_json::from_slice(&assessment_output.stdout).unwrap();
+    assert_eq!(assessment_result["overall"], "concerns");
+    assert_eq!(
+        assessment_result["evaluation_boundary"],
+        "host_semantic_assessment_not_core_verified"
+    );
+    let assessment_report: Value = serde_json::from_slice(
+        &fs::read(project.path().join(".tramuri/reports/tramauri.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        assessment_report["define_details"][0]["brief_assessment"]["state"],
+        "current"
+    );
+
+    let mut business_revision = entries[1].1.clone();
+    business_revision["target_audience"] = serde_json::json!(["instrutores independentes"]);
+    fs::write(
+        &artifact_path,
+        serde_json::to_vec(&business_revision).unwrap(),
+    )
+    .unwrap();
+    let upstream_review = tramuri()
+        .args([
+            "mission",
+            "define",
+            "review",
+            "--path",
+            path,
+            "--mission",
+            &mission_id,
+            "--step",
+            "business_discovery",
+            "--file",
+            artifact_path.to_str().unwrap(),
+            "--reason",
+            "corrigir público-alvo",
+            "--author",
+            "Product Engineer",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        upstream_review.status.success(),
+        "{}",
+        String::from_utf8_lossy(&upstream_review.stderr)
+    );
+    let current_report: Value = serde_json::from_slice(
+        &fs::read(project.path().join(".tramuri/reports/tramauri.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(current_report["report_schema"], "tramuri.report.v5");
+    let detail = &current_report["define_details"][0];
+    assert_eq!(detail["workflow_state"], "stale");
+    assert_eq!(detail["completed"], 2);
+    assert_eq!(detail["steps"][2]["state"], "stale");
+    assert_eq!(detail["steps"][4]["state"], "stale");
+    assert_eq!(detail["brief"]["state"], "stale");
+    assert_eq!(detail["brief"]["revision"], 2);
+    assert_eq!(detail["brief_assessment"]["state"], "stale");
+    let refreshed_md =
+        fs::read_to_string(project.path().join(".tramuri/reports/tramauri.md")).unwrap();
+    assert!(refreshed_md.contains("Product Brief · revision 2 · `stale`"));
+    let refreshed_html =
+        fs::read_to_string(project.path().join(".tramuri/reports/tramauri.html")).unwrap();
+    assert!(refreshed_html.contains("Refresh report"));
+    assert!(refreshed_html.contains("window.location.reload()"));
+    assert!(refreshed_html.contains("Needs revalidation"));
 }
 
 #[test]
@@ -1738,7 +2103,7 @@ fn init_and_scan_emit_machine_readable_json() {
         .expect("CLI should launch");
     assert!(init.status.success());
     let init_json: Value = serde_json::from_slice(&init.stdout).expect("init should emit JSON");
-    assert_eq!(init_json["schema_version"], 9);
+    assert_eq!(init_json["schema_version"], 10);
     assert_eq!(init_json["already_initialized"], false);
 
     let repeated_init = tramuri()

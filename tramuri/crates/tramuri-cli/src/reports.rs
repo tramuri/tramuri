@@ -6,7 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tramuri_core::{
     CapabilityKind, CapabilitySnapshot, CapabilityState, CriterionAssessmentResult, MissionState,
-    OutcomeState, StatusSnapshot, capability_snapshot,
+    OutcomeState, StatusSnapshot, capability_snapshot, define_artifact_history,
+    define_brief_assessment_get,
 };
 
 const JSON_FILE: &str = "tramauri.json";
@@ -24,6 +25,60 @@ struct ReportDocument<'a> {
     capabilities: Vec<ReportCapability<'a>>,
     capability_warnings: &'a [String],
     execution_actors: Vec<ReportExecutionActor<'a>>,
+    define_details: &'a [ReportDefineSummary],
+}
+
+#[derive(serde::Serialize)]
+struct ReportDefineSummary {
+    mission_id: String,
+    workflow_state: String,
+    current_step: Option<String>,
+    completed: u8,
+    total: u8,
+    clarification_count: u32,
+    steps: Vec<ReportDefineStep>,
+    hypotheses: Vec<String>,
+    pending_decisions: Vec<String>,
+    brief: Option<ReportBriefSummary>,
+    brief_assessment: Option<ReportBriefAssessment>,
+}
+
+#[derive(serde::Serialize)]
+struct ReportBriefAssessment {
+    state: String,
+    evaluator: String,
+    rubric_version: String,
+    overall: String,
+    assessed_at_unix_ms: i64,
+    limitation_count: usize,
+    criteria: Vec<ReportBriefAssessmentCriterion>,
+}
+
+#[derive(serde::Serialize)]
+struct ReportBriefAssessmentCriterion {
+    criterion: String,
+    result: String,
+}
+
+#[derive(serde::Serialize)]
+struct ReportDefineStep {
+    id: String,
+    state: String,
+    artifact_revision: Option<u32>,
+}
+
+#[derive(serde::Serialize)]
+struct ReportBriefSummary {
+    state: String,
+    revision: u32,
+    objective: Option<String>,
+    problem: Option<String>,
+    target_audience: Vec<String>,
+    value_proposition: Option<String>,
+    mvp_scope: Vec<String>,
+    constraints: Vec<String>,
+    risks: Vec<String>,
+    next_action: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -65,17 +120,222 @@ pub fn write_reports(
     ensure_directory(&reports_dir)?;
 
     let capabilities = capability_snapshot(&root)?;
-    let stable_snapshot =
-        preserve_generation_time_if_unchanged(&reports_dir, snapshot, &capabilities);
-    let document = report_document(&stable_snapshot, &capabilities);
+    let define_details = build_define_summaries(&root, snapshot)?;
+    let stable_snapshot = preserve_generation_time_if_unchanged(
+        &reports_dir,
+        snapshot,
+        &capabilities,
+        &define_details,
+    );
+    let document = report_document(&stable_snapshot, &capabilities, &define_details);
     let json = serde_json::to_string_pretty(&document)?;
-    let markdown = render_markdown(&stable_snapshot, &capabilities);
+    let markdown = render_markdown_with_define(&stable_snapshot, &capabilities, &define_details);
     let html = render_html(&document)?;
     write_report(&reports_dir.join(JSON_FILE), json.as_bytes())?;
     write_report(&reports_dir.join(MARKDOWN_FILE), markdown.as_bytes())?;
     let html_path = reports_dir.join(HTML_FILE);
     write_report(&html_path, html.as_bytes())?;
     Ok(html_path)
+}
+
+fn build_define_summaries(
+    root: &Path,
+    snapshot: &StatusSnapshot,
+) -> Result<Vec<ReportDefineSummary>, Box<dyn std::error::Error>> {
+    let mut summaries = Vec::new();
+    for mission in &snapshot.missions {
+        let Some(define) = &mission.define else {
+            continue;
+        };
+        let history = define_artifact_history(root, &mission.id, None)?;
+        let artifact_for = |step: tramuri_core::DefineStepId| {
+            define
+                .steps
+                .iter()
+                .find(|item| item.id == step)
+                .and_then(|item| item.artifact_id.as_deref())
+                .and_then(|id| history.iter().find(|artifact| artifact.id == id))
+        };
+        let steps = define
+            .steps
+            .iter()
+            .map(|step| ReportDefineStep {
+                id: step.id.as_str().to_owned(),
+                state: format!("{:?}", step.state).to_lowercase(),
+                artifact_revision: artifact_for(step.id).map(|artifact| artifact.revision),
+            })
+            .collect();
+        let synthesis = artifact_for(tramuri_core::DefineStepId::KnowledgeSynthesis);
+        let hypotheses = if define.steps.iter().any(|step| {
+            step.id == tramuri_core::DefineStepId::KnowledgeSynthesis
+                && step.state == tramuri_core::DefineStepState::Completed
+        }) {
+            synthesis
+                .and_then(|artifact| artifact.payload.get("classifications"))
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|item| {
+                    item.get("kind").and_then(serde_json::Value::as_str) == Some("hypothesis")
+                })
+                .filter_map(|item| item.get("statement").and_then(serde_json::Value::as_str))
+                .filter_map(safe_report_text)
+                .take(5)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut pending_decisions: Vec<String> = tramuri_core::define_next(root, &mission.id)?
+            .questions
+            .into_iter()
+            .filter(|question| question.state != "answered")
+            .filter_map(|question| safe_report_text(&question.rationale))
+            .take(5)
+            .collect();
+        if pending_decisions.is_empty()
+            && define.steps.iter().any(|step| {
+                step.id == tramuri_core::DefineStepId::KnowledgeSynthesis
+                    && step.state == tramuri_core::DefineStepState::Completed
+            })
+        {
+            pending_decisions = synthesis
+                .and_then(|artifact| artifact.payload.get("open_questions"))
+                .map(safe_string_values)
+                .unwrap_or_default();
+        }
+
+        let brief_step = define
+            .steps
+            .iter()
+            .find(|step| step.id == tramuri_core::DefineStepId::ProductBrief);
+        let brief_artifact = artifact_for(tramuri_core::DefineStepId::ProductBrief);
+        let requirements = artifact_for(tramuri_core::DefineStepId::Requirements);
+        let brief = brief_step.zip(brief_artifact).map(|(step, artifact)| {
+            let get_text = |key: &str| {
+                artifact
+                    .payload
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(safe_report_text)
+            };
+            let constraints = artifact
+                .payload
+                .get("constraints")
+                .map(safe_string_values)
+                .filter(|items| !items.is_empty())
+                .or_else(|| {
+                    requirements
+                        .and_then(|item| item.payload.get("constraints"))
+                        .map(safe_string_values)
+                })
+                .unwrap_or_default();
+            ReportBriefSummary {
+                state: format!("{:?}", step.state).to_lowercase(),
+                revision: artifact.revision,
+                objective: get_text("objective"),
+                problem: get_text("problem"),
+                target_audience: artifact
+                    .payload
+                    .get("target_audience")
+                    .map(safe_string_values)
+                    .unwrap_or_default(),
+                value_proposition: get_text("value_proposition"),
+                mvp_scope: artifact
+                    .payload
+                    .get("mvp_scope")
+                    .map(safe_string_values)
+                    .unwrap_or_default(),
+                constraints,
+                risks: artifact
+                    .payload
+                    .get("risks")
+                    .map(safe_string_values)
+                    .unwrap_or_default(),
+                next_action: (step.state == tramuri_core::DefineStepState::Completed)
+                    .then(|| get_text("next_action"))
+                    .flatten(),
+            }
+        });
+        let brief_assessment = define_brief_assessment_get(root, &mission.id)?.map(|assessment| {
+            let state = if brief_step.is_some_and(|step| {
+                step.state == tramuri_core::DefineStepState::Completed
+                    && brief_artifact.is_some_and(|artifact| {
+                        artifact.id == assessment.brief_artifact_id
+                            && artifact.revision == assessment.brief_revision
+                    })
+            }) {
+                "current"
+            } else {
+                "stale"
+            };
+            ReportBriefAssessment {
+                state: state.to_owned(),
+                evaluator: safe_report_text(&assessment.evaluator)
+                    .unwrap_or_else(|| "redacted".to_owned()),
+                rubric_version: assessment.rubric_version,
+                overall: assessment.overall,
+                assessed_at_unix_ms: assessment.occurred_at_unix_ms,
+                limitation_count: assessment.limitations.len(),
+                criteria: assessment
+                    .criteria
+                    .into_iter()
+                    .map(|item| ReportBriefAssessmentCriterion {
+                        criterion: item.criterion,
+                        result: item.result,
+                    })
+                    .collect(),
+            }
+        });
+        summaries.push(ReportDefineSummary {
+            mission_id: mission.id.clone(),
+            workflow_state: format!("{:?}", define.state).to_lowercase(),
+            current_step: define.current_step.map(|step| step.as_str().to_owned()),
+            completed: define.completed,
+            total: define.total,
+            clarification_count: define.clarification_count,
+            steps,
+            hypotheses,
+            pending_decisions,
+            brief,
+            brief_assessment,
+        });
+    }
+    Ok(summaries)
+}
+
+fn safe_string_values(value: &serde_json::Value) -> Vec<String> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter_map(safe_report_text)
+        .take(5)
+        .collect()
+}
+
+fn safe_report_text(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if [
+        "password",
+        "passwd",
+        "secret",
+        "api_key",
+        "api-key",
+        "token=",
+        "bearer ",
+        "credential",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+    {
+        return Some("[redacted: sensitive-looking content]".to_owned());
+    }
+    Some(trimmed.chars().take(240).collect())
 }
 
 fn ensure_directory(path: &Path) -> std::io::Result<()> {
@@ -98,10 +358,11 @@ fn ensure_directory(path: &Path) -> std::io::Result<()> {
 fn report_document<'a>(
     snapshot: &'a StatusSnapshot,
     capabilities: &'a CapabilitySnapshot,
+    define_details: &'a [ReportDefineSummary],
 ) -> ReportDocument<'a> {
     ReportDocument {
         status: snapshot,
-        report_schema: "tramuri.report.v3",
+        report_schema: "tramuri.report.v5",
         capability_schema: &capabilities.schema,
         capability_scan_complete: capabilities.scan_complete,
         capabilities: capabilities
@@ -134,6 +395,7 @@ fn report_document<'a>(
                 })
             })
             .collect(),
+        define_details,
     }
 }
 
@@ -178,6 +440,7 @@ fn preserve_generation_time_if_unchanged(
     reports_dir: &Path,
     snapshot: &StatusSnapshot,
     capabilities: &CapabilitySnapshot,
+    define_details: &[ReportDefineSummary],
 ) -> StatusSnapshot {
     let path = reports_dir.join(JSON_FILE);
     let Ok(metadata) = fs::symlink_metadata(&path) else {
@@ -198,10 +461,11 @@ fn preserve_generation_time_if_unchanged(
     else {
         return snapshot.clone();
     };
-    let mut current = match serde_json::to_value(report_document(snapshot, capabilities)) {
-        Ok(current) => current,
-        Err(_) => return snapshot.clone(),
-    };
+    let mut current =
+        match serde_json::to_value(report_document(snapshot, capabilities, define_details)) {
+            Ok(current) => current,
+            Err(_) => return snapshot.clone(),
+        };
     previous
         .as_object_mut()
         .map(|object| object.remove("generated_at_unix_ms"));
@@ -239,7 +503,16 @@ fn open_local_file(path: &Path) -> std::io::Result<()> {
     command.spawn().map(|_| ())
 }
 
-pub fn render_markdown(snapshot: &StatusSnapshot, capabilities: &CapabilitySnapshot) -> String {
+#[cfg(test)]
+fn render_markdown(snapshot: &StatusSnapshot, capabilities: &CapabilitySnapshot) -> String {
+    render_markdown_with_define(snapshot, capabilities, &[])
+}
+
+fn render_markdown_with_define(
+    snapshot: &StatusSnapshot,
+    capabilities: &CapabilitySnapshot,
+    define_details: &[ReportDefineSummary],
+) -> String {
     let mut output = format!(
         "# Tramuri workspace status\n\nSchema: `{}`  \nGenerated at (Unix ms): `{}`  \nMissions: {} ({} open, {} closed)\n\n",
         snapshot.schema,
@@ -267,6 +540,41 @@ pub fn render_markdown(snapshot: &StatusSnapshot, capabilities: &CapabilitySnaps
             mission.executions.iter().filter(|execution| execution.state == tramuri_core::ExecutionState::InProgress).count(),
             mission.evidence.len(),
         ));
+        if let Some(define) = &mission.define {
+            output.push_str(&format!(
+                "#### Product Engineering DEFINE — {:?} ({}/{})\n\n",
+                define.state, define.completed, define.total
+            ));
+            for step in &define.steps {
+                output.push_str(&format!(
+                    "- [{}] `{}` — {:?}\n",
+                    if step.state == tramuri_core::DefineStepState::Completed {
+                        "x"
+                    } else {
+                        " "
+                    },
+                    step.id.as_str(),
+                    step.state
+                ));
+            }
+            output.push_str(&format!(
+                "- Clarifications: {}/{}\n\n",
+                define.clarification_count, define.clarification_maximum
+            ));
+            output.push_str("Workflow events (newest first):\n\n");
+            for event in define.events.iter().rev().take(20) {
+                output.push_str(&format!(
+                    "- `{}` · `{}` · `{}`\n",
+                    event.occurred_at_unix_ms,
+                    event
+                        .step
+                        .map(tramuri_core::DefineStepId::as_str)
+                        .unwrap_or("workflow"),
+                    md_escape(&event.event_type)
+                ));
+            }
+            output.push('\n');
+        }
         if let Some(readiness) = &mission.readiness.assessment {
             for item in &readiness.criteria_applied {
                 output.push_str(&format!("- Readiness check applied: {}\n", md_escape(item)));
@@ -378,6 +686,97 @@ pub fn render_markdown(snapshot: &StatusSnapshot, capabilities: &CapabilitySnaps
             ));
         }
         output.push('\n');
+    }
+    if !define_details.is_empty() {
+        output.push_str("## Product Engineering DEFINE details\n\n");
+        for detail in define_details {
+            output.push_str(&format!(
+                "### Mission `{}` · `{}` · {}/{} validated\n\n",
+                detail.mission_id, detail.workflow_state, detail.completed, detail.total
+            ));
+            if let Some(step) = &detail.current_step {
+                output.push_str(&format!("- Current step: `{}`\n", md_escape(step)));
+            }
+            output.push_str(&format!(
+                "- Clarifications used: {}\n",
+                detail.clarification_count
+            ));
+            for step in &detail.steps {
+                output.push_str(&format!(
+                    "- `{}`: `{}`{}\n",
+                    md_escape(&step.id),
+                    step.state,
+                    step.artifact_revision
+                        .map(|revision| format!(" · artifact revision {revision}"))
+                        .unwrap_or_default()
+                ));
+            }
+            for hypothesis in &detail.hypotheses {
+                output.push_str(&format!("- Hypothesis: {}\n", md_escape(hypothesis)));
+            }
+            for question in &detail.pending_decisions {
+                output.push_str(&format!(
+                    "- Pending decision / question: {}\n",
+                    md_escape(question)
+                ));
+            }
+            if let Some(brief) = &detail.brief {
+                output.push_str(&format!(
+                    "\n#### Product Brief · revision {} · `{}`\n\n",
+                    brief.revision, brief.state
+                ));
+                for (label, value) in [
+                    ("Objective", brief.objective.as_ref()),
+                    ("Problem", brief.problem.as_ref()),
+                    ("Value proposition", brief.value_proposition.as_ref()),
+                ] {
+                    if let Some(value) = value {
+                        output.push_str(&format!("- {label}: {}\n", md_escape(value)));
+                    }
+                }
+                for (label, values) in [
+                    ("Target audience", &brief.target_audience),
+                    ("MVP", &brief.mvp_scope),
+                    ("Constraints", &brief.constraints),
+                    ("Risks", &brief.risks),
+                ] {
+                    if !values.is_empty() {
+                        output.push_str(&format!(
+                            "- {label}: {}\n",
+                            values
+                                .iter()
+                                .map(|value| md_escape(value))
+                                .collect::<Vec<_>>()
+                                .join("; ")
+                        ));
+                    }
+                }
+                if let Some(action) = &brief.next_action {
+                    output.push_str(&format!(
+                        "- Next action recorded in Brief: {}\n",
+                        md_escape(action)
+                    ));
+                }
+            }
+            if let Some(assessment) = &detail.brief_assessment {
+                output.push_str(&format!(
+                    "\n#### Semantic assessment · `{}` · `{}`\n\n- Evaluator (declared): `{}`\n- Rubric: `{}`\n- Limitation notes: {}\n- Core verified semantic truth: no\n",
+                    assessment.state,
+                    assessment.overall,
+                    md_escape(&assessment.evaluator),
+                    md_escape(&assessment.rubric_version),
+                    assessment.limitation_count,
+                ));
+                for criterion in &assessment.criteria {
+                    output.push_str(&format!(
+                        "- `{}`: `{}`\n",
+                        md_escape(&criterion.criterion),
+                        md_escape(&criterion.result)
+                    ));
+                }
+            }
+            output.push('\n');
+        }
     }
     output.push_str("## Recent activity\n\n");
     if snapshot.recent_activity.is_empty() {
@@ -569,7 +968,7 @@ mod tests {
         let snapshot = status_snapshot(project.path()).unwrap();
         let capabilities = capability_snapshot(project.path()).unwrap();
         assert_eq!(capabilities.capabilities.len(), 1);
-        let document = report_document(&snapshot, &capabilities);
+        let document = report_document(&snapshot, &capabilities, &[]);
         let report_json = serde_json::to_value(&document).unwrap();
         assert_eq!(report_json["missions"][0]["readiness"]["state"], "blocked");
         assert_eq!(
@@ -612,8 +1011,8 @@ mod tests {
             &fs::read(project.path().join(".tramuri/reports").join(JSON_FILE)).unwrap(),
         )
         .unwrap();
-        assert_eq!(json["schema"], "tramuri.status.v3");
-        assert_eq!(json["report_schema"], "tramuri.report.v3");
+        assert_eq!(json["schema"], "tramuri.status.v4");
+        assert_eq!(json["report_schema"], "tramuri.report.v5");
         assert_eq!(json["capabilities"][0]["name"], "test");
         assert_eq!(json["capability_summary"]["total"], 1);
         assert_eq!(json["workspace"]["mission_count"], 1);

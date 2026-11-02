@@ -136,9 +136,14 @@ pub struct WorkPerspectiveChange {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MissionStartResult {
+    pub schema: String,
+    /// True only when a unique exact objective match was resumed.
+    pub mission_reused: bool,
     pub mission: Mission,
     pub workflow: MissionWorkflow,
     pub route: IntentRoute,
+    /// Product Engineer Mission starts initialize the deterministic DEFINE controller.
+    pub define: Option<crate::DefineStatus>,
 }
 
 /// Return local workflow defaults. A missing configuration file keeps existing workspaces usable.
@@ -284,6 +289,65 @@ pub fn mission_start(
     }
     let root = canonical_root(path.as_ref())?;
     let profile = profile_get(&root)?;
+    let initialized = database_path(&root).exists();
+    let objective_key = normalize_objective(objective);
+    let matching: Vec<_> = if initialized {
+        crate::mission_list(&root)?
+            .into_iter()
+            .filter(|mission| mission.state == crate::MissionState::Open)
+            .filter(|mission| normalize_objective(&mission.objective) == objective_key)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    if !matching.is_empty() {
+        if matching.len() == 1 {
+            let candidate = &matching[0];
+            let workflow = mission_workflow_get(&root, &candidate.id)?;
+            if let Some(workflow) = workflow {
+                if let Some(perspective) = workflow.perspective {
+                    let explicit_matches =
+                        explicit.is_none_or(|requested| requested == perspective);
+                    if explicit_matches {
+                        let route = IntentRoute {
+                            perspective: Some(perspective),
+                            source: workflow
+                                .perspective_source
+                                .unwrap_or(IntentRouteSource::Inferred),
+                            next_activity: workflow
+                                .next_activity
+                                .clone()
+                                .unwrap_or_else(|| initial_activity(perspective).to_owned()),
+                            rationale:
+                                "reused a unique open Mission with the same normalized objective"
+                                    .to_owned(),
+                        };
+                        let mission = crate::mission_get(&root, &candidate.id)?;
+                        let define = if perspective == MissionPerspective::ProductEngineer {
+                            Some(crate::define::define_start(&root, &mission.id)?)
+                        } else {
+                            None
+                        };
+                        return Ok(MissionStartResult {
+                            schema: "tramuri.mission.start.v2".to_owned(),
+                            mission_reused: true,
+                            mission,
+                            workflow,
+                            route,
+                            define,
+                        });
+                    }
+                }
+            }
+        }
+        return Err(TramuriError::MissionSelectionRequired(
+            matching
+                .iter()
+                .map(|item| item.id.clone())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ));
+    }
     if profile.ask_work_perspective == AskWorkPerspective::Always && explicit.is_none() {
         return Err(TramuriError::AmbiguousWorkPerspective);
     }
@@ -291,7 +355,7 @@ pub fn mission_start(
     let Some(perspective) = route.perspective else {
         return Err(TramuriError::AmbiguousWorkPerspective);
     };
-    if !database_path(&root).exists() {
+    if !initialized {
         crate::init(&root)?;
     }
     let mission = crate::mission::mission_create_with_workflow(
@@ -305,13 +369,31 @@ pub fn mission_start(
         route.source,
         Some(route.next_activity.clone()),
     )?;
+    // Product Engineer starts enter the persisted DEFINE controller immediately. FDE and other
+    // perspectives keep their existing lifecycle and do not receive a product workflow.
+    let define = if perspective == MissionPerspective::ProductEngineer {
+        Some(crate::define::define_start(&root, &mission.id)?)
+    } else {
+        None
+    };
     let workflow = mission_workflow_get(&root, &mission.id)?
         .ok_or_else(|| TramuriError::MissionNotFound(mission.id.clone()))?;
     Ok(MissionStartResult {
+        schema: "tramuri.mission.start.v2".to_owned(),
+        mission_reused: false,
         mission,
         workflow,
         route,
+        define,
     })
+}
+
+fn normalize_objective(objective: &str) -> String {
+    objective
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 pub fn mission_workflow_get(
@@ -800,6 +882,7 @@ mod tests {
         )
         .unwrap();
         assert!(started.mission.success_contract.criteria.is_empty());
+        assert!(!started.mission_reused);
         assert_eq!(
             started.workflow.perspective,
             Some(MissionPerspective::ProductEngineer)
@@ -814,6 +897,88 @@ mod tests {
             mission_workflow_get(project.path(), &started.mission.id).unwrap(),
             Some(started.workflow)
         );
+    }
+
+    #[test]
+    fn start_reuses_only_one_exact_open_mission_and_preserves_its_profile() {
+        let project = workspace();
+        let first = mission_start(
+            project.path(),
+            "Quero criar um SaaS para vender cursos online",
+            None,
+            None,
+        )
+        .unwrap();
+        profile_set(
+            project.path(),
+            WorkProfile {
+                default_work_perspective: WorkProfilePreference::Auto,
+                ask_work_perspective: AskWorkPerspective::Always,
+            },
+        )
+        .unwrap();
+        let resumed = mission_start(
+            project.path(),
+            "  QUERO criar um SaaS para vender cursos online  ",
+            Some("novo contexto não deve sobrescrever o já registrado"),
+            None,
+        )
+        .unwrap();
+        assert!(resumed.mission_reused);
+        assert_eq!(resumed.mission.id, first.mission.id);
+        assert_eq!(
+            resumed.workflow.perspective,
+            Some(MissionPerspective::ProductEngineer)
+        );
+        assert_eq!(crate::mission_list(project.path()).unwrap().len(), 1);
+        assert_eq!(resumed.define.unwrap().completed, 0);
+    }
+
+    #[test]
+    fn start_requires_explicit_selection_for_duplicate_exact_objectives_or_profile_mismatch() {
+        let project = workspace();
+        crate::init(project.path()).unwrap();
+        let objective = "Same exact objective";
+        for _ in 0..2 {
+            crate::mission_create(
+                project.path(),
+                MissionInput {
+                    objective: objective.to_owned(),
+                    context: None,
+                    criteria: Vec::new(),
+                },
+            )
+            .unwrap();
+        }
+        let before = crate::mission_list(project.path()).unwrap().len();
+        let error = mission_start(
+            project.path(),
+            objective,
+            None,
+            Some(MissionPerspective::ProductEngineer),
+        )
+        .unwrap_err();
+        assert!(matches!(error, TramuriError::MissionSelectionRequired(_)));
+        assert_eq!(crate::mission_list(project.path()).unwrap().len(), before);
+
+        let separate = workspace();
+        let fde = mission_start(
+            separate.path(),
+            "Integrar a API do cliente",
+            None,
+            Some(MissionPerspective::Fde),
+        )
+        .unwrap();
+        let error = mission_start(
+            separate.path(),
+            "Integrar a API do cliente",
+            None,
+            Some(MissionPerspective::ProductEngineer),
+        )
+        .unwrap_err();
+        assert!(matches!(error, TramuriError::MissionSelectionRequired(_)));
+        assert_eq!(crate::mission_list(separate.path()).unwrap().len(), 1);
+        assert_eq!(fde.workflow.perspective, Some(MissionPerspective::Fde));
     }
 
     #[test]

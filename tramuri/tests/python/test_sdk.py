@@ -27,6 +27,13 @@ from tramuri import (
     mission_contract_revise,
     mission_create,
     mission_start,
+    mission_define_next,
+    mission_define_status,
+    mission_define_submit,
+    mission_define_review,
+    mission_define_history,
+    mission_define_assess_brief,
+    mission_define_brief_assessment,
     mission_workflow_activity_set,
     profile_get,
     profile_set,
@@ -56,7 +63,7 @@ def test_init_is_idempotent_and_scan_returns_inventory(tmp_path: Path) -> None:
     second_init = init(tmp_path)
     report = scan(tmp_path)
 
-    assert first_init["schema_version"] == 9
+    assert first_init["schema_version"] == 10
     assert first_init["already_initialized"] is False
     assert second_init["already_initialized"] is True
     assert report["complete"] is True
@@ -82,7 +89,7 @@ def test_mission_list_and_status_are_privacy_minimized(tmp_path: Path) -> None:
     snapshot = status(tmp_path)
 
     assert listed[0]["id"] == mission["id"]
-    assert snapshot["schema"] == "tramuri.status.v3"
+    assert snapshot["schema"] == "tramuri.status.v4"
     assert snapshot["missions"][0]["outcome"]["state"] == "pending"
     assert "context" not in snapshot["missions"][0]
     assert "private-context-marker" not in json.dumps(snapshot)
@@ -129,6 +136,8 @@ def test_guided_start_profile_and_execution_lifecycle(tmp_path: Path) -> None:
     assert started["workflow"]["perspective"] == "product_engineer"
     assert started["workflow"]["next_activity"] == "product_framing"
     assert started["mission"]["success_contract"]["criteria"] == []
+    assert started["define"]["current_step"] == "objective_context"
+    assert mission_define_next(tmp_path, mission_id=started["mission"]["id"])["current_step"]["skill"] == "tramuri-pe-objective-context"
     assert status(tmp_path)["missions"][0]["readiness"]["state"] == "not_assessed"
     resumed = mission_resume(tmp_path, mission_id=started["mission"]["id"])
     assert resumed["workflow"]["perspective"] == "product_engineer"
@@ -139,6 +148,10 @@ def test_guided_start_profile_and_execution_lifecycle(tmp_path: Path) -> None:
     assert focused["next_activity"] == "discover"
     assert focused["perspective_source"] == "current_intent"
     assert len(focused["perspective_history"]) == 1
+    reused = mission_start(tmp_path, objective="Quero criar um produto para pequenos negócios")
+    assert reused["mission_reused"] is True
+    assert reused["mission"]["id"] == started["mission"]["id"]
+    assert reused["workflow"]["next_activity"] == "discover"
 
     execution = execution_record(
         tmp_path, mission_id=started["mission"]["id"], contract_revision=1,
@@ -151,6 +164,104 @@ def test_guided_start_profile_and_execution_lifecycle(tmp_path: Path) -> None:
 
     with pytest.raises(TramuriError, match="cannot transition"):
         execution_transition(tmp_path, execution_id=execution["id"], state="failed")
+
+
+def test_define_python_sdk_persists_and_gates_structured_step_results(tmp_path: Path) -> None:
+    init(tmp_path)
+    started = mission_start(tmp_path, objective="Quero criar um SaaS de cursos online")
+    mission_id = started["mission"]["id"]
+    status_before = mission_define_status(tmp_path, mission_id=mission_id)
+    assert status_before["current_step"] == "objective_context"
+    invalid = mission_define_submit(
+        tmp_path, mission_id=mission_id, step="objective_context",
+        payload={"original_intent": "missing fields"},
+    )
+    assert invalid["accepted"] is False
+    assert invalid["progress"]["completed"] == 0
+    accepted = mission_define_submit(
+        tmp_path, mission_id=mission_id, step="objective_context",
+        payload={"original_intent": "Quero criar um SaaS de cursos online",
+                 "interpreted_objective": "Explorar uma plataforma de cursos",
+                 "known_information": ["SaaS", "cursos online"],
+                 "hypotheses": ["instrutores podem ser compradores"], "gaps": []},
+        expected_revision=mission_define_status(tmp_path, mission_id=mission_id)["revision"],
+        host_reported_skill_id="tramuri-pe-objective-context",
+    )
+    assert accepted["accepted"] is True
+    assert accepted["next_step"] == "business_discovery"
+    assert mission_define_next(tmp_path, mission_id=mission_id)["progress"]["completed"] == 1
+
+
+def test_define_review_sdk_preserves_artifact_versions_and_provenance(tmp_path: Path) -> None:
+    init(tmp_path)
+    mission = mission_start(tmp_path, objective="Quero criar um SaaS de cursos online")
+    mission_id = mission["mission"]["id"]
+    artifacts = [
+        ("objective_context", {"original_intent":"Cursos", "interpreted_objective":"Explorar plataforma", "known_information":["SaaS"], "hypotheses":["instrutores compram"], "gaps":["mercado"]}),
+        ("business_discovery", {"problem":"Venda fragmentada", "target_audience":["instrutores"], "business_objectives":["validar demanda"], "value_proposition":"vender cursos", "uncertainties":["mercado"], "references":[{"step":"objective_context","revision":1}]}),
+        ("requirements", {"functional_requirements":["publicar curso"], "non_functional_requirements":["privacidade"], "constraints":["sem cobrança real"], "dependencies":[], "acceptance_criteria":["ver curso"], "success_criteria":["jornada funciona"], "gaps":[], "references":[{"step":"business_discovery","revision":1}]}),
+        ("knowledge_synthesis", {"classifications":[{"kind":"hypothesis","statement":"instrutores compram"}], "references":[{"step":"requirements","revision":1}], "open_questions":["mercado inicial"]}),
+        ("product_brief", {"objective":"definir plataforma", "problem":"venda fragmentada", "target_audience":["instrutores"], "value_proposition":"vender cursos", "main_journey":["publicar","comprar","assistir"], "requirements":[{"step":"requirements","revision":1}], "mvp_scope":["catálogo"], "exclusions":["pagamentos reais"], "risks":["aquisição"], "assumptions":["web"], "approved_decisions":[], "candidate_success_criteria":["aluno assiste aula"], "next_action":"prototipar", "references":[{"step":"knowledge_synthesis","revision":1}]}),
+    ]
+    for step, payload in artifacts:
+        assert mission_define_submit(tmp_path, mission_id=mission_id, step=step, payload=payload)["accepted"]
+    revised = dict(artifacts[-1][1], next_action="prototipar jornada do instrutor")
+    accepted = mission_define_review(
+        tmp_path, mission_id=mission_id, step="product_brief", payload=revised,
+        reason="detalhar a jornada", declared_author="Product Engineer", origin="user_request",
+    )
+    assert accepted["accepted"] is True
+    briefs = mission_define_history(tmp_path, mission_id=mission_id, step="product_brief")
+    assert [item["revision"] for item in briefs] == [1, 2]
+    assert briefs[1]["provenance"]["review"]["reason"] == "detalhar a jornada"
+    assert briefs[1]["payload"] == revised
+    criteria = [
+        ("goal_alignment", "pass", "objective"),
+        ("target_consistency", "concern", "target_audience"),
+        ("evidence_assumption_separation", "pass", "assumptions"),
+        ("success_criteria_fit", "pass", "candidate_success_criteria"),
+        ("requirements_traceability", "pass", "requirements"),
+        ("decision_authorization", "pass", "approved_decisions"),
+        ("internal_consistency", "pass", "main_journey"),
+    ]
+    semantic = {
+        "schema": "tramuri.product-brief-assessment.v1",
+        "brief_artifact_id": briefs[1]["id"],
+        "brief_revision": briefs[1]["revision"],
+        "evaluator": "synthetic SDK evaluator",
+        "rubric_version": "tramuri.product-brief-rubric.v1",
+        "overall": "concerns",
+        "criteria": [
+            {"criterion": name, "result": result, "rationale": "synthetic rubric result",
+             "references": ([{"step": "business_discovery", "revision": 1, "field": "target_audience"},
+                             {"step": "product_brief", "revision": 2, "field": field}]
+                            if name == "target_consistency" else
+                            [{"step": "product_brief", "revision": 2, "field": field}])}
+            for name, result, field in criteria
+        ],
+        "limitations": ["No customer validation was performed."],
+        "evaluation_boundary": "host_semantic_assessment_not_core_verified",
+    }
+    recorded = mission_define_assess_brief(tmp_path, mission_id=mission_id, assessment=semantic)
+    assert recorded["overall"] == "concerns"
+    assert mission_define_brief_assessment(tmp_path, mission_id=mission_id) == recorded
+
+
+def test_cli_and_sdk_define_next_have_normalized_parity(tmp_path: Path) -> None:
+    cli = _cli_executable()
+    if not cli:
+        pytest.skip("Set TRAMURI_CLI to the built native executable to run CLI/SDK parity.")
+    cli_project=tmp_path / "cli"; sdk_project=tmp_path / "sdk"
+    cli_project.mkdir(); sdk_project.mkdir()
+    objective="Quero criar um SaaS de cursos online"
+    sdk_started=mission_start(sdk_project,objective=objective)
+    cli_started=subprocess.run([cli,"start","--path",str(cli_project),"--goal",objective,"--json"],check=True,capture_output=True,text=True,encoding="utf-8")
+    sdk_id=sdk_started["mission"]["id"]; cli_id=json.loads(cli_started.stdout)["mission"]["id"]
+    sdk_next=mission_define_next(sdk_project,mission_id=sdk_id)
+    cli_next=subprocess.run([cli,"mission","define","next","--path",str(cli_project),"--mission",cli_id,"--json"],check=True,capture_output=True,text=True,encoding="utf-8")
+    cli_value=json.loads(cli_next.stdout)
+    sdk_next.pop("mission_id"); cli_value.pop("mission_id")
+    assert cli_value == sdk_next
 
 
 def test_guided_start_ambiguous_intent_requires_explicit_choice(tmp_path: Path) -> None:

@@ -6,11 +6,13 @@ use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use tramuri_core::{
     ActorKind, AskWorkPerspective, CapabilityKind, CriterionAssessmentInput,
-    CriterionAssessmentResult, CriterionInput, EvidenceInput, EvidenceKind, ExecutionInput,
-    ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType, MissionInput,
+    CriterionAssessmentResult, CriterionInput, DefineStepId, EvidenceInput, EvidenceKind,
+    ExecutionInput, ExecutionState, KnowledgeFilter, KnowledgeInput, KnowledgeType, MissionInput,
     MissionPerspective, ReadinessAssessmentInput, ReadinessDecision, VerifierKind, WorkPerspective,
-    WorkProfile, WorkProfilePreference, evidence_add, evidence_get, evidence_list, execution_get,
-    execution_list, execution_record, execution_transition, init, knowledge_add, knowledge_list,
+    WorkProfile, WorkProfilePreference, define_artifact_history, define_brief_assess, define_next,
+    define_question_answer, define_question_request, define_review, define_start, define_status,
+    define_submit, evidence_add, evidence_get, evidence_list, execution_get, execution_list,
+    execution_record, execution_transition, init, knowledge_add, knowledge_list,
     knowledge_withdraw, mission_capability_link, mission_capability_unlink, mission_close,
     mission_contract_revise, mission_create, mission_get, mission_knowledge_link,
     mission_knowledge_unlink, mission_list, mission_relationships, mission_resume, mission_start,
@@ -548,6 +550,11 @@ fn parse_evidence_kind(value: &str) -> Result<EvidenceKind, Box<dyn std::error::
 
 #[derive(Debug, Subcommand)]
 enum MissionCommand {
+    /// Run the fixed, host-driven Product Engineering DEFINE workflow.
+    Define {
+        #[command(subcommand)]
+        command: Box<DefineCommand>,
+    },
     /// List Missions without requiring their identifiers in advance.
     List {
         #[arg(long, default_value = ".")]
@@ -671,6 +678,123 @@ enum MissionCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum DefineCommand {
+    Start {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Status {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Next {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        /// Include historical artifact revisions instead of only current accepted inputs.
+        #[arg(long)]
+        history: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    Submit {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        step: String,
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long)]
+        expected_revision: Option<u64>,
+        #[arg(long)]
+        skill: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Review {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        step: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Submit a host-produced semantic assessment for the current Product Brief.
+        #[arg(long)]
+        assessment_file: Option<PathBuf>,
+        #[arg(long)]
+        evaluator: Option<String>,
+        #[arg(long)]
+        reason: Option<String>,
+        /// Declared author label; it is not authenticated by Tramuri.
+        #[arg(long)]
+        author: Option<String>,
+        /// Declared origin, such as user_request, source_update, or correction.
+        #[arg(long, default_value = "user_request")]
+        origin: Option<String>,
+        #[arg(long)]
+        expected_revision: Option<u64>,
+        /// Explicitly authorize a change to decisions previously marked approved.
+        #[arg(long)]
+        authorize_decision_changes: bool,
+        #[arg(long)]
+        skill: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Question {
+        #[command(subcommand)]
+        command: DefineQuestionCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum DefineQuestionCommand {
+    Request {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        step: String,
+        #[arg(long)]
+        rationale: String,
+        #[arg(long = "alternative")]
+        alternatives: Vec<String>,
+        #[arg(long)]
+        material_decision: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    Answer {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        mission: String,
+        #[arg(long)]
+        question: String,
+        #[arg(long)]
+        answer: String,
+        #[arg(long, default_value_t = true)]
+        explicit_user_answer: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum MissionContractCommand {
     /// Create a new Success Contract revision without rewriting prior revisions.
     Revise {
@@ -739,6 +863,64 @@ struct FileCriterion {
 
 fn required_by_default() -> bool {
     true
+}
+
+fn parse_define_step(value: &str) -> Result<DefineStepId, Box<dyn std::error::Error>> {
+    match value {
+        "objective_context" => Ok(DefineStepId::ObjectiveContext),
+        "business_discovery" => Ok(DefineStepId::BusinessDiscovery),
+        "requirements" => Ok(DefineStepId::Requirements),
+        "knowledge_synthesis" => Ok(DefineStepId::KnowledgeSynthesis),
+        "product_brief" => Ok(DefineStepId::ProductBrief),
+        _ => Err(format!("unknown DEFINE step `{value}`").into()),
+    }
+}
+
+fn print_define_status(
+    status: &tramuri_core::DefineStatus,
+    json: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(status)?);
+        return Ok(());
+    }
+    println!("Mission {} · Product Engineering DEFINE", status.mission_id);
+    println!(
+        "Progresso: {}/{} etapas validadas",
+        status.completed, status.total
+    );
+    for step in &status.steps {
+        let mark = match step.state {
+            tramuri_core::DefineStepState::Completed => "✓",
+            tramuri_core::DefineStepState::InProgress => "◉",
+            tramuri_core::DefineStepState::Blocked => "!",
+            tramuri_core::DefineStepState::ValidationFailed => "×",
+            tramuri_core::DefineStepState::Stale => "↻",
+            tramuri_core::DefineStepState::Pending => " ",
+        };
+        println!("[{mark}] {} · {:?}", step.id.as_str(), step.state);
+    }
+    if let Some(current) = status.current_step {
+        println!("Etapa autorizada: {}", current.as_str());
+    }
+    println!(
+        "Esclarecimentos registrados: {}/{}",
+        status.clarification_count, status.clarification_maximum
+    );
+    Ok(())
+}
+
+fn refresh_reports_best_effort(path: &Path) {
+    let result = status_snapshot(path)
+        .map_err(|error| error.to_string())
+        .and_then(|snapshot| {
+            reports::write_reports(path, &snapshot).map_err(|error| error.to_string())
+        });
+    if let Err(error) = result {
+        eprintln!(
+            "warning: workflow state was saved, but local reports could not be refreshed: {error}"
+        );
+    }
 }
 
 fn read_criteria(
@@ -887,26 +1069,24 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 .as_deref()
                 .map(parse_mission_perspective)
                 .transpose()?;
-            let profile = profile_get(&path)?;
-            let route = tramuri_core::route_intent(&goal, profile, explicit);
-            let explicit = if explicit.is_some() {
-                explicit
-            } else if profile.ask_work_perspective == AskWorkPerspective::Always {
-                if io::stdin().is_terminal() {
-                    Some(prompt_perspective(route.perspective)?)
-                } else {
-                    return Err("profile is configured to ask for perspective; pass --perspective in non-interactive use".into());
-                }
-            } else if route.perspective.is_none() {
-                if io::stdin().is_terminal() {
-                    Some(prompt_perspective(None)?)
-                } else {
-                    return Err(tramuri_core::TramuriError::AmbiguousWorkPerspective.into());
-                }
+            let result = if explicit.is_some() {
+                mission_start(&path, &goal, context.as_deref(), explicit)?
             } else {
-                None
+                match mission_start(&path, &goal, context.as_deref(), None) {
+                    Ok(result) => result,
+                    Err(tramuri_core::TramuriError::AmbiguousWorkPerspective) => {
+                        let profile = profile_get(&path)?;
+                        if !io::stdin().is_terminal() {
+                            return Err("work perspective is ambiguous; pass --perspective in non-interactive use".into());
+                        }
+                        let route = tramuri_core::route_intent(&goal, profile, None);
+                        let selected = prompt_perspective(route.perspective)?;
+                        mission_start(&path, &goal, context.as_deref(), Some(selected))?
+                    }
+                    Err(error) => return Err(error.into()),
+                }
             };
-            let result = mission_start(&path, &goal, context.as_deref(), explicit)?;
+            refresh_reports_best_effort(&path);
             if json {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {
@@ -915,10 +1095,23 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     .perspective
                     .map(|p| p.as_str())
                     .unwrap_or("unspecified");
+                let verb = if result.mission_reused {
+                    "Resumed"
+                } else {
+                    "Started"
+                };
                 println!(
-                    "Started exploratory Mission {} ({perspective}).",
+                    "{verb} exploratory Mission {} ({perspective}).",
                     result.mission.id
                 );
+                if let Some(define) = &result.define {
+                    println!("Product Engineering DEFINE started · step 1/5: objective_context.");
+                    println!(
+                        "Get the authorized step and skill contract with `tramuri mission define next --mission {}`.",
+                        result.mission.id
+                    );
+                    print_define_status(define, false)?;
+                }
                 println!(
                     "Current focus: {}. Context Readiness: not assessed.",
                     result
@@ -1160,6 +1353,246 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         Command::Mission { command } => match command {
+            MissionCommand::Define { command } => match *command {
+                DefineCommand::Start {
+                    path,
+                    mission,
+                    json,
+                } => {
+                    let result = define_start(&path, &mission)?;
+                    refresh_reports_best_effort(&path);
+                    print_define_status(&result, json)?;
+                }
+                DefineCommand::Status {
+                    path,
+                    mission,
+                    json,
+                } => {
+                    let result = define_status(&path, &mission)?;
+                    print_define_status(&result, json)?;
+                }
+                DefineCommand::Next {
+                    path,
+                    mission,
+                    history,
+                    json,
+                } => {
+                    if history {
+                        let artifacts = define_artifact_history(&path, &mission, None)?;
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&artifacts)?);
+                        } else if artifacts.is_empty() {
+                            println!("Nenhum artefato DEFINE registrado para esta Mission.");
+                        } else {
+                            for artifact in artifacts {
+                                println!(
+                                    "{} · revisão {} · {}",
+                                    artifact.step.as_str(),
+                                    artifact.revision,
+                                    artifact.id
+                                );
+                            }
+                        }
+                    } else {
+                        let result = define_next(&path, &mission)?;
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        } else {
+                            println!(
+                                "Mission {} · DEFINE · {}/{} etapas validadas",
+                                result.mission_id, result.progress.completed, result.progress.total
+                            );
+                            if let Some(step) = result.current_step {
+                                println!(
+                                    "Próxima etapa: {} · skill {}",
+                                    step.id.as_str(),
+                                    step.skill
+                                );
+                            } else {
+                                println!("Ação: {}", result.next_action);
+                            }
+                        }
+                    }
+                }
+                DefineCommand::Submit {
+                    path,
+                    mission,
+                    step,
+                    file,
+                    expected_revision,
+                    skill,
+                    json,
+                } => {
+                    let step = parse_define_step(&step)?;
+                    let payload: serde_json::Value = serde_json::from_slice(&std::fs::read(file)?)?;
+                    let result = define_submit(
+                        &path,
+                        &mission,
+                        step,
+                        payload,
+                        expected_revision,
+                        skill.as_deref(),
+                    )?;
+                    refresh_reports_best_effort(&path);
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    } else if result.accepted {
+                        println!(
+                            "Etapa {} validada · progresso {}/5",
+                            step.as_str(),
+                            result.progress.completed
+                        );
+                        if let Some(next) = result.next_step {
+                            println!("Próxima etapa liberada: {}", next.as_str());
+                        } else {
+                            println!(
+                                "DEFINE concluído. Isso não declara o Outcome da Mission como verificado."
+                            );
+                        }
+                    } else {
+                        println!(
+                            "Etapa {} rejeitada; permaneceu na etapa atual.",
+                            step.as_str()
+                        );
+                        for error in result.errors {
+                            println!("- {} ({}): {}", error.code, error.field, error.message);
+                        }
+                    }
+                }
+                DefineCommand::Review {
+                    path,
+                    mission,
+                    step,
+                    file,
+                    assessment_file,
+                    evaluator,
+                    reason,
+                    author,
+                    origin,
+                    expected_revision,
+                    authorize_decision_changes,
+                    skill,
+                    json,
+                } => {
+                    if let Some(assessment_file) = assessment_file {
+                        if file.is_some() || step.is_some() || reason.is_some() || author.is_some()
+                        {
+                            return Err("semantic assessment cannot be combined with artifact revision fields".into());
+                        }
+                        let evaluator =
+                            evaluator.ok_or("--evaluator is required for semantic assessment")?;
+                        let mut payload: serde_json::Value =
+                            serde_json::from_slice(&std::fs::read(assessment_file)?)?;
+                        payload["evaluator"] = serde_json::Value::String(evaluator.clone());
+                        let result = define_brief_assess(&path, &mission, payload)?;
+                        refresh_reports_best_effort(&path);
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        } else {
+                            println!(
+                                "Product Brief semantic assessment recorded by declared evaluator {evaluator} · {}.",
+                                result.overall
+                            );
+                        }
+                    } else {
+                        let step = parse_define_step(
+                            step.as_deref()
+                                .ok_or("--step is required for artifact review")?,
+                        )?;
+                        let file = file.ok_or("--file is required for artifact review")?;
+                        let reason = reason.ok_or("--reason is required for artifact review")?;
+                        let author = author.ok_or("--author is required for artifact review")?;
+                        let origin = origin.as_deref().unwrap_or("user_request");
+                        let payload: serde_json::Value =
+                            serde_json::from_slice(&std::fs::read(file)?)?;
+                        let result = define_review(
+                            &path,
+                            &mission,
+                            step,
+                            payload,
+                            &reason,
+                            &author,
+                            origin,
+                            expected_revision,
+                            authorize_decision_changes,
+                            skill.as_deref(),
+                        )?;
+                        refresh_reports_best_effort(&path);
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        } else if result.accepted {
+                            println!(
+                                "Revisão da etapa {} validada; versão anterior preservada.",
+                                step.as_str()
+                            );
+                            if result.workflow_state == tramuri_core::DefineState::Stale {
+                                println!(
+                                    "Etapas dependentes precisam ser revalidadas; próxima: {:?}.",
+                                    result.next_step
+                                );
+                            }
+                        } else {
+                            println!("Revisão rejeitada; o artefato aceito permaneceu ativo.");
+                            for error in result.errors {
+                                println!("- {} ({}): {}", error.code, error.field, error.message);
+                            }
+                        }
+                    }
+                }
+                DefineCommand::Question { command } => match command {
+                    DefineQuestionCommand::Request {
+                        path,
+                        mission,
+                        step,
+                        rationale,
+                        alternatives,
+                        material_decision,
+                        json,
+                    } => {
+                        let result = define_question_request(
+                            &path,
+                            &mission,
+                            parse_define_step(&step)?,
+                            &rationale,
+                            &alternatives,
+                            material_decision,
+                        )?;
+                        refresh_reports_best_effort(&path);
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        } else {
+                            println!(
+                                "Esclarecimento registrado ({}) para {}: {}",
+                                result.state,
+                                result.step.as_str(),
+                                result.rationale
+                            );
+                        }
+                    }
+                    DefineQuestionCommand::Answer {
+                        path,
+                        mission,
+                        question,
+                        answer,
+                        explicit_user_answer,
+                        json,
+                    } => {
+                        let result = define_question_answer(
+                            &path,
+                            &mission,
+                            &question,
+                            &answer,
+                            explicit_user_answer,
+                        )?;
+                        refresh_reports_best_effort(&path);
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        } else {
+                            println!("Esclarecimento {} registrado.", result.id);
+                        }
+                    }
+                },
+            },
             MissionCommand::List { path, json } => {
                 let missions = mission_list(path)?;
                 if json {
@@ -1786,6 +2219,17 @@ fn print_status(snapshot: &tramuri_core::StatusSnapshot) {
                 .filter(|execution| execution.state == ExecutionState::InProgress)
                 .count()
         );
+        if let Some(define) = &mission.define {
+            println!(
+                "  Product Engineering DEFINE: {}/5 · {:?} · current step: {}",
+                define.completed,
+                define.state,
+                define
+                    .current_step
+                    .map(DefineStepId::as_str)
+                    .unwrap_or("complete")
+            );
+        }
     }
     if !snapshot.recent_activity.is_empty() {
         println!("Recent activity:");
@@ -1905,6 +2349,29 @@ fn print_resume(mission: &tramuri_core::MissionStatus) {
         mission.id,
         terminal_safe(&mission.objective)
     );
+    if let Some(define) = &mission.define {
+        println!(
+            "Product Engineering DEFINE: {}/5 · {:?}",
+            define.completed, define.state
+        );
+        for step in &define.steps {
+            let mark = if step.state == tramuri_core::DefineStepState::Completed {
+                "✓"
+            } else if Some(step.id) == define.current_step {
+                "→"
+            } else {
+                "·"
+            };
+            println!("  {mark} {} · {:?}", step.id.as_str(), step.state);
+        }
+        if let Some(current) = define.current_step {
+            println!(
+                "Next authorized step: {}. Retrieve its skill contract with `tramuri mission define next --mission {}`.",
+                current.as_str(),
+                mission.id
+            );
+        }
+    }
     println!("State: {:?}", mission.state);
     println!(
         "Success Contract revision {} · Outcome {}",

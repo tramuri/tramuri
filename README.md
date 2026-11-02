@@ -146,8 +146,41 @@ tramuri status
 tramuri resume --mission <id>
 ```
 
+### Product Engineering DEFINE workflow
+
+Starting a Mission with the `product_engineer` perspective automatically creates a persistent
+DEFINE workflow in the Rust Core. The host asks the Core for the authorized step, loads the named
+skill, submits structured output, and advances only after acceptance. The five steps cover objective
+and context; problem, audience, and business; requirements and criteria; facts and hypotheses; and a
+Product Brief. A complete Success Contract is not required to begin.
+
+```bash
+tramuri start --goal "Create a SaaS for selling online courses" --perspective product_engineer --json
+tramuri mission define status --mission <id> --json
+tramuri mission define next --mission <id> --json
+```
+
+`next` returns the authorized step, its skill name, and the output contract. After producing the
+JSON, the host submits it with `tramuri mission define submit --mission <id> --step <step> --file
+<result.json>`. The Core rejects missing required fields, invalid references, and out-of-order
+submissions; rejection leaves the current step open. A material decision can be recorded with
+`tramuri mission define question request` and `tramuri mission define question answer`. The limit of
+two ordinary clarification questions persists across sessions.
+
+Use `status` and `next` to resume saved progress. Each CLI transition attempts to refresh
+`.tramuri/reports/tramauri.html`, `tramauri.md`, and `tramauri.json` without reopening the browser.
+The Python SDK exposes the same `mission_define_*` operations; when using it directly, refresh the
+reports afterward with `tramuri status --refresh`.
+
+The Core enforces sequence, structural validation, and persistence. It cannot prove that the host
+loaded a skill, that research claims are true, or that the Product Brief is correct. The host does
+the analysis and uses its available tools. Completing DEFINE stores a Product Brief; it does not
+build, ship, or verify the product, and it does not mark the Mission Outcome as achieved.
+
 `tramuri start` creates an exploratory Mission and routes clear phrases to a work perspective.
-Product Engineer Missions start with `product_framing`; other perspectives start with Discovery.
+Product Engineer Missions also retain their existing `product_framing` focus; other perspectives
+start with Discovery. The DEFINE checklist is a separate, deterministic Product Engineering
+workflow.
 The Context Readiness stays `not_assessed` until
 someone records an assessment. When intent is unclear, provide `--perspective product_engineer|fde|mixed|other`
 or ask the assistant to clarify. Routing in the Rust Core uses a small phrase set; it does not claim

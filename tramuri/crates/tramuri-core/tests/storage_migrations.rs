@@ -44,6 +44,110 @@ fn create_v1_project() -> TempDir {
 }
 
 #[test]
+fn v9_to_v10_migration_preserves_existing_missions_and_adds_define_tables() {
+    let project = tempfile::tempdir().expect("workspace should be created");
+    init(project.path()).expect("workspace should initialize");
+    let mission = mission_create(
+        project.path(),
+        MissionInput {
+            objective: "Legacy objective".to_owned(),
+            context: None,
+            criteria: vec![],
+        },
+    )
+    .expect("legacy mission should be recorded");
+    let database = project.path().join(".tramuri/database/tramuri.sqlite3");
+    let connection = Connection::open(&database).expect("database should open");
+    connection
+        .execute_batch(
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts;
+         DROP TABLE define_steps; DROP TABLE define_workflows; PRAGMA user_version=9;",
+        )
+        .expect("fixture should represent a schema 9 workspace");
+    drop(connection);
+
+    let preserved = mission_get(project.path(), &mission.id)
+        .expect("old mission remains readable after additive migration");
+    assert_eq!(preserved.objective, "Legacy objective");
+    let connection = Connection::open(database).expect("migrated database should open");
+    let version: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, i64::from(SCHEMA_VERSION));
+    for table in [
+        "define_workflows",
+        "define_steps",
+        "define_artifacts",
+        "define_questions",
+        "define_events",
+    ] {
+        let exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                [table],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(exists, 1, "migration should create {table}");
+    }
+    let missions: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM missions WHERE id=?1",
+            [&mission.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        missions, 1,
+        "migration must not rewrite or remove Mission records"
+    );
+}
+
+#[test]
+fn failed_v9_to_v10_migration_rolls_back_all_define_tables_and_keeps_version() {
+    let project = tempfile::tempdir().expect("workspace should be created");
+    init(project.path()).expect("workspace should initialize");
+    let mission = mission_create(
+        project.path(),
+        MissionInput {
+            objective: "Preserve on failed migration".to_owned(),
+            context: None,
+            criteria: vec![],
+        },
+    )
+    .unwrap();
+    let database = project.path().join(".tramuri/database/tramuri.sqlite3");
+    let connection = Connection::open(&database).unwrap();
+    connection.execute_batch("DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; CREATE TABLE define_workflows (conflicting INTEGER); PRAGMA user_version=9;").unwrap();
+    drop(connection);
+    assert!(init(project.path()).is_err());
+    let connection = Connection::open(database).unwrap();
+    let version: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 9);
+    let partial: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='define_steps'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        partial, 0,
+        "failed additive migration must not leave partial tables"
+    );
+    let preserved: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM missions WHERE id=?1",
+            [mission.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(preserved, 1);
+}
+
+#[test]
 fn workspace_initialization_probe_is_read_only_and_recognizes_legacy_database() {
     let empty = TempDir::new().expect("project directory should be created");
     assert!(!workspace_is_initialized(empty.path()).unwrap());
@@ -67,8 +171,8 @@ fn v1_migration_preserves_inventory_and_creates_knowledge_schema() {
     let report = init(project.path()).expect("init should migrate a v1 database");
 
     assert!(report.already_initialized);
-    assert_eq!(report.schema_version, 9);
-    assert_eq!(SCHEMA_VERSION, 9);
+    assert_eq!(report.schema_version, SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 10);
     let new_database = project.path().join(".tramuri/database/tramuri.sqlite3");
     assert!(new_database.is_file());
     assert!(!project.path().join(".tramuri/tramuri.sqlite3").exists());
@@ -76,7 +180,7 @@ fn v1_migration_preserves_inventory_and_creates_knowledge_schema() {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("schema version should be readable");
-    assert_eq!(version, 9);
+    assert_eq!(version, i64::from(SCHEMA_VERSION));
     let row: (String, i64, Option<i64>, Option<String>, String) = connection
         .query_row(
             "SELECT path, size_bytes, modified_unix_ms, sha256, hash_status
@@ -145,7 +249,7 @@ fn v8_to_v9_adds_workflow_tables_without_changing_mission_records() {
     let connection = Connection::open(&database).unwrap();
     connection
         .execute_batch(
-            "DROP TABLE mission_work_perspective_history;
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history;
          DROP TABLE mission_workflows;
          PRAGMA user_version = 8;",
         )
@@ -153,7 +257,7 @@ fn v8_to_v9_adds_workflow_tables_without_changing_mission_records() {
     drop(connection);
 
     let report = init(project.path()).expect("v8 should migrate additively");
-    assert_eq!(report.schema_version, 9);
+    assert_eq!(report.schema_version, SCHEMA_VERSION);
     let migrated = mission_get(project.path(), &mission.id).unwrap();
     assert_eq!(migrated.objective, "Preserve existing work");
     assert_eq!(
@@ -178,7 +282,7 @@ fn v7_migration_adds_readiness_without_changing_mission_records() {
     let database = project.path().join(".tramuri/database/tramuri.sqlite3");
     let connection = Connection::open(&database).expect("database should open");
     connection
-        .execute_batch("DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments; PRAGMA user_version = 7;")
+        .execute_batch("DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments; PRAGMA user_version = 7;")
         .expect("fixture should represent schema v7");
     drop(connection);
 
@@ -227,7 +331,7 @@ fn v6_to_v7_migration_preserves_execution_and_defaults_perspective_to_none() {
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
              ALTER TABLE executions DROP COLUMN work_perspective;
              PRAGMA user_version = 6;",
         )
@@ -238,7 +342,7 @@ fn v6_to_v7_migration_preserves_execution_and_defaults_perspective_to_none() {
     let restored =
         execution_get(project.path(), &execution.id).expect("old execution should remain readable");
 
-    assert_eq!(report.schema_version, 9);
+    assert_eq!(report.schema_version, SCHEMA_VERSION);
     assert_eq!(restored.id, execution.id);
     assert_eq!(restored.actor_reference.as_deref(), Some("synthetic-fde"));
     assert_eq!(restored.work_perspective, None);
@@ -323,7 +427,7 @@ fn v2_migration_preserves_existing_knowledge_and_inventory() {
              DROP TABLE criterion_assessments;
              DROP INDEX success_criteria_assessment_identity;
              DROP TABLE success_criteria;
-             DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
+             DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
              DROP TABLE mission_evidence;
              DROP TABLE executions;
              DROP TABLE success_contracts;
@@ -375,7 +479,7 @@ fn failed_v2_migration_rolls_back_new_tables_and_preserves_version() {
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
              DROP TABLE mission_capability_links;
              DROP TABLE mission_knowledge_links;
              DROP TABLE criterion_assessment_evidence;
@@ -465,7 +569,7 @@ fn v3_migration_adds_execution_evidence_and_assessment_tables_transactionally() 
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
              ALTER TABLE executions DROP COLUMN work_perspective;
              DROP TABLE mission_capability_links;
              DROP TABLE mission_knowledge_links;
@@ -482,7 +586,7 @@ fn v3_migration_adds_execution_evidence_and_assessment_tables_transactionally() 
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, i64::from(SCHEMA_VERSION));
     for table in [
         "executions",
         "mission_evidence",
@@ -511,7 +615,7 @@ fn failed_v3_migration_rolls_back_and_keeps_schema_version() {
     let database = project.path().join(".tramuri/database/tramuri.sqlite3");
     let connection = Connection::open(&database).expect("database should open");
     connection
-        .execute_batch("DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments; DROP TABLE mission_capability_links; DROP TABLE mission_knowledge_links; DROP TABLE criterion_assessment_evidence; DROP TABLE criterion_assessments; DROP INDEX success_criteria_assessment_identity; DROP TABLE mission_evidence; DROP TABLE executions; CREATE TABLE executions (conflicting INTEGER); PRAGMA user_version = 3;")
+        .execute_batch("DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments; DROP TABLE mission_capability_links; DROP TABLE mission_knowledge_links; DROP TABLE criterion_assessment_evidence; DROP TABLE criterion_assessments; DROP INDEX success_criteria_assessment_identity; DROP TABLE mission_evidence; DROP TABLE executions; CREATE TABLE executions (conflicting INTEGER); PRAGMA user_version = 3;")
         .unwrap();
     drop(connection);
 
@@ -575,7 +679,7 @@ fn v4_migration_adds_assessment_tables_and_preserves_existing_mission_data() {
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
              ALTER TABLE executions DROP COLUMN work_perspective;
              DROP TABLE mission_capability_links;
              DROP TABLE mission_knowledge_links;
@@ -593,7 +697,7 @@ fn v4_migration_adds_assessment_tables_and_preserves_existing_mission_data() {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("schema version should be readable");
-    assert_eq!(version, 9);
+    assert_eq!(version, i64::from(SCHEMA_VERSION));
     let preserved: (i64, i64, i64) = connection
         .query_row(
             "SELECT
@@ -625,7 +729,7 @@ fn failed_v4_migration_rolls_back_assessment_schema_and_keeps_version() {
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
              DROP TABLE mission_capability_links;
              DROP TABLE mission_knowledge_links;
              DROP TABLE criterion_assessment_evidence;
@@ -697,7 +801,7 @@ fn v5_migration_adds_relationship_tables_and_preserves_existing_records() {
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
              ALTER TABLE executions DROP COLUMN work_perspective;
              DROP TABLE mission_capability_links;
              DROP TABLE mission_knowledge_links;
@@ -711,7 +815,7 @@ fn v5_migration_adds_relationship_tables_and_preserves_existing_records() {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("schema version should be readable");
-    assert_eq!(version, 9);
+    assert_eq!(version, i64::from(SCHEMA_VERSION));
     let preserved: (String, String) = connection
         .query_row(
             "SELECT m.objective, k.statement FROM missions AS m
@@ -751,7 +855,7 @@ fn failed_v5_migration_rolls_back_link_tables_and_version() {
     let connection = Connection::open(&database).expect("database should open");
     connection
         .execute_batch(
-            "DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
+            "DROP TABLE define_events; DROP TABLE define_questions; DROP TABLE define_artifacts; DROP TABLE define_steps; DROP TABLE define_workflows; DROP TABLE mission_work_perspective_history; DROP TABLE mission_workflows; DROP TABLE readiness_assessments;
              DROP TABLE mission_capability_links;
              DROP TABLE mission_knowledge_links;
              CREATE TABLE mission_capability_links (conflicting INTEGER);

@@ -92,6 +92,8 @@ pub struct MissionStatus {
     pub readiness: crate::MissionReadiness,
     /// Planned work is separate from a formal Context Readiness assessment.
     pub workflow: Option<crate::MissionWorkflow>,
+    /// Persisted Product Engineering DEFINE progress, when initialized for this Mission.
+    pub define: Option<crate::DefineStatus>,
 }
 
 /// Explicit, Mission-scoped context for a deliberate resume operation.
@@ -273,6 +275,7 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
         let outcome_summary = summarize_outcome(outcome);
         let contract_history = outcomes.iter().map(summarize_outcome).collect();
         let workflow = crate::mission_workflow_get(&workspace, &mission.id)?;
+        let define = crate::define::define_status_optional(&workspace, &mission.id)?;
         let mut readiness = crate::readiness_get(&workspace, &mission.id)?;
         if let (Some(planned), Some(assessment)) = (
             workflow
@@ -296,6 +299,7 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
             contract_history,
             readiness,
             workflow,
+            define,
         });
     }
 
@@ -313,7 +317,7 @@ pub fn status_snapshot(path: impl AsRef<Path>) -> Result<StatusSnapshot> {
     let mission_count = missions.len();
 
     Ok(StatusSnapshot {
-        schema: "tramuri.status.v3".to_owned(),
+        schema: "tramuri.status.v4".to_owned(),
         generated_at_unix_ms,
         workspace: WorkspaceSummary {
             mission_count,
@@ -385,7 +389,7 @@ mod tests {
 
         let snapshot = status_snapshot(project.path()).unwrap();
 
-        assert_eq!(snapshot.schema, "tramuri.status.v3");
+        assert_eq!(snapshot.schema, "tramuri.status.v4");
         assert_eq!(snapshot.workspace.mission_count, 0);
         assert_eq!(snapshot.workspace.open_mission_count, 0);
         assert_eq!(snapshot.workspace.closed_mission_count, 0);

@@ -61,6 +61,8 @@ pub enum TramuriError {
     EmptySuccessCriterion,
     #[error("mission was not found: {0}")]
     MissionNotFound(String),
+    #[error("an existing Mission matches this objective; select one explicitly: {0}")]
+    MissionSelectionRequired(String),
     #[error("success contract revision {revision} was not found for mission {mission_id}")]
     ContractNotFound { mission_id: String, revision: u32 },
     #[error("success contract revision is outside the supported range")]
@@ -101,6 +103,14 @@ pub enum TramuriError {
         "assessment evidence must belong to the same Mission and Success Contract revision: {0}"
     )]
     AssessmentEvidenceNotFound(String),
+    #[error("Product Engineering DEFINE workflow is not started for Mission {0}")]
+    DefineWorkflowNotFound(String),
+    #[error("Product Engineering DEFINE requires a product_engineer Mission perspective: {0}")]
+    DefineRequiresProductEngineer(String),
+    #[error("invalid Product Engineering DEFINE operation: {0}")]
+    InvalidDefine(String),
+    #[error("Product Engineering DEFINE workflow changed concurrently; reload status and retry")]
+    DefineRevisionConflict,
 }
 
 pub type Result<T> = std::result::Result<T, TramuriError>;

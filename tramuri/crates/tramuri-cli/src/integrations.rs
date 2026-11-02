@@ -19,7 +19,7 @@ const GEMINI_HOOK_FILE: &str = ".gemini/settings.json";
 const GEMINI_HOOK_COMMAND: &str = "tramuri status --hint --hook-format gemini";
 const CURSOR_RULE_FRONTMATTER: &str =
     "---\ndescription: Tramuri project guidance\nalwaysApply: true\n---\n\n";
-const SKILLS: [(&str, &str); 6] = [
+const SKILLS: [(&str, &str); 12] = [
     (
         "tramuri",
         include_str!("../../../python/tramuri/skills/tramuri/SKILL.md"),
@@ -31,6 +31,30 @@ const SKILLS: [(&str, &str); 6] = [
     (
         "tramuri-product-engineering",
         include_str!("../../../python/tramuri/skills/tramuri-product-engineering/SKILL.md"),
+    ),
+    (
+        "tramuri-pe-objective-context",
+        include_str!("../../../python/tramuri/skills/tramuri-pe-objective-context/SKILL.md"),
+    ),
+    (
+        "tramuri-pe-business-discovery",
+        include_str!("../../../python/tramuri/skills/tramuri-pe-business-discovery/SKILL.md"),
+    ),
+    (
+        "tramuri-pe-requirements",
+        include_str!("../../../python/tramuri/skills/tramuri-pe-requirements/SKILL.md"),
+    ),
+    (
+        "tramuri-pe-evidence-hypotheses",
+        include_str!("../../../python/tramuri/skills/tramuri-pe-evidence-hypotheses/SKILL.md"),
+    ),
+    (
+        "tramuri-pe-product-brief",
+        include_str!("../../../python/tramuri/skills/tramuri-pe-product-brief/SKILL.md"),
+    ),
+    (
+        "tramuri-pe-decision-support",
+        include_str!("../../../python/tramuri/skills/tramuri-pe-decision-support/SKILL.md"),
     ),
     (
         "tramuri-discovery",
@@ -1534,9 +1558,18 @@ mod tests {
                     .join("tramuri-start/SKILL.md"),
             )
             .unwrap();
-            assert!(start_skill.contains("refresh the local reports once"));
-            assert!(start_skill.contains("tramuri status --refresh"));
-            assert_eq!(skill_paths(platform).len(), 6);
+            let start_skill_normalized =
+                start_skill.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                start_skill_normalized
+                    .contains("report files best-effort without opening the browser")
+            );
+            assert!(
+                start_skill_normalized
+                    .contains("Do not run an extra refresh after each such write")
+            );
+            assert!(start_skill_normalized.contains("tramuri status --refresh"));
+            assert_eq!(skill_paths(platform).len(), 12);
             for (relative, _) in skill_paths(platform) {
                 let skill = fs::read_to_string(project.path().join(&relative)).unwrap();
                 let skill_name = relative

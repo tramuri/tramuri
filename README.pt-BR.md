@@ -21,6 +21,9 @@ realmente avaliados.
 O Tramuri foi pensado para Product Engineers, Forward Deployed Engineers (FDEs) e equipes de
 produto. Ele não exige um repositório de código, um LLM nem um framework específico de agentes.
 
+> **Começando agora?** Siga o [tutorial de Product Engineer](docs/examples/product-engineer/README.pt-BR.md)
+> ou o [tutorial de FDE](docs/examples/fde/README.pt-BR.md), do setup ao handoff.
+
 ## O que o Tramuri oferece
 
 - **Missões e Contratos de Sucesso** para descrever objetivos e critérios de aceitação.
@@ -102,9 +105,14 @@ tramuri install --platform codex --project
 
 Depois, descreva um objetivo substancial no chat do assistente, por exemplo: “Quero melhorar o
 onboarding” ou “Vou assumir esta integração de cliente”. As instruções iniciam ou retomam uma Mission
-mesmo que você não mencione o Tramuri. Um objetivo claro inicializa o banco local automaticamente;
-informe a perspectiva de trabalho apenas se ela não estiver clara no pedido. Em Missions de Product
-Engineering, uma skill específica conduz framing e discovery, separando fatos, hipóteses e dúvidas.
+mesmo que você não mencione o Tramuri. Para uma Mission nova, escolha uma perspectiva: Product
+Engineer (entende o problema do produto e ajuda a decidir o que construir), FDE (resolve uma
+necessidade de cliente conectando sistemas) ou misto (combina evolução do produto e integração).
+No terminal, escolha com as setas e confirme com Enter; em uma sessão de agente, responda no chat.
+A escolha fica registrada na Mission. Preferências e inferências podem sugerir, mas não substituir
+essa escolha. Uma Mission existente com objetivo igual e correspondência inequívoca pode ser retomada
+com a perspectiva já registrada. Em Missions de Product Engineering, uma skill específica conduz
+framing e discovery, separando fatos, hipóteses e dúvidas.
 Ela orienta o agente a iniciar ou retomar a Mission antes de explorar o projeto ou usar outras
 ferramentas de criação. Não é necessário rodar
 `tramuri init` antes nem aprender a sintaxe da CLI. A Mission pode começar como exploratória e a
@@ -112,7 +120,7 @@ varredura do projeto é opcional. Ao final de uma sessão coerente que altere re
 o assistente atualiza os relatórios. Ele abre o HTML se ainda não o abriu na sessão; caso já esteja
 aberto, atualiza os arquivos sem abrir outra janela. Você também pode pedir “abra o relatório do
 Tramuri”, executar `tramuri status --open`, ou usar `tramuri status --refresh` para atualizar sem
-abrir o navegador.
+abrir o navegador depois de iniciar ou retomar a Mission.
 
 O relatório local pode ser lido em inglês ou português brasileiro e mostra a perspectiva de trabalho
 (Product Engineer/FDE) separada do executor registrado. O nome do executor é informado por quem faz
@@ -122,17 +130,16 @@ o registro e não é autenticado; o Tramuri não presume quem é o responsável 
 respeita as regras de exclusão do projeto e de arquivos sensíveis; não lê configurações globais de
 agentes, não executa hooks, não inicia servidores MCP nem acessa a rede.
 
-Codex, Claude Code, Cursor e Gemini CLI recebem instruções nativas do projeto, uma skill geral do
-Tramuri e skills específicas para configuração, Product Engineering, descoberta, Missions e
-integridade, além de um hook local de início de sessão. Os hooks verificam apenas a presença do
-arquivo do banco e orientam o início da sessão; não leem registros de Missions nem mensagens do
-usuário. Para trabalho substantivo, as instruções pedem que o agente inicie/retome Tramuri antes de
-usar outras ferramentas e depois continue a tarefa solicitada. Isso é orientação da plataforma, não
-uma trava técnica que consiga obrigar qualquer agente a obedecer. Os hooks respeitam as configurações de confiança da plataforma,
-e a instalação preserva instruções e hooks não relacionados. Cursor usa `.cursor/rules/tramuri.mdc`,
-`.cursor/skills/tramuri/` e `.cursor/hooks.json`; os demais hosts usam seus caminhos nativos.
-
-As instruções e skills do Copilot continuam disponíveis; o Tramuri não instala hooks do Copilot.
+Codex, Claude Code, Cursor, Gemini CLI e GitHub Copilot recebem instruções nativas e skills do
+Tramuri; há hooks locais nas plataformas e superfícies que os suportam. Quando habilitado e
+confiável, o hook bloqueia ferramentas locais compatíveis até `tramuri start` ou `tramuri resume`
+terminar com sucesso no turno atual. A cobertura depende do host: caminhos desabilitados, não
+confiáveis, contornados ou hospedados não são impostos. O gate usa apenas metadados do evento e o
+resultado da chamada correspondente à CLI; não lê prompts nem registros da Mission. Instruções e
+skills orientam o agente, mas não obrigam hosts sem um hook aplicável. A instalação preserva
+instruções e hooks não relacionados. Cursor usa `.cursor/rules/tramuri.mdc`,
+`.cursor/skills/tramuri/` e `.cursor/hooks.json`; Copilot usa `.github/hooks/tramuri.json` nos
+runtimes que suportam esse hook; os demais hosts usam seus caminhos nativos.
 
 ```bash
 tramuri install --project --platform copilot
@@ -149,7 +156,7 @@ critérios obrigatórios sejam definidos e avaliados. A prontidão é consultiva
 execução:
 
 ```bash
-tramuri mission create --objective "Investigar abandono no onboarding"
+tramuri start --goal "Investigar abandono no onboarding" --perspective product_engineer
 tramuri readiness assess --mission <id> --activity discover --state needs_review \
   --gap "Os dados das entrevistas ainda não estão disponíveis"
 tramuri status --open
@@ -201,20 +208,26 @@ relevância para Missions; vínculos de capacidades guardam o hash observado e p
 ausentes ou não verificados após novas varreduras. A atribuição do ator é informada pelo chamador e
 não é autenticada.
 
-Siga os tutoriais com projetos sintéticos, da configuração ao handoff, para [Product Engineer e
-FDE](docs/examples/README.pt-BR.md).
+Siga os [tutoriais de Product Engineer e FDE](docs/README.pt-BR.md), com passos de configuração,
+trabalho, evidências, avaliação e handoff usando dados fictícios.
 
 ### Como um assistente pode usar o Tramuri
 
-O instalador do projeto foi pensado para fornecer instruções persistentes e nativas da plataforma
-ao assistente sobre quando o Tramuri é útil. A skill explica o fluxo; a CLI executa operações do
-Tramuri sobre o estado local do projeto. Ambos são opcionais, e o assistente continua livre para
-usar outras ferramentas.
+O instalador do projeto adiciona instruções nativas e skills do Tramuri. Elas orientam o assistente
+a iniciar ou retomar uma Mission antes de usar ferramentas do projeto. Quando a plataforma oferece
+um hook nativo confiável e habilitado, ele bloqueia chamadas locais compatíveis até que
+`tramuri start` ou `tramuri resume` termine com sucesso no turno atual. A cobertura depende dos
+hooks de cada plataforma; caminhos desabilitados, não confiáveis, contornados ou hospedados não são
+impostos. Os hooks usam somente metadados do evento e o resultado da chamada correspondente à CLI;
+não leem nem armazenam prompts ou registros de Missions. Esse gate ajuda a manter a ordem do fluxo,
+mas não é autenticação nem garante que a análise de produto do assistente esteja correta. Consulte
+os [detalhes das integrações](docs/reference/fluxo-operacional-completo.pt-BR.md).
 
 | Interface | Uso |
 | --- | --- |
 | CLI | Executar descoberta local e fluxos de conhecimento e missões. |
-| Skill e instruções do assistente | Ajudar um assistente configurado a escolher e usar a CLI do Tramuri. |
+| Skill e instruções do assistente | Orientar um assistente configurado sobre quando e como usar a CLI do Tramuri. |
+| Hooks nativos | Bloquear ferramentas locais compatíveis até iniciar ou retomar uma Mission, quando ativos e confiáveis na plataforma. |
 | SDK Python | Chamar os mesmos recursos apoiados pelo core Rust a partir de aplicações Python. |
 | MCP | O Tramuri ainda não oferece um servidor MCP; use a CLI ou o SDK. |
 

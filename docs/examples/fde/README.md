@@ -4,8 +4,9 @@ This tutorial simulates a fictional enterprise integration without Git or source
 install Tramuri, record requirements and constraints, simulate validation, and hand the work off to
 another FDE. Do not use credentials, real systems, or customer information.
 
-The commands require Tramuri 0.5.0 or newer. Check `tramuri --version` after installation;
-`uv tool install tramuri` installs the latest published release.
+This tutorial requires Tramuri 0.10.0 or newer. Check `tramuri --version` after installation;
+`uv tool install tramuri` installs the latest published release, which may not yet include this
+workflow. Upgrade before continuing if the installed version is earlier than 0.10.0.
 
 ## 1. Install and prepare a workspace without Git
 
@@ -15,8 +16,6 @@ tramuri --version
 mkdir northstar-integration
 cd northstar-integration
 tramuri install --project --platform codex
-tramuri init .
-tramuri status --open
 ```
 
 Agent integration is optional. The installer preserves existing instructions and installs native
@@ -26,7 +25,7 @@ Mission data is read or stored by the gate.
 
 ## 2. Start with one sentence in Codex
 
-After installation, do not type `tramuri mission create`. Tell Codex what you need to do:
+After installation, tell Codex what you need to do and choose FDE when asked for the perspective:
 
 > I am working as an FDE and want to simulate an order-event integration for the fictional company
 > Northstar. Use fabricated data only, with no Git and no system connections. Start an exploratory
@@ -46,10 +45,11 @@ you prefer the terminal; do not repeat the command sequence in Codex.
 Start without criteria because the details are not known yet:
 
 ```console
-tramuri mission create --objective "Validate synthetic order-event integration for Northstar" --context "Fictional scenario; no production systems or credentials" --json
+tramuri start --goal "Validate synthetic order-event integration for Northstar; use fabricated data only and do not connect to systems" --perspective fde --json
 ```
 
-Save the ID as `<MISSION_ID>` and record known gaps:
+Save the returned ID as `<MISSION_ID>`. `start` initializes the workspace on demand. Open the
+report only after starting or resuming a Mission. Record known gaps:
 
 ```console
 tramuri readiness assess --mission <MISSION_ID> --activity discover --state needs_review --gap "The event fields are not confirmed" --gap "The retention window is not agreed" --actor "FDE 1"

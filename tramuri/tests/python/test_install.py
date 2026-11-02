@@ -148,6 +148,7 @@ assert len(tramuri.readiness_history(project_path, mission_id=exploratory["id"])
 guided = tramuri.mission_start(
     project_path,
     objective="Create a SaaS for selling online courses to learners",
+    perspective="product_engineer",
 )
 assert guided["workflow"]["next_activity"] == "product_framing"
 updated_workflow = tramuri.mission_workflow_activity_set(

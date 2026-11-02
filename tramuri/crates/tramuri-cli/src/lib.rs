@@ -51,7 +51,7 @@ enum Command {
         path: PathBuf,
         #[arg(long)]
         goal: Option<String>,
-        /// product_engineer, fde, mixed, or other.
+        /// Select product_engineer, fde, or mixed. A new Mission requires this choice.
         #[arg(long)]
         perspective: Option<String>,
         #[arg(long)]
@@ -457,7 +457,8 @@ fn parse_mission_perspective(
     value: &str,
 ) -> Result<MissionPerspective, Box<dyn std::error::Error>> {
     MissionPerspective::parse(value)
-        .ok_or_else(|| "perspective must be product_engineer, fde, mixed, or other".into())
+        .filter(|value| *value != MissionPerspective::Other)
+        .ok_or_else(|| "perspective must be product_engineer, fde, or mixed".into())
 }
 
 fn parse_intent_route_source(
@@ -505,18 +506,33 @@ fn prompt(label: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(value)
 }
 
-fn prompt_perspective(
-    suggested: Option<MissionPerspective>,
-) -> Result<MissionPerspective, Box<dyn std::error::Error>> {
-    let suggested = suggested.map(MissionPerspective::as_str).unwrap_or("none");
-    loop {
-        let value = prompt(&format!(
-            "Perspective (product_engineer/fde/mixed/other; suggestion: {suggested}): "
-        ))?;
-        match MissionPerspective::parse(&value) {
-            Some(value) => return Ok(value),
-            None => eprintln!("Choose product_engineer, fde, mixed, or other."),
-        }
+const PERSPECTIVE_CHOICES: [&str; 3] = [
+    "Product Engineer — entende o problema do produto, ajuda a decidir o que construir e acompanha se funcionou.",
+    "FDE — resolve uma necessidade de cliente, conectando sistemas e validando a integração.",
+    "Trabalho misto — combina evolução do produto com uma necessidade de cliente.",
+];
+
+fn prompt_perspective() -> Result<MissionPerspective, Box<dyn std::error::Error>> {
+    let selected = dialoguer::Select::new()
+        .with_prompt("Escolha quem vai conduzir esta Mission (use as setas e confirme com Enter)")
+        .items(&PERSPECTIVE_CHOICES)
+        .interact()?;
+    match selected {
+        0 => Ok(MissionPerspective::ProductEngineer),
+        1 => Ok(MissionPerspective::Fde),
+        2 => Ok(MissionPerspective::Mixed),
+        _ => unreachable!("the perspective selector only exposes three choices"),
+    }
+}
+
+#[cfg(test)]
+mod perspective_prompt_tests {
+    #[test]
+    fn perspective_selector_has_only_three_explained_choices() {
+        assert_eq!(super::PERSPECTIVE_CHOICES.len(), 3);
+        assert!(super::PERSPECTIVE_CHOICES[0].contains("entende o problema do produto"));
+        assert!(super::PERSPECTIVE_CHOICES[1].contains("necessidade de cliente"));
+        assert!(super::PERSPECTIVE_CHOICES[2].contains("combina evolução do produto"));
     }
 }
 
@@ -881,33 +897,86 @@ fn print_define_status(
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if json {
+        // Keep stdout machine-readable while making workflow transitions visible in
+        // interactive agent-hosted terminals and command logs.
+        eprintln!("{}", render_define_progress(status));
         println!("{}", serde_json::to_string_pretty(status)?);
         return Ok(());
     }
-    println!("Mission {} · Product Engineering DEFINE", status.mission_id);
-    println!(
-        "Progresso: {}/{} etapas validadas",
-        status.completed, status.total
-    );
+    println!("{}", render_define_progress(status));
+    Ok(())
+}
+
+fn render_define_progress(status: &tramuri_core::DefineStatus) -> String {
+    let mut lines = vec![
+        format!("Mission: {}", status.mission_id),
+        format!(
+            "Product Engineering · DEFINE · {}/{} etapas · {}",
+            status.completed,
+            status.total,
+            define_state_label(status.state)
+        ),
+        "O que iremos fazer".to_owned(),
+    ];
     for step in &status.steps {
-        let mark = match step.state {
-            tramuri_core::DefineStepState::Completed => "✓",
-            tramuri_core::DefineStepState::InProgress => "◉",
-            tramuri_core::DefineStepState::Blocked => "!",
-            tramuri_core::DefineStepState::ValidationFailed => "×",
-            tramuri_core::DefineStepState::Stale => "↻",
-            tramuri_core::DefineStepState::Pending => " ",
+        let (mark, state) = match step.state {
+            tramuri_core::DefineStepState::Completed => ("☑", "concluída"),
+            tramuri_core::DefineStepState::InProgress => ("▶", "em andamento"),
+            tramuri_core::DefineStepState::Blocked => ("!", "aguardando decisão"),
+            tramuri_core::DefineStepState::ValidationFailed => ("×", "corrigir resultado"),
+            tramuri_core::DefineStepState::Stale => ("↻", "revalidar"),
+            tramuri_core::DefineStepState::Pending => ("☐", "pendente"),
         };
-        println!("[{mark}] {} · {:?}", step.id.as_str(), step.state);
+        lines.push(format!(
+            "{mark} {}/{} · {} · {state}",
+            step.order,
+            status.total,
+            define_step_label(step.id)
+        ));
     }
     if let Some(current) = status.current_step {
-        println!("Etapa autorizada: {}", current.as_str());
+        lines.push(format!("Etapa autorizada: {}", define_step_label(current)));
     }
-    println!(
-        "Esclarecimentos registrados: {}/{}",
+    lines.push(format!(
+        "Perguntas de esclarecimento: {}/{}",
         status.clarification_count, status.clarification_maximum
-    );
-    Ok(())
+    ));
+
+    let width = lines
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or_default();
+    let border = "─".repeat(width + 2);
+    let mut output = format!("┌{border}┐\n");
+    for line in lines {
+        output.push_str("│ ");
+        output.push_str(&line);
+        output.push_str(&" ".repeat(width.saturating_sub(line.chars().count())));
+        output.push_str(" │\n");
+    }
+    output.push_str(&format!("└{border}┘"));
+    output
+}
+
+fn define_step_label(step: tramuri_core::DefineStepId) -> &'static str {
+    match step {
+        tramuri_core::DefineStepId::ObjectiveContext => "Compreender objetivo e contexto",
+        tramuri_core::DefineStepId::BusinessDiscovery => "Identificar problema, público e negócio",
+        tramuri_core::DefineStepId::Requirements => "Definir requisitos, restrições e critérios",
+        tramuri_core::DefineStepId::KnowledgeSynthesis => "Consolidar fatos, hipóteses e lacunas",
+        tramuri_core::DefineStepId::ProductBrief => "Criar o Product Brief",
+    }
+}
+
+fn define_state_label(state: tramuri_core::DefineState) -> &'static str {
+    match state {
+        tramuri_core::DefineState::InProgress => "em andamento",
+        tramuri_core::DefineState::Blocked => "bloqueado",
+        tramuri_core::DefineState::ValidationFailed => "resultado rejeitado",
+        tramuri_core::DefineState::Stale => "revisão necessária",
+        tramuri_core::DefineState::Completed => "concluído",
+    }
 }
 
 fn refresh_reports_best_effort(path: &Path) {
@@ -1075,12 +1144,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 match mission_start(&path, &goal, context.as_deref(), None) {
                     Ok(result) => result,
                     Err(tramuri_core::TramuriError::AmbiguousWorkPerspective) => {
-                        let profile = profile_get(&path)?;
                         if !io::stdin().is_terminal() {
-                            return Err("work perspective is ambiguous; pass --perspective in non-interactive use".into());
+                            return Err("choose who will lead this Mission before continuing: Product Engineer, FDE, or mixed. In an agent session, ask the user to choose and pass --perspective product_engineer, --perspective fde, or --perspective mixed".into());
                         }
-                        let route = tramuri_core::route_intent(&goal, profile, None);
-                        let selected = prompt_perspective(route.perspective)?;
+                        let selected = prompt_perspective()?;
                         mission_start(&path, &goal, context.as_deref(), Some(selected))?
                     }
                     Err(error) => return Err(error.into()),
@@ -1088,6 +1155,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             };
             refresh_reports_best_effort(&path);
             if json {
+                if let Some(define) = &result.define {
+                    eprintln!("{}", render_define_progress(define));
+                }
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {
                 let perspective = result
@@ -1395,18 +1465,23 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         }
                     } else {
                         let result = define_next(&path, &mission)?;
+                        let status = define_status(&path, &mission)?;
+                        let progress = render_define_progress(&status);
                         if json {
+                            eprintln!("{progress}");
                             println!("{}", serde_json::to_string_pretty(&result)?);
                         } else {
-                            println!(
-                                "Mission {} · DEFINE · {}/{} etapas validadas",
-                                result.mission_id, result.progress.completed, result.progress.total
-                            );
+                            println!("{progress}");
                             if let Some(step) = result.current_step {
                                 println!(
-                                    "Próxima etapa: {} · skill {}",
-                                    step.id.as_str(),
-                                    step.skill
+                                    "Use a skill {} para a etapa {}.",
+                                    step.skill,
+                                    define_step_label(step.id),
+                                );
+                                println!(
+                                    "Contrato: versão {} · {} campos obrigatórios.",
+                                    step.contract_version,
+                                    step.required_fields.len()
                                 );
                             } else {
                                 println!("Ação: {}", result.next_action);
@@ -1434,9 +1509,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         skill.as_deref(),
                     )?;
                     refresh_reports_best_effort(&path);
+                    let progress = render_define_progress(&define_status(&path, &mission)?);
                     if json {
+                        eprintln!("{progress}");
                         println!("{}", serde_json::to_string_pretty(&result)?);
                     } else if result.accepted {
+                        println!("{progress}");
                         println!(
                             "Etapa {} validada · progresso {}/5",
                             step.as_str(),
@@ -1450,6 +1528,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             );
                         }
                     } else {
+                        println!("{progress}");
                         println!(
                             "Etapa {} rejeitada; permaneceu na etapa atual.",
                             step.as_str()
@@ -1487,6 +1566,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         let result = define_brief_assess(&path, &mission, payload)?;
                         refresh_reports_best_effort(&path);
                         if json {
+                            eprintln!(
+                                "{}",
+                                render_define_progress(&define_status(&path, &mission)?)
+                            );
                             println!("{}", serde_json::to_string_pretty(&result)?);
                         } else {
                             println!(
@@ -1518,9 +1601,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             skill.as_deref(),
                         )?;
                         refresh_reports_best_effort(&path);
+                        let progress = render_define_progress(&define_status(&path, &mission)?);
                         if json {
+                            eprintln!("{progress}");
                             println!("{}", serde_json::to_string_pretty(&result)?);
                         } else if result.accepted {
+                            println!("{progress}");
                             println!(
                                 "Revisão da etapa {} validada; versão anterior preservada.",
                                 step.as_str()
@@ -1532,6 +1618,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                                 );
                             }
                         } else {
+                            println!("{progress}");
                             println!("Revisão rejeitada; o artefato aceito permaneceu ativo.");
                             for error in result.errors {
                                 println!("- {} ({}): {}", error.code, error.field, error.message);
@@ -1559,8 +1646,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         )?;
                         refresh_reports_best_effort(&path);
                         if json {
+                            eprintln!(
+                                "{}",
+                                render_define_progress(&define_status(&path, &mission)?)
+                            );
                             println!("{}", serde_json::to_string_pretty(&result)?);
                         } else {
+                            println!(
+                                "{}",
+                                render_define_progress(&define_status(&path, &mission)?)
+                            );
                             println!(
                                 "Esclarecimento registrado ({}) para {}: {}",
                                 result.state,
@@ -1586,8 +1681,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         )?;
                         refresh_reports_best_effort(&path);
                         if json {
+                            eprintln!(
+                                "{}",
+                                render_define_progress(&define_status(&path, &mission)?)
+                            );
                             println!("{}", serde_json::to_string_pretty(&result)?);
                         } else {
+                            println!(
+                                "{}",
+                                render_define_progress(&define_status(&path, &mission)?)
+                            );
                             println!("Esclarecimento {} registrado.", result.id);
                         }
                     }
@@ -2154,7 +2257,7 @@ fn status_hint(path: &Path) -> String {
         }
     };
     format!(
-        "Tramuri integration is installed. {workspace_state} For a substantive new project, product goal, feature, customer integration, or multi-step handoff, invoke the Tramuri start workflow before inspecting project files or choosing another workflow tool, even when the user does not name Tramuri. If an appropriate Mission already exists, resume it; otherwise use `tramuri start --goal \"...\"` to create an exploratory Mission. Installing this project integration is the user's opt-in: do not ask whether to use Tramuri or initialize this workspace. `tramuri start` creates local state only after a clear goal is supplied. Do not create Missions for one-shot questions. Ask only when the goal, perspective, or Mission choice is materially ambiguous. This SessionStart hook checks database-file presence only; it does not read Mission records, inspect prompts, or run migrations."
+        "Tramuri integration is installed. {workspace_state} For a substantive new project, product goal, feature, customer integration, or multi-step handoff, invoke the Tramuri start workflow before inspecting project files or choosing another workflow tool, even when the user does not name Tramuri. If an appropriate Mission already exists, resume it; otherwise start an exploratory Mission. Installing this project integration is the user's opt-in: do not ask whether to use Tramuri or initialize this workspace. `tramuri start` creates local state only after a clear goal and explicit work-perspective choice are supplied. For each new Mission, require the user to choose Product Engineer, FDE, or mixed; do not infer the choice from the objective, saved profile, skills, or agent. Ask in chat when the CLI is non-interactive; an interactive CLI offers the three explained choices. Do not create Missions for one-shot questions. Ask only when the goal or existing-Mission selection is materially ambiguous. This SessionStart hook checks database-file presence only; it does not read Mission records, inspect prompts, or run migrations."
     )
 }
 
@@ -2655,7 +2758,7 @@ fn print_install_summary(platform: integrations::Platform, files: &[String]) {
         "  1. Tell your assistant the outcome you want in natural language. For substantive work, Tramuri starts or resumes a Mission and initializes this workspace when needed."
     );
     println!(
-        "     It asks only when the goal or work perspective is materially unclear. A one-shot question does not create a Mission; scanning is optional."
+        "     A new Mission requires an explicit choice among Product Engineer, FDE, and mixed; the terminal offers a three-choice selector and an agent asks in chat. Exact Mission resumption keeps its recorded choice. A one-shot question does not create a Mission; scanning is optional."
     );
     println!(
         "  2. After recorded Mission work, the assistant refreshes and opens the local report at most once per session."

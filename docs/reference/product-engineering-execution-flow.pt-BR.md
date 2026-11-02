@@ -6,6 +6,8 @@ pelo agente hospedeiro e suas ferramentas.
 
 Para os contratos de revisão de etapas aceitas, propagação `stale` e avaliação do Product Brief,
 consulte [DEFINE: revisão, validade e avaliação](define-hardening.pt-BR.md).
+Para o detalhe de roteamento PE/FDE, skills, operações determinísticas e registros SQLite,
+consulte [Fluxo operacional completo do Tramuri](fluxo-operacional-completo.pt-BR.md).
 
 ```mermaid
 flowchart TD
@@ -16,11 +18,12 @@ flowchart TD
     C2 --> D
     D --> D1{Já existe Mission aberta<br/>que corresponde ao objetivo?}
     D1 -- Sim --> E[tramuri resume --mission ID]
-    D1 -- Não --> F[tramuri start --goal objetivo]
+    D1 -- Não --> F[Pessoa escolhe Product Engineer, FDE ou trabalho misto]
+    F --> F1[tramuri start --goal objetivo --perspective escolhida]
     D1 -- Escolha ambígua --> Q[Perguntar somente o necessário<br/>e reavaliar no próximo turno]
     Q --> D
     E --> G{CLI terminou com sucesso?}
-    F --> G
+    F1 --> G
     G -- Não --> H[Gate continua fechado;<br/>corrigir seleção ou esclarecer objetivo]
     H --> D
     G -- Sim --> I[Gate libera ferramentas locais<br/>neste turno]
@@ -87,6 +90,11 @@ flowchart TD
   já existentes; o hook não executa migrations por conta própria.
 - Se existir Mission compatível, o agente retoma aquela Mission. Se não existir, inicia uma nova.
   Quando a escolha for realmente ambígua, pergunta antes de selecionar.
+- Antes de criar uma Mission nova, a pessoa escolhe Product Engineer, FDE ou trabalho misto. No
+  terminal interativo, `tramuri start` mostra um seletor com uma descrição simples para cada opção.
+  Em sessões de agente sem terminal interativo, o agente pergunta no chat e passa a escolha em
+  `--perspective`. O Core rejeita início sem perspectiva; a escolha fica registrada na Mission no
+  SQLite. Uma Mission retomada mantém a perspectiva já salva.
 - Para Product Engineering, `tramuri start` cria a Mission exploratória e inicia no Core o workflow
   persistido DEFINE, com a etapa `objective_context` autorizada. O usuário não precisa configurar
   Success Contract completo para começar.

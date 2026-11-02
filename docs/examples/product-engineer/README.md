@@ -5,8 +5,9 @@ each other. It covers installation, setup, Mission, discovery, prototype, eviden
 handoff. Git and real user data are not required. A completed execution does not mean the outcome is
 verified.
 
-The commands require Tramuri 0.5.0 or newer. Check `tramuri --version` after installation;
-`uv tool install tramuri` installs the latest published release.
+This tutorial requires Tramuri 0.10.0 or newer. Check `tramuri --version` after installation;
+`uv tool install tramuri` installs the latest published release, which may not yet include this
+workflow. Upgrade before continuing if the installed version is earlier than 0.10.0.
 
 ## 1. Install and set up
 
@@ -56,11 +57,23 @@ product flow still needs discovery:
 tramuri start --goal "Build the first version of an app for neighbors to lend tools" --perspective product_engineer --json
 ```
 
-Save the returned ID as `<MISSION_ID>` and record a known gap:
+Save the returned ID as `<MISSION_ID>`. A Product Engineer Mission starts the five-step DEFINE
+workflow. Inspect the persisted state and ask Core for the only step currently authorized:
 
 ```console
-tramuri mission workflow activity --mission <MISSION_ID> --activity discover
-tramuri readiness assess --mission <MISSION_ID> --activity discover --state needs_review --gap "We have not learned which tools neighbors would be willing to lend" --actor "Product Engineer"
+tramuri mission define status --mission <MISSION_ID> --json
+tramuri mission define next --mission <MISSION_ID> --json
+```
+
+For each step, submit a structured result that follows the contract returned by `next`; only an
+accepted submission advances the workflow. The assistant path in this tutorial does this using the
+installed skills. For terminal-only operation, see the [DEFINE technical flow](../../reference/product-engineering-execution-flow.md).
+
+After all five steps are accepted, set the next activity to prototyping and record an open question:
+
+```console
+tramuri mission workflow set --mission <MISSION_ID> --perspective product_engineer --activity prototype
+tramuri readiness assess --mission <MISSION_ID> --activity prototype --state needs_review --gap "We have not learned which tools neighbors would be willing to lend" --actor "Product Engineer"
 tramuri status
 tramuri resume --mission <MISSION_ID>
 ```

@@ -4,8 +4,9 @@ Este tutorial simula uma integração empresarial fictícia sem Git ou código-f
 Tramuri, registrará requisitos e restrições, simulará uma validação e fará handoff a outro FDE. Não
 use credenciais, sistemas reais ou informações de clientes.
 
-Os comandos requerem Tramuri 0.5.0 ou mais recente. Confira `tramuri --version` após instalar;
-`uv tool install tramuri` instala a versão publicada mais recente.
+Este tutorial requer Tramuri 0.10.0 ou mais recente. Confira `tramuri --version` após instalar;
+`uv tool install tramuri` instala a versão publicada mais recente, que pode ainda não incluir esse
+fluxo. Atualize antes de continuar se a versão instalada for anterior a 0.10.0.
 
 ## 1. Instalar e preparar um workspace sem Git
 
@@ -15,8 +16,6 @@ tramuri --version
 mkdir northstar-integration
 cd northstar-integration
 tramuri install --project --platform codex
-tramuri init .
-tramuri status --open
 ```
 
 A integração de agente é opcional. O instalador preserva as instruções existentes e instala hooks
@@ -27,7 +26,8 @@ Mission.
 
 ## 2. Começar com uma frase no Codex
 
-Depois da instalação, não digite `tramuri mission create`. Diga ao Codex o que precisa fazer:
+Depois da instalação, diga ao Codex o que precisa fazer e escolha FDE quando ele perguntar a
+perspectiva:
 
 > Estou atuando como FDE e quero simular uma integração de eventos de pedidos para a empresa
 > fictícia Northstar. Use somente dados inventados, sem Git e sem conectar a sistemas. Comece uma
@@ -47,10 +47,11 @@ operar pelo terminal; não repita a sequência de comandos no Codex.
 teste. Comece sem critérios, pois os detalhes ainda serão descobertos:
 
 ```console
-tramuri mission create --objective "Validar integração fictícia de eventos de pedidos da Northstar" --context "Cenário fictício; sem sistemas de produção ou credenciais" --json
+tramuri start --goal "Validar integração fictícia de eventos de pedidos da Northstar; usar somente dados sintéticos, sem conectar a sistemas" --perspective fde --json
 ```
 
-Guarde o ID como `<MISSION_ID>` e registre lacunas conhecidas:
+Guarde o ID retornado como `<MISSION_ID>`. `start` inicializa o workspace sob demanda. Abra o
+relatório somente depois de iniciar ou retomar uma Mission. Registre lacunas conhecidas:
 
 ```console
 tramuri readiness assess --mission <MISSION_ID> --activity discover --state needs_review --gap "Os campos do evento ainda não foram confirmados" --gap "O período de retenção ainda não foi acordado" --actor "FDE 1"

@@ -345,9 +345,9 @@ fn _define_question_answer_json(
 }
 
 fn parse_mission_perspective(value: &str) -> PyResult<MissionPerspective> {
-    MissionPerspective::parse(value).ok_or_else(|| {
-        TramuriError::new_err("perspective must be product_engineer, fde, mixed, or other")
-    })
+    MissionPerspective::parse(value)
+        .filter(|perspective| *perspective != MissionPerspective::Other)
+        .ok_or_else(|| TramuriError::new_err("perspective must be product_engineer, fde, or mixed"))
 }
 
 #[pyfunction]

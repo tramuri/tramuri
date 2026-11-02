@@ -78,7 +78,7 @@ pub enum TramuriError {
     #[error("invalid Tramuri workflow configuration: {0}")]
     InvalidWorkProfileConfig(String),
     #[error(
-        "work perspective is ambiguous; choose --perspective product_engineer, fde, mixed, or other"
+        "work perspective must be selected before starting a Mission: product_engineer, fde, or mixed"
     )]
     AmbiguousWorkPerspective,
     #[error("execution was not found: {0}")]

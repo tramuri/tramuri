@@ -1530,6 +1530,11 @@ mod tests {
             assert!(instructions.contains("even when the user does not mention Tramuri"));
             assert!(instructions.contains("one-shot questions"));
             assert!(instructions.contains("do not ask whether to use Tramuri or initialize"));
+            assert!(
+                instructions
+                    .contains("For a new Mission, always ask the user to choose Product Engineer")
+            );
+            assert!(instructions.contains("Do not use intent routing or saved profile defaults"));
             assert!(instructions.contains("Do not claim an Execution verifies an Outcome"));
             assert!(instructions.contains("explicit selection and authorization"));
             let main_skill = fs::read_to_string(
@@ -1569,6 +1574,14 @@ mod tests {
                     .contains("Do not run an extra refresh after each such write")
             );
             assert!(start_skill_normalized.contains("tramuri status --refresh"));
+            assert!(
+                start_skill_normalized
+                    .contains("A new Mission always requires the user's perspective choice")
+            );
+            assert!(
+                start_skill_normalized
+                    .contains("Do not infer the choice from the goal, a saved default")
+            );
             assert_eq!(skill_paths(platform).len(), 12);
             for (relative, _) in skill_paths(platform) {
                 let skill = fs::read_to_string(project.path().join(&relative)).unwrap();

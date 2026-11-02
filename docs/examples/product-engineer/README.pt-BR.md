@@ -5,8 +5,9 @@ emprestarem ferramentas. Ele percorre instalação, configuração, Mission, dis
 evidências, revisão e handoff. Não exige Git nem dados reais de usuários. Execução concluída não
 significa resultado verificado.
 
-Os comandos requerem Tramuri 0.5.0 ou mais recente. Depois de instalar, confira `tramuri --version`;
-`uv tool install tramuri` instala a versão publicada mais recente.
+Este tutorial requer Tramuri 0.10.0 ou mais recente. Confira `tramuri --version` após instalar;
+`uv tool install tramuri` instala a versão publicada mais recente, que pode ainda não incluir esse
+fluxo. Atualize antes de continuar se a versão instalada for anterior a 0.10.0.
 
 ## 1. Instalar e configurar
 
@@ -56,11 +57,25 @@ produto ainda será descoberto:
 tramuri start --goal "Criar a primeira versão de um aplicativo para vizinhos emprestarem ferramentas" --perspective product_engineer --json
 ```
 
-Guarde o ID retornado como `<MISSION_ID>` e registre uma lacuna:
+Guarde o ID retornado como `<MISSION_ID>`. Uma Mission de Product Engineer inicia o workflow DEFINE
+de cinco etapas. Consulte o estado persistido e peça ao Core a única etapa autorizada no momento:
 
 ```console
-tramuri mission workflow activity --mission <MISSION_ID> --activity discover
-tramuri readiness assess --mission <MISSION_ID> --activity discover --state needs_review --gap "Ainda não sabemos quais ferramentas os vizinhos estariam dispostos a emprestar" --actor "Engenheiro de Produto"
+tramuri mission define status --mission <MISSION_ID> --json
+tramuri mission define next --mission <MISSION_ID> --json
+```
+
+Em cada etapa, envie um resultado estruturado que siga o contrato retornado por `next`; só uma
+submissão aceita avança o workflow. O caminho com assistente deste tutorial faz isso usando as
+skills instaladas. Para operar somente pelo terminal, consulte o
+[fluxo técnico do DEFINE](../../reference/product-engineering-execution-flow.pt-BR.md).
+
+Depois que as cinco etapas forem aceitas, defina a próxima atividade como prototipação e registre
+uma questão em aberto:
+
+```console
+tramuri mission workflow set --mission <MISSION_ID> --perspective product_engineer --activity prototype
+tramuri readiness assess --mission <MISSION_ID> --activity prototype --state needs_review --gap "Ainda não sabemos quais ferramentas os vizinhos estariam dispostos a emprestar" --actor "Engenheiro de Produto"
 tramuri status
 tramuri resume --mission <MISSION_ID>
 ```

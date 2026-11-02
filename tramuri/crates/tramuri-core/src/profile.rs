@@ -277,7 +277,10 @@ fn initial_activity(perspective: MissionPerspective) -> &'static str {
     }
 }
 
-/// Start an exploratory Mission. This operation is explicit and initializes the workspace if needed.
+/// Start or resume an exploratory Mission.
+///
+/// A new Mission requires an explicit work perspective. Intent routing and saved profile values are
+/// suggestions only; a unique exact match reuses the already persisted Mission perspective.
 pub fn mission_start(
     path: impl AsRef<Path>,
     objective: &str,
@@ -348,7 +351,12 @@ pub fn mission_start(
                 .join(", "),
         ));
     }
-    if profile.ask_work_perspective == AskWorkPerspective::Always && explicit.is_none() {
+    // Intent classification and saved defaults are suggestions. A new Mission requires an
+    // explicit perspective selection; existing exact matches were resumed above.
+    if explicit.is_none() {
+        return Err(TramuriError::AmbiguousWorkPerspective);
+    }
+    if explicit == Some(MissionPerspective::Other) {
         return Err(TramuriError::AmbiguousWorkPerspective);
     }
     let route = route_intent(objective, profile, explicit);
@@ -878,7 +886,7 @@ mod tests {
             project.path(),
             "Quero criar um SaaS de venda de cursos online para alunos",
             None,
-            None,
+            Some(MissionPerspective::ProductEngineer),
         )
         .unwrap();
         assert!(started.mission.success_contract.criteria.is_empty());
@@ -900,13 +908,62 @@ mod tests {
     }
 
     #[test]
+    fn a_new_mission_requires_a_selected_perspective_even_when_intent_is_clear() {
+        let project = workspace();
+        let automatic = mission_start(
+            project.path(),
+            "Quero criar um SaaS de cursos online",
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(automatic, TramuriError::AmbiguousWorkPerspective));
+        assert!(!database_path(project.path()).exists());
+
+        crate::init(project.path()).unwrap();
+        profile_set(
+            project.path(),
+            WorkProfile {
+                default_work_perspective: WorkProfilePreference::ProductEngineer,
+                ask_work_perspective: AskWorkPerspective::Ambiguous,
+            },
+        )
+        .unwrap();
+        let configured_default = mission_start(
+            project.path(),
+            "Quero criar um SaaS de cursos online",
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            configured_default,
+            TramuriError::AmbiguousWorkPerspective
+        ));
+        assert!(crate::mission_list(project.path()).unwrap().is_empty());
+
+        let unsupported = mission_start(
+            project.path(),
+            "Quero criar um SaaS de cursos online",
+            None,
+            Some(MissionPerspective::Other),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            unsupported,
+            TramuriError::AmbiguousWorkPerspective
+        ));
+        assert!(crate::mission_list(project.path()).unwrap().is_empty());
+    }
+
+    #[test]
     fn start_reuses_only_one_exact_open_mission_and_preserves_its_profile() {
         let project = workspace();
         let first = mission_start(
             project.path(),
             "Quero criar um SaaS para vender cursos online",
             None,
-            None,
+            Some(MissionPerspective::ProductEngineer),
         )
         .unwrap();
         profile_set(
@@ -988,7 +1045,7 @@ mod tests {
             project.path(),
             "Quero criar um SaaS para vender cursos online",
             None,
-            None,
+            Some(MissionPerspective::ProductEngineer),
         )
         .unwrap();
         let updated =
@@ -1001,7 +1058,7 @@ mod tests {
         );
         assert_eq!(
             updated.perspective_source,
-            Some(IntentRouteSource::CurrentIntent)
+            Some(IntentRouteSource::Explicit)
         );
         assert_eq!(updated.perspective_history.len(), 1);
     }
@@ -1031,7 +1088,13 @@ mod tests {
     #[test]
     fn changing_planned_activity_preserves_but_stales_a_different_readiness_assessment() {
         let project = workspace();
-        let started = mission_start(project.path(), "Criar um produto", None, None).unwrap();
+        let started = mission_start(
+            project.path(),
+            "Criar um produto",
+            None,
+            Some(MissionPerspective::ProductEngineer),
+        )
+        .unwrap();
         crate::readiness_assess(
             project.path(),
             crate::ReadinessAssessmentInput {

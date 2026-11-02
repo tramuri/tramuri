@@ -15,17 +15,15 @@ success criteria, or resume previously recorded work.
   empty Success Contract and refine criteria during Discovery. Ask only for information that
   materially affects the next action, one focused question at a time. A Mission does not require
   Git, source code, an agent, or a scan.
-- At a new Mission, establish the work perspective (Product Engineer, FDE, another perspective, or
-  no preference). Infer it only when the request makes it clear, say what you inferred, and allow
-  correction. Record the Mission perspective and its source (`explicit`, `current_intent`,
-  `profile`, or `inferred`) separately from the Execution actor. Reuse a recorded perspective on
-  resume and switch only when asked or when the work clearly changes. The perspective is not the
-  executor's identity.
-- For a new, substantive objective, prefer `tramuri start --goal "..." --perspective ...` so an
-  exploratory Mission, perspective source, and planned Discovery activity are recorded together.
-  Current explicit intent can override the configured default. Ask one concise question if routing
-  remains ambiguous. Routing is a suggestion from a small deterministic phrase set; do not claim
-  the Core understands arbitrary natural language.
+- At a new Mission, require the user's explicit choice of Product Engineer, FDE, or mixed work. If
+  the user did not choose in the current request, ask one concise question with these three choices
+  and short descriptions; do not infer from intent, profile, or installed skills. The interactive
+  `tramuri start` command displays the selector; non-interactive callers must pass the selected
+  `--perspective`. The Core rejects a new Mission without a selection and persists the declared
+  choice with its source separately from the Execution actor. Reuse a recorded perspective on resume.
+  A perspective describes the work and does not authenticate the person or agent doing it.
+- Intent routing remains available as a suggestion for the selector, not as authorization to create
+  a Mission. Do not claim the Core understands arbitrary natural language.
 - Keep planned activity separate from Context Readiness. Starting Discovery leaves readiness
   `not_assessed`; never promote it automatically. Avoid one Execution per conversational question.
 - Update a Mission's current focus with `tramuri mission workflow activity --mission <id> --activity

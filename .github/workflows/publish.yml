@@ -238,7 +238,11 @@ jobs:
           assert tramuri.__version__
           product_skill = Path(tramuri.__file__).parent / "skills" / "tramuri-product-engineering" / "SKILL.md"
           assert product_skill.is_file()
-          guided = tramuri.mission_start(workspace, objective="Create a SaaS for selling online courses")
+          guided = tramuri.mission_start(
+              workspace,
+              objective="Create a SaaS for selling online courses",
+              perspective="product_engineer",
+          )
           assert guided["workflow"]["next_activity"] == "product_framing"
           command = Path(".venv-testpypi/bin/tramuri")
           version = subprocess.run([command, "--version"], check=True, capture_output=True, text=True)

@@ -12,12 +12,14 @@ flowchart TD
     C --> D[Direct preflight: version, status, Mission list]
     C2 --> D
     D --> E{An open Mission clearly matches?}
-    E -- Yes --> F[tramuri resume --mission ID]
-    E -- No --> G[tramuri start --goal objective]
-    E -- Ambiguous --> H[Ask only for the necessary clarification]
+    E -- Yes --> F[tramuri resume --mission ID<br/>preserve recorded perspective]
+    E -- No --> G[Require explicit choice: Product Engineer, FDE, or mixed]
+    E -- Ambiguous --> H[Ask which existing Mission to resume]
     H --> D
+    G --> G1[TTY selector: arrows + Enter;<br/>agent asks in chat]
+    G1 --> G2[tramuri start --goal objective<br/>--perspective selected-value]
     F --> I{CLI succeeded?}
-    G --> I
+    G2 --> I
     I -- No --> J[Gate remains locked; fix selection or clarify]
     J --> D
     I -- Yes --> K[Hookable local tools are unlocked for this turn]
@@ -73,8 +75,11 @@ flowchart TD
   unavailable, disabled, or bypassed.
 - `status` and `mission list` are preflight queries; they do not create/select a Mission or unlock
   the hook gate. Opening a supported older database may apply its existing additive migrations.
-- A clear objective starts an exploratory Mission. Product Engineer `tramuri start` also initializes
-  persistent DEFINE in the Core. A complete Success Contract is not required.
+- A new Mission requires an explicit choice among Product Engineer, FDE, or mixed. A terminal start
+  presents a three-option selector; an agent asks in chat and passes the selected value. Defaults and
+  intent inference can suggest but cannot choose. A unique exact open Mission match resumes with its
+  stored perspective. Product Engineer `tramuri start` also initializes persistent DEFINE in the Core.
+  A complete Success Contract is not required.
 - The host calls `tramuri mission define next --mission <id> --json`, loads the returned skill,
   produces structured JSON, and submits it. The Core rejects out-of-order steps and does not advance
   after rejection. CLI transitions refresh local reports best-effort without reopening the browser.

@@ -20,6 +20,9 @@ between sessions and distinguish completed work from results that have actually 
 Tramuri is designed for Product Engineers, Forward Deployed Engineers (FDEs), and product teams.
 It works without requiring a source-code repository, an LLM, or a particular agent framework.
 
+> **New to Tramuri?** Start with the [Product Engineer](docs/examples/product-engineer/README.md)
+> or [FDE tutorial](docs/examples/fde/README.md). Both include Portuguese (Brazil) versions.
+
 ## What Tramuri provides
 
 - **Missions and Success Contracts** to describe an objective and its acceptance criteria.
@@ -98,10 +101,15 @@ tramuri install --platform codex --project
 
 Then describe a substantive goal in the assistant chat, for example: “I want to improve customer
 onboarding” or “I am taking over this customer integration.” The installed instructions guide a
-Mission start or resume even if you do not mention Tramuri. A clear goal initializes the local
-database automatically; tell the assistant your work perspective only if it is not clear from the
-request. You do not need to run `tramuri init` first or learn CLI syntax. Mission and Success Contract
-setup stays exploratory, and a project scan is optional. At the end of a coherent work session that
+Mission start or resume even if you do not mention Tramuri. For a new Mission, explicitly choose one
+of three perspectives: Product Engineer (shapes the product problem and helps decide what to build),
+FDE (connects systems to solve a customer need), or mixed work (combines product evolution and a
+customer integration). In a terminal, use the arrow-key selector and press Enter; in an agent session,
+answer in chat. Tramuri stores the choice on the Mission. Saved defaults and intent routing may
+suggest a perspective but cannot replace the user's choice. A unique exact match can resume an
+existing Mission with its recorded perspective. You do not need to run `tramuri init` first or learn
+CLI syntax. Mission and Success Contract setup stays exploratory, and a project scan is optional. At
+the end of a coherent work session that
 changes Mission records, the assistant refreshes the local reports. It opens the HTML only if it has
 not already opened it during that session; otherwise it refreshes the files without opening another
 browser window. You can also ask “open the Tramuri report,” run `tramuri status --open`, or run
@@ -141,7 +149,7 @@ activity. A Mission can start without criteria; its Outcome stays pending until 
 are added and reviewed. Readiness is advisory and never blocks execution:
 
 ```bash
-tramuri start --goal "Criar um produto para pequenos negócios"
+tramuri start --goal "Create a product for small businesses" --perspective product_engineer
 tramuri status
 tramuri resume --mission <id>
 ```
@@ -177,15 +185,13 @@ loaded a skill, that research claims are true, or that the Product Brief is corr
 the analysis and uses its available tools. Completing DEFINE stores a Product Brief; it does not
 build, ship, or verify the product, and it does not mark the Mission Outcome as achieved.
 
-`tramuri start` creates an exploratory Mission and routes clear phrases to a work perspective.
-Product Engineer Missions also retain their existing `product_framing` focus; other perspectives
-start with Discovery. The DEFINE checklist is a separate, deterministic Product Engineering
-workflow.
-The Context Readiness stays `not_assessed` until
-someone records an assessment. When intent is unclear, provide `--perspective product_engineer|fde|mixed|other`
-or ask the assistant to clarify. Routing in the Rust Core uses a small phrase set; it does not claim
-general natural-language understanding. A connected assistant can suggest a perspective, which the
-user can correct.
+`tramuri start` creates an exploratory Mission only after an explicit perspective is selected. New
+Missions accept `product_engineer`, `fde`, or `mixed`; the legacy `other` value remains readable in
+existing records but is not offered at start. Product Engineer Missions retain their `product_framing`
+focus; other perspectives start with Discovery. The DEFINE checklist is a separate, deterministic
+Product Engineering workflow. Context Readiness stays `not_assessed` until someone records an
+assessment. Rust Core routing may suggest a perspective using a small phrase set, but it is not
+general natural-language understanding and does not confirm a choice for the user.
 
 Choose a default perspective for this workspace with:
 
@@ -231,22 +237,25 @@ includes only those recorded associations. Tramuri does not infer Mission releva
 links retain the observed source hash and become changed, missing, or unverified after later scans.
 Actor attribution is caller supplied and is not authenticated.
 
-Follow complete synthetic projects from setup to handoff in the [Product Engineer and FDE
-examples](docs/examples/README.md).
+Follow the [Product Engineer and FDE tutorials](docs/README.md), with step-by-step setup, work,
+evidence, review, and handoff using fictional data.
 
 ### How an assistant can use Tramuri
 
-The project installer gives a supported assistant persistent, platform-native workflow guidance.
-For substantive project work, the instructions direct the assistant to start or resume a Mission
-before exploring files or invoking other creation tools, then continue the requested task. The skill
-explains the workflow; the CLI performs Tramuri operations against local project state. Hooks do not
-inspect prompts or force an assistant to follow instructions, so this remains host guidance rather
-than a technical enforcement mechanism.
+The project installer adds platform-native instructions and Tramuri skills. They guide the assistant
+to start or resume a Mission before using project tools. Where a host supports a trusted, enabled
+native hook, the hook blocks supported local project-tool calls until `tramuri start` or
+`tramuri resume` succeeds in the current prompt or turn. Coverage depends on each host's hook
+surface; disabled, untrusted, bypassed, and hosted tool paths are not enforced. Hooks use only the
+host's event metadata and the matching Tramuri command result; they do not read or store prompt text
+or Mission records. This gate is a workflow guardrail, not authentication or a guarantee that an
+assistant's product analysis is correct. See the [integration details](docs/reference/product-engineering-execution-flow.md).
 
 | Interface | Use |
 | --- | --- |
 | CLI | Run local discovery, knowledge, and mission workflows. |
 | Assistant skill and instructions | Help an installed assistant choose and use Tramuri's CLI. |
+| Native hooks | Gate supported local project tools until a Mission is started or resumed, when active and trusted by the host. |
 | Python SDK | Call the same Rust-backed capabilities from Python applications. |
 | MCP | No Tramuri MCP server is available currently; use the CLI or SDK. |
 

@@ -8,6 +8,19 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-02
+
+### Added
+
+- A three-choice Product Engineer, FDE, or mixed-work selector when starting a new Mission in an interactive terminal, with plain-language descriptions.
+- A required explicit perspective for new Missions across the Rust Core, CLI, and Python SDK. The selected perspective is stored with the Mission; a unique exact Mission match resumes with its existing perspective.
+- Matching perspective-selection guidance in the installed instructions and skills for Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot.
+- A terminal checklist that shows persisted Product Engineering DEFINE progress while keeping `--json` output machine-readable.
+
+### Changed
+
+- Intent routing and saved work-profile defaults are suggestions only; neither can create a new Mission without the user's perspective selection. The legacy `other` perspective remains readable in existing records but is not available for new Mission starts.
+
 ## [0.9.0] - 2026-11-02
 
 ### Added

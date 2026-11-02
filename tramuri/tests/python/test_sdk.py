@@ -130,9 +130,12 @@ def test_guided_start_profile_and_execution_lifecycle(tmp_path: Path) -> None:
     profile_set(tmp_path, perspective="fde")
     assert profile_get(tmp_path)["default_work_perspective"] == "fde"
 
-    # Clear product intent takes precedence over the configured default.
-    started = mission_start(tmp_path, objective="Quero criar um produto para pequenos negócios")
-    assert started["route"]["source"] == "current_intent"
+    # A selected perspective takes precedence over the configured default.
+    started = mission_start(
+        tmp_path, objective="Quero criar um produto para pequenos negócios",
+        perspective="product_engineer",
+    )
+    assert started["route"]["source"] == "explicit"
     assert started["workflow"]["perspective"] == "product_engineer"
     assert started["workflow"]["next_activity"] == "product_framing"
     assert started["mission"]["success_contract"]["criteria"] == []
@@ -146,7 +149,7 @@ def test_guided_start_profile_and_execution_lifecycle(tmp_path: Path) -> None:
         tmp_path, mission_id=started["mission"]["id"], next_activity="discover"
     )
     assert focused["next_activity"] == "discover"
-    assert focused["perspective_source"] == "current_intent"
+    assert focused["perspective_source"] == "explicit"
     assert len(focused["perspective_history"]) == 1
     reused = mission_start(tmp_path, objective="Quero criar um produto para pequenos negócios")
     assert reused["mission_reused"] is True
@@ -168,7 +171,10 @@ def test_guided_start_profile_and_execution_lifecycle(tmp_path: Path) -> None:
 
 def test_define_python_sdk_persists_and_gates_structured_step_results(tmp_path: Path) -> None:
     init(tmp_path)
-    started = mission_start(tmp_path, objective="Quero criar um SaaS de cursos online")
+    started = mission_start(
+        tmp_path, objective="Quero criar um SaaS de cursos online",
+        perspective="product_engineer",
+    )
     mission_id = started["mission"]["id"]
     status_before = mission_define_status(tmp_path, mission_id=mission_id)
     assert status_before["current_step"] == "objective_context"
@@ -194,7 +200,10 @@ def test_define_python_sdk_persists_and_gates_structured_step_results(tmp_path: 
 
 def test_define_review_sdk_preserves_artifact_versions_and_provenance(tmp_path: Path) -> None:
     init(tmp_path)
-    mission = mission_start(tmp_path, objective="Quero criar um SaaS de cursos online")
+    mission = mission_start(
+        tmp_path, objective="Quero criar um SaaS de cursos online",
+        perspective="product_engineer",
+    )
     mission_id = mission["mission"]["id"]
     artifacts = [
         ("objective_context", {"original_intent":"Cursos", "interpreted_objective":"Explorar plataforma", "known_information":["SaaS"], "hypotheses":["instrutores compram"], "gaps":["mercado"]}),
@@ -254,8 +263,8 @@ def test_cli_and_sdk_define_next_have_normalized_parity(tmp_path: Path) -> None:
     cli_project=tmp_path / "cli"; sdk_project=tmp_path / "sdk"
     cli_project.mkdir(); sdk_project.mkdir()
     objective="Quero criar um SaaS de cursos online"
-    sdk_started=mission_start(sdk_project,objective=objective)
-    cli_started=subprocess.run([cli,"start","--path",str(cli_project),"--goal",objective,"--json"],check=True,capture_output=True,text=True,encoding="utf-8")
+    sdk_started=mission_start(sdk_project,objective=objective,perspective="product_engineer")
+    cli_started=subprocess.run([cli,"start","--path",str(cli_project),"--goal",objective,"--perspective","product_engineer","--json"],check=True,capture_output=True,text=True,encoding="utf-8")
     sdk_id=sdk_started["mission"]["id"]; cli_id=json.loads(cli_started.stdout)["mission"]["id"]
     sdk_next=mission_define_next(sdk_project,mission_id=sdk_id)
     cli_next=subprocess.run([cli,"mission","define","next","--path",str(cli_project),"--mission",cli_id,"--json"],check=True,capture_output=True,text=True,encoding="utf-8")
@@ -264,9 +273,21 @@ def test_cli_and_sdk_define_next_have_normalized_parity(tmp_path: Path) -> None:
     assert cli_value == sdk_next
 
 
-def test_guided_start_ambiguous_intent_requires_explicit_choice(tmp_path: Path) -> None:
-    with pytest.raises(TramuriError, match="ambiguous"):
-        mission_start(tmp_path, objective="Quero criar uma solução")
+def test_guided_start_requires_explicit_choice_even_for_clear_intent_or_profile(tmp_path: Path) -> None:
+    init(tmp_path)
+    profile_set(tmp_path, perspective="product_engineer")
+    with pytest.raises(TramuriError, match="must be selected"):
+        mission_start(tmp_path, objective="Quero criar um SaaS de cursos online")
+    assert mission_list(tmp_path) == []
+
+
+def test_guided_start_rejects_legacy_other_as_a_new_mission_choice(tmp_path: Path) -> None:
+    with pytest.raises(TramuriError, match="product_engineer, fde, or mixed"):
+        mission_start(
+            tmp_path,
+            objective="Quero criar um SaaS de cursos online",
+            perspective="other",
+        )
     assert not (tmp_path / ".tramuri" / "database" / "tramuri.sqlite3").exists()
 
 

@@ -25,8 +25,10 @@ skill, even when the user does not name Tramuri. A project integration is opt-in
 authorizes `tramuri start` to initialize local state and create an exploratory Mission when needed.
 Do not ask whether to use Tramuri or initialize. Do not force a Mission for one-shot questions.
 Before acting on existing work, inspect `tramuri mission list` and resume the relevant Mission; if no
-relevant Mission exists, start one. Ask one brief question only if the goal, perspective, or Mission
-choice is materially ambiguous. Do not leave the user to discover the next CLI command. Session hooks
+relevant Mission exists, start one. A new Mission requires the user's explicit choice of Product
+Engineer, FDE, or mixed work. Ask that one short question if the user did not already specify it;
+never infer the choice from the goal or a saved default. Existing Missions retain their stored
+perspective on resume. Do not leave the user to discover the next CLI command. Session hooks
 report database presence without reading Mission records or user prompts; platforms without hooks
 still use these instructions and skills. At the end of a coherent session that changed Mission
 records, refresh reports once: use `tramuri status --open` if the HTML has not been opened in this

@@ -131,7 +131,12 @@ def mission_start(
     path: PathLike = ".", *, objective: str, perspective: str | None = None,
     context: str | None = None,
 ) -> dict[str, Any]:
-    """Start an exploratory Mission; ambiguous routing raises TramuriError."""
+    """Start an exploratory Mission; new Missions require an explicit perspective.
+
+    An exact, unique open Mission match is resumed with its recorded perspective. Otherwise pass
+    ``product_engineer``, ``fde``, or ``mixed``; intent inference and saved defaults never select
+    the Mission perspective on the caller's behalf.
+    """
     return json.loads(_mission_start_json(os.fsdecode(os.fspath(path)), objective, perspective, context))
 
 

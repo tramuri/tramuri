@@ -100,7 +100,7 @@ fn native_hook_cli_blocks_then_unlocks_only_after_successful_start() {
         "session_id":"hook-cli-test-session",
         "tool_use_id":"start-success",
         "tool_name":"Bash",
-        "tool_input":{"command":"tramuri start --goal \"new product\""}
+        "tool_input":{"command":"tramuri start --goal \"new product\" --perspective product_engineer"}
     });
     assert!(
         run_hook_check("claude", "before-tool", &start)
@@ -131,6 +131,8 @@ fn start_routes_exploratory_missions_and_keeps_readiness_unassessed() {
             "start",
             "--goal",
             "Criar um produto para pequenos negócios",
+            "--perspective",
+            "product_engineer",
             "--json",
             "--path",
             path,
@@ -201,6 +203,44 @@ fn start_routes_exploratory_missions_and_keeps_readiness_unassessed() {
             .path()
             .join(".tramuri/database/tramuri.sqlite3")
             .exists()
+    );
+
+    let clear_but_unselected = tempdir().unwrap();
+    let clear_path = clear_but_unselected.path().to_str().unwrap();
+    let output = tramuri()
+        .args([
+            "start",
+            "--goal",
+            "Quero criar um SaaS para vender cursos online",
+            "--path",
+            clear_path,
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("choose who will lead this Mission"));
+    assert!(
+        !clear_but_unselected
+            .path()
+            .join(".tramuri/database/tramuri.sqlite3")
+            .exists()
+    );
+
+    let unsupported = tramuri()
+        .args([
+            "start",
+            "--goal",
+            "Some objective",
+            "--perspective",
+            "other",
+            "--path",
+            clear_path,
+        ])
+        .output()
+        .unwrap();
+    assert!(!unsupported.status.success());
+    assert!(
+        String::from_utf8_lossy(&unsupported.stderr).contains("product_engineer, fde, or mixed")
     );
 }
 
@@ -319,6 +359,8 @@ fn workflow_activity_command_updates_product_phase_without_changing_perspective(
             "start",
             "--goal",
             "Quero criar um SaaS de cursos online",
+            "--perspective",
+            "product_engineer",
             "--json",
             "--path",
             path,
@@ -328,7 +370,7 @@ fn workflow_activity_command_updates_product_phase_without_changing_perspective(
     assert!(started.status.success());
     let started: Value = serde_json::from_slice(&started.stdout).unwrap();
     let mission_id = started["mission"]["id"].as_str().unwrap();
-    assert_eq!(started["workflow"]["perspective_source"], "current_intent");
+    assert_eq!(started["workflow"]["perspective_source"], "explicit");
     assert_eq!(started["workflow"]["next_activity"], "product_framing");
 
     let updated = tramuri()
@@ -350,7 +392,7 @@ fn workflow_activity_command_updates_product_phase_without_changing_perspective(
     let updated: Value = serde_json::from_slice(&updated.stdout).unwrap();
     assert_eq!(updated["next_activity"], "discover");
     assert_eq!(updated["perspective"], "product_engineer");
-    assert_eq!(updated["perspective_source"], "current_intent");
+    assert_eq!(updated["perspective_source"], "explicit");
     assert_eq!(updated["perspective_history"].as_array().unwrap().len(), 1);
 
     let resumed = tramuri()
@@ -452,6 +494,8 @@ fn profile_and_execution_transition_commands_are_explicit() {
             "start",
             "--goal",
             "quero explorar uma necessidade",
+            "--perspective",
+            "fde",
             "--json",
             "--path",
             path,
@@ -924,6 +968,8 @@ fn product_engineering_start_initializes_define_and_cli_gates_progression() {
             path,
             "--goal",
             "Quero criar um SaaS para vender cursos online",
+            "--perspective",
+            "product_engineer",
             "--json",
         ])
         .output()
@@ -933,6 +979,9 @@ fn product_engineering_start_initializes_define_and_cli_gates_progression() {
         "{}",
         String::from_utf8_lossy(&started.stderr)
     );
+    let start_progress = String::from_utf8_lossy(&started.stderr);
+    assert!(start_progress.contains("Product Engineering · DEFINE"));
+    assert!(start_progress.contains("▶ 1/5 · Compreender objetivo e contexto"));
     let started: Value = serde_json::from_slice(&started.stdout).unwrap();
     let id = started["mission"]["id"].as_str().unwrap();
     let report_dir = project.path().join(".tramuri/reports");
@@ -952,6 +1001,9 @@ fn product_engineering_start_initializes_define_and_cli_gates_progression() {
         .output()
         .unwrap();
     assert!(next.status.success());
+    assert!(
+        String::from_utf8_lossy(&next.stderr).contains("▶ 1/5 · Compreender objetivo e contexto")
+    );
     let next: Value = serde_json::from_slice(&next.stdout).unwrap();
     assert_eq!(next["current_step"]["id"], "objective_context");
     assert_eq!(
@@ -979,9 +1031,11 @@ fn product_engineering_start_initializes_define_and_cli_gates_progression() {
         .output()
         .unwrap();
     assert!(rejected.status.success());
+    let rejected_progress = String::from_utf8_lossy(&rejected.stderr);
     let rejected: Value = serde_json::from_slice(&rejected.stdout).unwrap();
     assert_eq!(rejected["accepted"], false);
     assert_eq!(rejected["progress"]["completed"], 0);
+    assert!(rejected_progress.contains("corrigir resultado"));
     fs::write(&artifact, r#"{"original_intent":"Quero criar um SaaS para vender cursos online","interpreted_objective":"Explorar uma plataforma de cursos","known_information":["SaaS","cursos online"],"hypotheses":["instrutores são compradores"],"gaps":["mercado inicial"]}"#).unwrap();
     let accepted = tramuri()
         .args([
@@ -1001,9 +1055,12 @@ fn product_engineering_start_initializes_define_and_cli_gates_progression() {
         .output()
         .unwrap();
     assert!(accepted.status.success());
+    let accepted_progress = String::from_utf8_lossy(&accepted.stderr);
     let accepted: Value = serde_json::from_slice(&accepted.stdout).unwrap();
     assert_eq!(accepted["accepted"], true);
     assert_eq!(accepted["next_step"], "business_discovery");
+    assert!(accepted_progress.contains("☑ 1/5 · Compreender objetivo e contexto"));
+    assert!(accepted_progress.contains("▶ 2/5 · Identificar problema, público e negócio"));
     let report: Value = serde_json::from_slice(
         &fs::read(project.path().join(".tramuri/reports/tramauri.json")).unwrap(),
     )

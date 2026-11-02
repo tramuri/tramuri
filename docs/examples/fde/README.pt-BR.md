@@ -19,8 +19,11 @@ tramuri init .
 tramuri status --open
 ```
 
-A integração de agente é opcional. O instalador preserva instruções existentes; o hook Codex apenas
-exibe um lembrete e não lê dados da Mission nem executa comandos.
+A integração de agente é opcional. O instalador preserva as instruções existentes e instala hooks
+nativos do Codex. Ferramentas locais do projeto ficam bloqueadas até `tramuri start` ou
+`tramuri resume` terminar com sucesso em cada turno. Se os hooks estiverem desativados ou forem
+burlados, as instruções servem apenas como orientação. O gate não lê nem armazena prompts ou dados da
+Mission.
 
 ## 2. Começar com uma frase no Codex
 

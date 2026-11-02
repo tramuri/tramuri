@@ -18,10 +18,13 @@ cd empresta-ferramentas
 tramuri install --project --platform codex
 ```
 
-A integração com Codex preserva instruções existentes. O hook de sessão verifica somente a presença
-do arquivo do banco; as instruções e skills guiam o fluxo sem ler os registros da Mission. Um pedido
-substancial em linguagem natural inicia a Mission exploratória e inicializa o workspace
-automaticamente. Não rode `tramuri init` antes nem abra um relatório vazio.
+A integração com Codex preserva instruções existentes e instala hooks nativos de ferramentas. Em
+cada turno, ferramentas locais do projeto ficam bloqueadas até `tramuri start` ou `tramuri resume`
+terminar com sucesso. O gate não lê nem armazena o prompt ou os registros da Mission. Se o Codex
+desativar/não confiar nos hooks ou usar uma ferramenta hospedada fora do hook local, as instruções
+servem apenas como orientação. Um pedido substancial em linguagem natural inicia a Mission
+exploratória e inicializa o workspace automaticamente. Não rode `tramuri init` antes nem abra um
+relatório vazio.
 
 ## 2. Começar com uma frase no Codex
 

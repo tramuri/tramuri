@@ -18,10 +18,12 @@ cd borrow-tools
 tramuri install --project --platform codex
 ```
 
-The Codex integration preserves existing instructions. Its session hook checks database-file
-presence only; the installed instructions and skills guide the workflow without reading Mission
-data. A substantive natural-language request starts the exploratory Mission and initializes the
-workspace automatically. Do not run `tramuri init` first or open an empty report.
+The Codex integration preserves existing instructions and installs native tool hooks. For each
+turn, local project tools are blocked until `tramuri start` or `tramuri resume` succeeds. The gate
+does not read or store prompt text or Mission data. If Codex disables/untrusts hooks or the tool is
+hosted outside the local hook path, instructions are guidance only. A substantive natural-language
+request starts the exploratory Mission and initializes the workspace automatically. Do not run
+`tramuri init` first or open an empty report.
 
 ## 2. Start with one sentence in Codex
 

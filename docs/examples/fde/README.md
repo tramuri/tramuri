@@ -19,8 +19,10 @@ tramuri init .
 tramuri status --open
 ```
 
-Agent integration is optional. The installer preserves existing instructions; the Codex hook only
-emits a reminder and does not read Mission data or run commands.
+Agent integration is optional. The installer preserves existing instructions and installs native
+Codex tool hooks. Local project tools are blocked until `tramuri start` or `tramuri resume` succeeds
+for each turn. If hooks are disabled or bypassed, instructions are guidance only. No prompt or
+Mission data is read or stored by the gate.
 
 ## 2. Start with one sentence in Codex
 

@@ -18,6 +18,7 @@ use tramuri_core::{
     profile_set, readiness_assess, readiness_get, readiness_history, scan, status_snapshot,
 };
 
+mod hook_gate;
 mod integrations;
 mod reports;
 
@@ -34,6 +35,14 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Internal native integration hook. This command is managed by `tramuri install`.
+    #[command(hide = true)]
+    HookCheck {
+        #[arg(long, value_enum)]
+        platform: integrations::Platform,
+        #[arg(long)]
+        event: String,
+    },
     /// Start an exploratory Mission from an objective, creating the local workspace if needed.
     Start {
         #[arg(long, default_value = ".")]
@@ -142,7 +151,7 @@ enum Command {
         #[command(subcommand)]
         command: ReadinessCommand,
     },
-    /// Install Tramuri's project instructions, skill, and supported session hooks.
+    /// Install Tramuri's project instructions, skills, and native workflow gate hooks.
     Install {
         /// Install into the current or selected project directory.
         #[arg(long, required = true)]
@@ -842,6 +851,24 @@ where
 
 fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
+        Command::HookCheck { platform, event } => {
+            let event = match event.as_str() {
+                "prompt" => hook_gate::GateEvent::Prompt,
+                "before-tool" => hook_gate::GateEvent::BeforeTool,
+                "after-tool" => hook_gate::GateEvent::AfterTool,
+                _ => return Err(format!("unknown internal hook event: {event}").into()),
+            };
+            let decision = hook_gate::read_input()
+                .and_then(|input| hook_gate::handle(platform, event, &input));
+            match decision {
+                Ok(true) => {}
+                Ok(false) | Err(_) => {
+                    if let Some(response) = hook_gate::deny_response(platform, event) {
+                        println!("{}", serde_json::to_string(&response)?);
+                    }
+                }
+            }
+        }
         Command::Start {
             path,
             mut goal,
@@ -1666,7 +1693,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         } => {
             for (platform, installed) in integrations::status(&path)? {
                 if installed && platform.has_hook() {
-                    println!("{platform}: installed (instructions, skill, session hook)");
+                    println!("{platform}: installed (instructions, skills, workflow gate hooks)");
                 } else {
                     println!(
                         "{platform}: {}",
@@ -2131,7 +2158,7 @@ fn print_install_summary(platform: integrations::Platform, files: &[String]) {
         } else if display.contains("/references/") {
             "reference"
         } else if display.ends_with("hooks.json") || display.ends_with("settings.json") {
-            "session hook"
+            "native hooks"
         } else {
             "instructions"
         };
@@ -2139,7 +2166,15 @@ fn print_install_summary(platform: integrations::Platform, files: &[String]) {
     }
     if platform.has_hook() {
         println!(
-            "\nThe project session hook checks database-file presence and guides substantive Tramuri work; it never reads Mission data or user prompts."
+            "\nNative project hooks block local project tools until `tramuri start` or `tramuri resume` succeeds for the current prompt/turn. They do not read or store prompt text or Mission records."
+        );
+        if !matches!(platform, integrations::Platform::Copilot) {
+            println!(
+                "The separate session-start hint checks local database-file presence only; it does not open SQLite or read Mission records."
+            );
+        }
+        println!(
+            "Hooks must be enabled and trusted by the host; hosted or unsupported tool paths may bypass the gate, where instructions remain guidance only."
         );
         println!(
             "Review any project trust prompt shown by your assistant before enabling its hook."

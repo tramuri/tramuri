@@ -3,8 +3,9 @@ deployment, or multi-step handoff, start or resume a Tramuri Mission before expl
 other workflow tools, even when the user does not mention Tramuri. Installing this integration is the
 user's opt-in: do not ask whether to use Tramuri or initialize. A clear goal authorizes
 `tramuri start --goal "..."`; it initializes local state if needed and creates an exploratory Mission.
-This is the first project-work step: do not inspect project files, load an unrelated workflow skill,
-or invoke another product/build tool until Tramuri start/resume has been attempted. Then continue the
+Direct preflight queries (`tramuri --version`, `tramuri status`, `tramuri mission list`)
+may run first; they do not unlock the gate. Do not inspect project files, load an unrelated workflow
+skill, or invoke another product/build tool until Tramuri start/resume has been attempted. Then continue the
 requested work; Tramuri never replaces the requested implementation or creation tools.
 Do not create a Mission for one-shot questions. If an appropriate Mission exists, list and resume it. Ask one brief
 question only when the goal, Mission selection, or work perspective would materially change the work.
@@ -29,7 +30,12 @@ If the HTML has not been opened in this session and the user did not ask to skip
 reopening the browser. Do not generate reports at Mission start or after every write. Use
 `tramuri status` for a read-only status check.
 
-Session hooks on Codex, Claude Code, Cursor, and Gemini CLI only check local database-file presence
-and provide startup guidance; they do not inspect prompts, read Mission records, run migrations, or
-route intent. GitHub Copilot uses these instructions and the installed skill; Tramuri does not
-install a Copilot hook.
+Installed native hooks enforce the first-work step for hookable local tools: preflight queries
+(`tramuri --version`, `tramuri status [--json]`, `tramuri mission list [--json]`, and direct
+help) are allowed but do not unlock the gate. Other project tools remain blocked until `tramuri start`
+or `tramuri resume` completes successfully in the current prompt/turn.
+The gate reads only hook metadata and the Tramuri command/tool result; it does not read or store the
+prompt, Mission records, or project files. Codex gates each turn with its `turn_id`; Claude Code,
+Cursor, Gemini CLI, and GitHub Copilot reset the gate on their prompt event. If a platform disables,
+does not trust, or bypasses project hooks, always-on instructions remain guidance and enforcement is
+not guaranteed. Hosted Codex tools are outside the local hook path.

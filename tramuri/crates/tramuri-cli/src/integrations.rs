@@ -84,7 +84,7 @@ pub enum Platform {
 
 impl Platform {
     pub fn has_hook(self) -> bool {
-        hook_file(self).is_some()
+        true
     }
 
     fn name(self) -> &'static str {
@@ -149,6 +149,7 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
         validate_existing_parent(&root, Path::new(hook_file))?;
         validate_native_hook(&root.join(hook_file), platform)?;
     }
+    validate_gate_hooks(&root.join(gate_hook_file(platform)), platform)?;
 
     let mut skill_targets = Vec::with_capacity(skills.len());
     for (relative, _) in &skills {
@@ -175,9 +176,10 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     for ((_, content), target) in REFERENCES.iter().zip(reference_targets) {
         fs::write(target, content)?;
     }
-    if hook_file(platform).is_some() {
+    if hook_event(platform).is_some() {
         install_native_hook(&root, platform)?;
     }
+    install_gate_hooks(&root, platform)?;
     let mut installed = vec![platform.instruction_file().to_owned()];
     installed.extend(
         skills
@@ -191,6 +193,9 @@ pub fn install(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
     );
     if let Some(hook_file) = hook_file(platform) {
         installed.push(hook_file.to_owned());
+    }
+    if hook_file(platform).is_none() {
+        installed.push(gate_hook_file(platform).to_owned());
     }
     Ok(installed)
 }
@@ -211,6 +216,7 @@ pub fn uninstall(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
         validate_existing_parent(&root, Path::new(hook_file))?;
         validate_native_hook(&root.join(hook_file), platform)?;
     }
+    validate_gate_hooks(&root.join(gate_hook_file(platform)), platform)?;
     let mut removed = Vec::new();
     let removed_instruction = if matches!(platform, Platform::Cursor) {
         remove_cursor_rule(&root, instruction)?
@@ -233,10 +239,15 @@ pub fn uninstall(root: &Path, platform: Platform) -> io::Result<Vec<String>> {
             removed.push(skill.to_string_lossy().into_owned());
         }
     }
-    if let Some(hook_file) = hook_file(platform) {
-        if remove_native_hook(&root, platform)? {
-            removed.push(hook_file.to_owned());
-        }
+    if hook_event(platform).is_some() && remove_native_hook(&root, platform)? {
+        removed.push(
+            hook_file(platform)
+                .expect("session hook file exists")
+                .to_owned(),
+        );
+    }
+    if remove_gate_hooks(&root, platform)? {
+        removed.push(gate_hook_file(platform).to_owned());
     }
     Ok(removed)
 }
@@ -263,11 +274,12 @@ pub fn status(root: &Path) -> io::Result<Vec<(Platform, bool)>> {
                     .is_ok_and(|text| has_front_matter(&text) && text.contains(SKILL_MARKER))
             })
             && references_installed;
-        let installed = if hook_file(platform).is_some() {
-            installed && native_hook_installed(&root, platform)?
-        } else {
-            installed
-        };
+        let installed = installed
+            && hook_event(platform)
+                .map(|_| native_hook_installed(&root, platform))
+                .transpose()?
+                .unwrap_or(true)
+            && native_gate_hooks_installed(&root, platform)?;
         Ok((platform, installed))
     })
     .collect()
@@ -280,6 +292,13 @@ fn hook_file(platform: Platform) -> Option<&'static str> {
         Platform::Cursor => Some(CURSOR_HOOK_FILE),
         Platform::Gemini => Some(GEMINI_HOOK_FILE),
         Platform::Copilot => None,
+    }
+}
+
+fn gate_hook_file(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Copilot => ".github/hooks/tramuri.json",
+        _ => hook_file(platform).expect("platform has native hook configuration"),
     }
 }
 
@@ -559,6 +578,371 @@ fn remove_native_hook(root: &Path, platform: Platform) -> io::Result<bool> {
             serde_json::to_vec_pretty(&value).map_err(|error| {
                 io::Error::other(format!("failed to serialize hook settings: {error}"))
             })?,
+        )?;
+    }
+    Ok(removed)
+}
+
+#[derive(Clone, Copy)]
+struct GateHookSpec {
+    event: &'static str,
+    action: &'static str,
+    matcher: Option<&'static str>,
+}
+
+fn gate_hook_specs(platform: Platform) -> &'static [GateHookSpec] {
+    const CODEX: &[GateHookSpec] = &[
+        GateHookSpec {
+            event: "PreToolUse",
+            action: "before-tool",
+            matcher: Some(".*"),
+        },
+        GateHookSpec {
+            event: "PostToolUse",
+            action: "after-tool",
+            matcher: Some(".*"),
+        },
+    ];
+    const CLAUDE: &[GateHookSpec] = &[
+        GateHookSpec {
+            event: "UserPromptSubmit",
+            action: "prompt",
+            matcher: None,
+        },
+        GateHookSpec {
+            event: "PreToolUse",
+            action: "before-tool",
+            matcher: Some("*"),
+        },
+        GateHookSpec {
+            event: "PostToolUse",
+            action: "after-tool",
+            matcher: Some("*"),
+        },
+    ];
+    const CURSOR: &[GateHookSpec] = &[
+        GateHookSpec {
+            event: "beforeSubmitPrompt",
+            action: "prompt",
+            matcher: None,
+        },
+        GateHookSpec {
+            event: "preToolUse",
+            action: "before-tool",
+            matcher: Some("*"),
+        },
+        GateHookSpec {
+            event: "postToolUse",
+            action: "after-tool",
+            matcher: Some("*"),
+        },
+    ];
+    const GEMINI: &[GateHookSpec] = &[
+        GateHookSpec {
+            event: "BeforeAgent",
+            action: "prompt",
+            matcher: None,
+        },
+        GateHookSpec {
+            event: "BeforeTool",
+            action: "before-tool",
+            matcher: Some("*"),
+        },
+        GateHookSpec {
+            event: "AfterTool",
+            action: "after-tool",
+            matcher: Some("*"),
+        },
+    ];
+    const COPILOT: &[GateHookSpec] = &[
+        GateHookSpec {
+            event: "userPromptSubmitted",
+            action: "prompt",
+            matcher: None,
+        },
+        GateHookSpec {
+            event: "preToolUse",
+            action: "before-tool",
+            matcher: None,
+        },
+        GateHookSpec {
+            event: "postToolUse",
+            action: "after-tool",
+            matcher: None,
+        },
+    ];
+    match platform {
+        Platform::Codex => CODEX,
+        Platform::Claude => CLAUDE,
+        Platform::Cursor => CURSOR,
+        Platform::Gemini => GEMINI,
+        Platform::Copilot => COPILOT,
+    }
+}
+
+fn gate_hook_command(platform: Platform, spec: GateHookSpec) -> String {
+    format!(
+        "tramuri hook-check --platform {platform} --event {}",
+        spec.action
+    )
+}
+
+fn gate_hook_entry(platform: Platform, spec: GateHookSpec) -> serde_json::Value {
+    let command = gate_hook_command(platform, spec);
+    match platform {
+        Platform::Codex => serde_json::json!({
+            "type": "command",
+            "command": command,
+            "commandWindows": command.replace("tramuri ", "tramuri.exe "),
+            "timeout": 10,
+            "statusMessage": "Checking Tramuri work context"
+        }),
+        Platform::Claude => serde_json::json!({"type":"command", "command":command, "timeout":10}),
+        Platform::Cursor => {
+            let mut entry =
+                serde_json::json!({"command":command, "matcher":spec.matcher.unwrap_or("*")});
+            if spec.event == "preToolUse" {
+                entry["failClosed"] = serde_json::json!(true);
+            }
+            entry
+        }
+        Platform::Gemini => serde_json::json!({
+            "name": format!("tramuri-{}", spec.action),
+            "type": "command",
+            "command": command,
+            "timeout": 5000,
+            "description": "Require a successful Tramuri start or resume before project tools"
+        }),
+        Platform::Copilot => serde_json::json!({
+            "type":"command",
+            "bash":command,
+            "powershell":command.replace("tramuri ", "tramuri.exe "),
+            "timeoutSec":10
+        }),
+    }
+}
+
+fn gate_hook_group(platform: Platform, spec: GateHookSpec) -> serde_json::Value {
+    let entry = gate_hook_entry(platform, spec);
+    match platform {
+        Platform::Codex | Platform::Claude => {
+            let mut group = serde_json::json!({"hooks":[entry]});
+            if let Some(matcher) = spec.matcher {
+                group["matcher"] = serde_json::json!(matcher);
+            }
+            group
+        }
+        Platform::Gemini => {
+            let mut group = serde_json::json!({"hooks":[entry]});
+            if let Some(matcher) = spec.matcher {
+                group["matcher"] = serde_json::json!(matcher);
+            }
+            group
+        }
+        Platform::Cursor | Platform::Copilot => entry,
+    }
+}
+
+fn is_managed_gate_hook(value: &serde_json::Value, platform: Platform, spec: GateHookSpec) -> bool {
+    let command = gate_hook_command(platform, spec);
+    if value.get("command").and_then(serde_json::Value::as_str) == Some(command.as_str())
+        || value.get("bash").and_then(serde_json::Value::as_str) == Some(command.as_str())
+    {
+        return true;
+    }
+    let windows_command = command.replace("tramuri ", "tramuri.exe ");
+    value
+        .get("commandWindows")
+        .and_then(serde_json::Value::as_str)
+        == Some(windows_command.as_str())
+        || value.get("powershell").and_then(serde_json::Value::as_str)
+            == Some(windows_command.as_str())
+}
+
+fn contains_managed_gate_hook(
+    value: &serde_json::Value,
+    platform: Platform,
+    spec: GateHookSpec,
+) -> bool {
+    if is_managed_gate_hook(value, platform, spec) {
+        return true;
+    }
+    value
+        .get("hooks")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| is_managed_gate_hook(item, platform, spec))
+        })
+}
+
+fn validate_gate_hooks(path: &Path, platform: Platform) -> io::Result<()> {
+    let Some(text) = read_optional_regular(path)? else {
+        return Ok(());
+    };
+    let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "cannot merge {} gate hooks because {} is invalid JSON: {error}",
+                platform,
+                path.display()
+            ),
+        )
+    })?;
+    if !value.is_object() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "hook settings file must contain a JSON object",
+        ));
+    }
+    if matches!(platform, Platform::Cursor | Platform::Copilot)
+        && value
+            .get("version")
+            .is_some_and(|version| version.as_u64() != Some(1))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "hook settings version must be 1",
+        ));
+    }
+    if let Some(hooks) = value.get("hooks") {
+        if !hooks.is_object() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "hooks must be an object",
+            ));
+        }
+        for spec in gate_hook_specs(platform) {
+            if hooks
+                .get(spec.event)
+                .is_some_and(|entries| !entries.is_array())
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("{} hooks must be an array", spec.event),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_gate_hooks_installed(root: &Path, platform: Platform) -> io::Result<bool> {
+    let Some(value) = read_hook_config(&root.join(gate_hook_file(platform)))? else {
+        return Ok(false);
+    };
+    let Some(hooks) = value.get("hooks") else {
+        return Ok(false);
+    };
+    Ok(gate_hook_specs(platform).iter().all(|spec| {
+        hooks
+            .get(spec.event)
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|entries| {
+                entries
+                    .iter()
+                    .any(|entry| contains_managed_gate_hook(entry, platform, *spec))
+            })
+    }))
+}
+
+fn install_gate_hooks(root: &Path, platform: Platform) -> io::Result<()> {
+    let relative = Path::new(gate_hook_file(platform));
+    let path = ensure_parent(root, relative)?;
+    let mut value = match read_hook_config(&path)? {
+        Some(value) => value,
+        None if matches!(platform, Platform::Cursor | Platform::Copilot) => {
+            serde_json::json!({"version":1,"hooks":{}})
+        }
+        None => serde_json::json!({"hooks":{}}),
+    };
+    if matches!(platform, Platform::Cursor | Platform::Copilot) {
+        value
+            .as_object_mut()
+            .expect("validated hook settings object")
+            .entry("version")
+            .or_insert(serde_json::json!(1));
+    }
+    let hooks = value
+        .as_object_mut()
+        .expect("validated hook settings object")
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "hooks must be an object"))?;
+    for spec in gate_hook_specs(platform) {
+        let entries = hooks
+            .entry(spec.event)
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+            .as_array_mut()
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("{} hooks must be an array", spec.event),
+                )
+            })?;
+        if !entries
+            .iter()
+            .any(|entry| contains_managed_gate_hook(entry, platform, *spec))
+        {
+            entries.push(gate_hook_group(platform, *spec));
+        }
+    }
+    fs::write(
+        path,
+        serde_json::to_vec_pretty(&value).map_err(io::Error::other)?,
+    )
+}
+
+fn remove_gate_hooks(root: &Path, platform: Platform) -> io::Result<bool> {
+    let path = root.join(gate_hook_file(platform));
+    let Some(mut value) = read_hook_config(&path)? else {
+        return Ok(false);
+    };
+    let Some(hooks) = value
+        .get_mut("hooks")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return Ok(false);
+    };
+    let mut removed = false;
+    for spec in gate_hook_specs(platform) {
+        let Some(entries) = hooks
+            .get_mut(spec.event)
+            .and_then(serde_json::Value::as_array_mut)
+        else {
+            continue;
+        };
+        if matches!(platform, Platform::Cursor | Platform::Copilot) {
+            let before = entries.len();
+            entries.retain(|entry| !is_managed_gate_hook(entry, platform, *spec));
+            removed |= before != entries.len();
+        } else {
+            let mut retained = Vec::new();
+            for mut group in std::mem::take(entries) {
+                if let Some(handlers) = group
+                    .get_mut("hooks")
+                    .and_then(serde_json::Value::as_array_mut)
+                {
+                    let before = handlers.len();
+                    handlers.retain(|entry| !is_managed_gate_hook(entry, platform, *spec));
+                    let changed = before != handlers.len();
+                    removed |= changed;
+                    if changed && handlers.is_empty() {
+                        continue;
+                    }
+                }
+                retained.push(group);
+            }
+            *entries = retained;
+        }
+    }
+    if removed {
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(&value).map_err(io::Error::other)?,
         )?;
     }
     Ok(removed)
@@ -909,6 +1293,77 @@ mod tests {
     }
 
     #[test]
+    fn workflow_gate_hooks_install_idempotently_for_all_platforms_and_uninstall_cleanly() {
+        for platform in [
+            Platform::Codex,
+            Platform::Claude,
+            Platform::Cursor,
+            Platform::Gemini,
+            Platform::Copilot,
+        ] {
+            let project = tempdir().unwrap();
+            let hook_path = project.path().join(gate_hook_file(platform));
+            fs::create_dir_all(hook_path.parent().unwrap()).unwrap();
+            let seed = match platform {
+                Platform::Codex | Platform::Claude | Platform::Gemini => {
+                    r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"user-hook"}]}]}}"#
+                }
+                Platform::Cursor => {
+                    r#"{"version":1,"hooks":{"preToolUse":[{"matcher":"Shell","command":"user-hook"}]}}"#
+                }
+                Platform::Copilot => {
+                    r#"{"version":1,"hooks":{"preToolUse":[{"type":"command","bash":"user-hook"}]}}"#
+                }
+            };
+            fs::write(&hook_path, seed).unwrap();
+
+            install(project.path(), platform).unwrap();
+            install(project.path(), platform).unwrap();
+
+            assert!(native_gate_hooks_installed(project.path(), platform).unwrap());
+            let installed: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&hook_path).unwrap()).unwrap();
+            assert!(installed.to_string().contains("user-hook"));
+            for spec in gate_hook_specs(platform) {
+                assert!(
+                    installed
+                        .get("hooks")
+                        .and_then(|hooks| hooks.get(spec.event))
+                        .is_some_and(|entries| entries.as_array().is_some_and(|entries| {
+                            entries
+                                .iter()
+                                .any(|entry| contains_managed_gate_hook(entry, platform, *spec))
+                        })),
+                    "missing {} gate for {platform}",
+                    spec.event
+                );
+            }
+
+            uninstall(project.path(), platform).unwrap();
+            assert!(!native_gate_hooks_installed(project.path(), platform).unwrap());
+            let remaining: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&hook_path).unwrap()).unwrap();
+            assert!(remaining.to_string().contains("user-hook"));
+            assert!(!remaining.to_string().contains("tramuri hook-check"));
+        }
+    }
+
+    #[test]
+    fn invalid_gate_hook_config_is_rejected_before_install_changes_any_files() {
+        let project = tempdir().unwrap();
+        let hook_path = project.path().join(".cursor/hooks.json");
+        fs::create_dir_all(hook_path.parent().unwrap()).unwrap();
+        let malformed = r#"{"version":1,"hooks":{"preToolUse":"invalid"}}"#;
+        fs::write(&hook_path, malformed).unwrap();
+
+        let error = install(project.path(), Platform::Cursor).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(fs::read_to_string(hook_path).unwrap(), malformed);
+        assert!(!project.path().join(".cursor/rules/tramuri.mdc").exists());
+    }
+
+    #[test]
     fn native_session_hooks_merge_idempotently_and_uninstall_only_tramuri_entries() {
         for platform in [
             Platform::Codex,
@@ -1038,11 +1493,7 @@ mod tests {
             Platform::Cursor,
             Platform::Gemini,
         ] {
-            assert!(
-                platform
-                    .instructions()
-                    .contains("This is the first project-work step")
-            );
+            assert!(platform.instructions().contains("Direct preflight queries"));
             install(project.path(), platform).unwrap();
             let instructions = project.path().join(platform.instruction_file());
             let instructions = fs::read_to_string(instructions).unwrap();

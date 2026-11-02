@@ -12,20 +12,29 @@ tramuri uninstall --project --platform <codex|copilot|claude|cursor|gemini> --pa
 ```
 
 The installer owns only its marked instruction section or rule, managed skill/reference files, and
-its native project hook entry. It preserves surrounding instructions and settings for Codex
-(`.codex/hooks.json`), Claude Code (`.claude/settings.json`), Cursor (`.cursor/hooks.json`), and
-Gemini CLI (`.gemini/settings.json`). It refuses to overwrite unmarked skill, reference, or Cursor
-rule files and refuses malformed hook JSON without changing it. Uninstall removes only Tramuri's
-managed instruction section, rule, skill files, and hook entry; inspect status and resolve conflicts
-explicitly.
+its native project hook entries. It preserves surrounding instructions and settings for Codex
+(`.codex/hooks.json`), Claude Code (`.claude/settings.json`), Cursor (`.cursor/hooks.json`), Gemini
+CLI (`.gemini/settings.json`), and Copilot (`.github/hooks/tramuri.json`). It refuses to overwrite
+unmarked skill, reference, or Cursor rule files and refuses malformed hook JSON without changing it.
+Uninstall removes only Tramuri's managed instruction section, rule, skill files, and hook entries;
+inspect status and resolve conflicts explicitly.
 
-Codex, Claude Code, Cursor, and Gemini CLI install a project-local session-start hook using their
-native output contract. The hook checks only whether a regular local Tramuri database file is present;
-it does not open SQLite, run migrations or scans, inspect prompts, or attach Mission records. It
-guides the agent to start or resume a Mission before substantive project work. Hooks run only when
-the host loads project hooks and its trust controls permit them. The installer does not change global
-configuration. Copilot uses the same always-on instructions and skills but has no Tramuri hook.
-Capability discovery can catalog project-local `.github/hooks/*.json` declarations when present.
+The installer registers native prompt/turn and tool hooks for Codex, Claude Code, Cursor, Gemini CLI,
+and Copilot CLI. While locked, the gate permits only direct non-Mission-writing preflight queries:
+`tramuri --version`, `tramuri status [--json]`, `tramuri mission list [--json]`, and direct help
+queries. Those commands do not unlock the gate. Other local project tools remain blocked until a
+direct `tramuri start` or `tramuri resume` command completes successfully for that prompt/turn.
+Status/list may run the CLI's existing additive SQLite migrations when opening an older database;
+the hook itself never accesses SQLite. The gate rejects command chaining, wrappers, report-opening/refreshing options, and alternate paths
+while locked. Codex scopes the gate to its `turn_id`; the
+other integrations reset it on their native prompt event. The gate stores only a short-lived hashed
+session/workspace key and a pending tool identifier under the OS temporary directory. It does not
+read or persist prompt text, Mission records, or project files. Session-start hints remain a
+separate convenience and check only regular database-file presence; they do not open SQLite, run
+migrations/scans, or attach Mission records. Hooks are effective only when the host supports, trusts,
+and enables them; hosted Codex tools and unsupported Copilot surfaces may bypass project hooks, so
+always-on instructions remain the fallback. The installer does not change global configuration.
+Capability discovery records hook declarations without executing them.
 
 `tramuri status --open` generates `.tramuri/reports/tramauri.html`, `tramauri.md`, and
 `tramauri.json`, then opens the HTML. `tramuri status --refresh` updates those three files without

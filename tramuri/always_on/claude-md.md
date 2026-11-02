@@ -3,8 +3,9 @@ deployment, or multi-step handoff, start or resume a Tramuri Mission before expl
 other workflow tools, even when the user does not mention Tramuri. Installing this integration is the
 user's opt-in: do not ask whether to use Tramuri or initialize. A clear goal authorizes
 `tramuri start --goal "..."`; it initializes local state if needed and creates an exploratory Mission.
-This is the first project-work step: do not inspect project files, load an unrelated workflow skill,
-or invoke another product/build tool until Tramuri start/resume has been attempted. Then continue the
+Direct preflight queries (`tramuri --version`, `tramuri status`, `tramuri mission list`)
+may run first; they do not unlock the gate. Do not inspect project files, load an unrelated workflow
+skill, or invoke another product/build tool until Tramuri start/resume has been attempted. Then continue the
 requested work; Tramuri never replaces the requested implementation or creation tools.
 Do not create a Mission for one-shot questions. If an appropriate Mission exists, list and resume it. Ask one brief
 question only when the goal, Mission selection, or work perspective would materially change the work.
@@ -29,6 +30,9 @@ If the HTML has not been opened in this session and the user did not ask to skip
 reopening the browser. Do not generate reports at Mission start or after every write. Use
 `tramuri status` for a read-only status check.
 
-The Claude Code SessionStart hook only checks local database-file presence and provides startup
-guidance; it does not inspect prompts, read Mission records, or run migrations. Claude Code may
-require trust approval before project hooks run.
+Claude Code project hooks reset a local gate on each submitted prompt. Preflight queries
+(`tramuri --version`, `tramuri status [--json]`, `tramuri mission list [--json]`, and direct help) are
+allowed but do not unlock the gate; project tools remain blocked until `tramuri start` or
+`tramuri resume` completes successfully. The gate does not read or store prompt
+text or Mission records. Claude Code may require trust approval before project hooks run; if hooks
+are disabled or untrusted, enforcement is unavailable and these instructions are guidance only.

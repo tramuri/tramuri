@@ -1,11 +1,29 @@
 use std::fs;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use serde_json::Value;
 use tempfile::tempdir;
 
 fn tramuri() -> Command {
     Command::new(env!("CARGO_BIN_EXE_tramuri"))
+}
+
+fn run_hook_check(platform: &str, event: &str, input: &Value) -> std::process::Output {
+    let mut child = tramuri()
+        .args(["hook-check", "--platform", platform, "--event", event])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("hook checker should launch");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(serde_json::to_string(input).unwrap().as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
 }
 
 #[test]
@@ -18,6 +36,89 @@ fn help_is_available() {
     assert!(stdout.contains("scan"));
     assert!(stdout.contains("mission"));
     assert!(stdout.contains("install"));
+}
+
+#[test]
+fn native_hook_cli_blocks_then_unlocks_only_after_successful_start() {
+    let project = tempdir().unwrap();
+    let cwd = project.path().to_str().unwrap();
+    let read = serde_json::json!({
+        "cwd":cwd,
+        "session_id":"hook-cli-test-session",
+        "tool_use_id":"read-before-start",
+        "tool_name":"Bash",
+        "tool_input":{"command":"Get-ChildItem"}
+    });
+    let denied = run_hook_check("claude", "before-tool", &read);
+    assert!(denied.status.success());
+    let response: Value = serde_json::from_slice(&denied.stdout).unwrap();
+    assert_eq!(response["hookSpecificOutput"]["permissionDecision"], "deny");
+
+    let prompt = serde_json::json!({"cwd":cwd,"session_id":"hook-cli-test-session"});
+    let reset = run_hook_check("claude", "prompt", &prompt);
+    assert!(reset.status.success());
+    assert!(reset.stdout.is_empty());
+
+    let preflight = serde_json::json!({
+        "cwd":cwd,
+        "session_id":"hook-cli-test-session",
+        "tool_use_id":"status-before-start",
+        "tool_name":"Bash",
+        "tool_input":{"command":"tramuri status"}
+    });
+    let allowed_preflight = run_hook_check("claude", "before-tool", &preflight);
+    assert!(allowed_preflight.status.success());
+    assert!(allowed_preflight.stdout.is_empty());
+
+    let help = serde_json::json!({
+        "cwd":cwd,
+        "session_id":"hook-cli-test-session",
+        "tool_use_id":"help-before-start",
+        "tool_name":"Bash",
+        "tool_input":{"command":"tramuri start --help"}
+    });
+    assert!(
+        run_hook_check("claude", "before-tool", &help)
+            .stdout
+            .is_empty()
+    );
+    let mut help_completed = help.clone();
+    help_completed["tool_response"] = serde_json::json!({"status":"completed"});
+    assert!(
+        run_hook_check("claude", "after-tool", &help_completed)
+            .stdout
+            .is_empty()
+    );
+
+    let still_locked = run_hook_check("claude", "before-tool", &read);
+    let response: Value = serde_json::from_slice(&still_locked.stdout).unwrap();
+    assert_eq!(response["hookSpecificOutput"]["permissionDecision"], "deny");
+
+    let start = serde_json::json!({
+        "cwd":cwd,
+        "session_id":"hook-cli-test-session",
+        "tool_use_id":"start-success",
+        "tool_name":"Bash",
+        "tool_input":{"command":"tramuri start --goal \"new product\""}
+    });
+    assert!(
+        run_hook_check("claude", "before-tool", &start)
+            .stdout
+            .is_empty()
+    );
+    let mut completed = start.clone();
+    completed["tool_response"] = serde_json::json!({"status":"completed"});
+    assert!(
+        run_hook_check("claude", "after-tool", &completed)
+            .stdout
+            .is_empty()
+    );
+
+    let mut read_after = read;
+    read_after["tool_use_id"] = Value::String("read-after-start".into());
+    let allowed = run_hook_check("claude", "before-tool", &read_after);
+    assert!(allowed.status.success());
+    assert!(allowed.stdout.is_empty());
 }
 
 #[test]
@@ -423,8 +524,8 @@ fn session_hook_hint_uses_each_hosts_native_output_contract_without_workspace_da
 }
 
 #[test]
-fn install_and_uninstall_cli_support_claude_cursor_and_gemini_project_hooks() {
-    for platform in ["claude", "cursor", "gemini"] {
+fn install_and_uninstall_cli_support_all_native_workflow_gate_platforms() {
+    for platform in ["codex", "claude", "cursor", "gemini", "copilot"] {
         let project = tempdir().expect("project should be created");
         let path = project.path().to_str().expect("path should be UTF-8");
         let install = tramuri()
@@ -443,7 +544,7 @@ fn install_and_uninstall_cli_support_claude_cursor_and_gemini_project_hooks() {
             "{}",
             String::from_utf8_lossy(&install.stderr)
         );
-        assert!(String::from_utf8_lossy(&install.stdout).contains("session hook"));
+        assert!(String::from_utf8_lossy(&install.stdout).contains("Native project hooks block"));
 
         let status = tramuri()
             .args(["integrations", "status", "--path", path])
@@ -518,7 +619,7 @@ fn install_status_and_uninstall_manage_only_tramuri_content() {
     assert!(project.path().join(".codex/hooks.json").is_file());
     let install_output = String::from_utf8_lossy(&install.stdout);
     assert!(install_output.contains("TRAMURI"));
-    assert!(install_output.contains("session hook"));
+    assert!(install_output.contains("Native project hooks block"));
     assert!(install_output.contains("database-file presence"));
     assert!(install_output.contains("AGENTS.md"));
     assert!(install_output.contains("starts or resumes a Mission"));

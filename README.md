@@ -115,16 +115,17 @@ not authenticated; Tramuri does not infer a current Mission owner.
 project ignore rules and sensitive-path exclusions; it does not read global agent settings, execute
 hooks, start MCP servers, or make network connections.
 
-Codex, Claude Code, Cursor, and Gemini CLI receive native project instructions, a Tramuri overview
-skill plus focused setup, Product Engineering, discovery, Mission, and integrity skills, and a
-project-local session-start hook. Hooks check local database-file presence and give startup guidance;
-they do not read Mission records or attach prompt data. The assistant must explicitly run Tramuri commands
-when it needs workspace context. Hooks follow each host's project trust settings, and installation
+Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot receive native project instructions,
+Tramuri skills, and project-local hooks. The hooks block supported local project tools until
+`tramuri start` or `tramuri resume` succeeds for the current prompt/turn. They do not read or store
+prompt text or Mission records. Hooks follow each host's trust settings; disabled, unsupported, or
+bypassed hook paths are not enforced (including hosted Codex tools and Copilot surfaces other than
+the documented hook-capable runtimes). Direct preflight queries (`tramuri --version`, `tramuri
+status`, and `tramuri mission list`) remain available while locked but do not unlock the gate.
+Instructions remain fallback guidance. Installation
 preserves unrelated instructions and hook entries. Cursor uses `.cursor/rules/tramuri.mdc`,
-`.cursor/skills/tramuri/`, and `.cursor/hooks.json`; the other hosts use their native instruction,
-skill, and hook locations.
-
-Copilot project instructions and skills remain supported; Copilot hooks are not installed by Tramuri.
+`.cursor/skills/tramuri/`, and `.cursor/hooks.json`; Copilot uses `.github/hooks/tramuri.json`; the
+other hosts use their native instruction, skill, and hook locations.
 
 ```bash
 tramuri install --project --platform copilot

@@ -794,7 +794,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "tramuri-cli"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "clap",
  "serde",
@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "tramuri-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "hex",
  "ignore",
@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "tramuri-python"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "pyo3",
  "serde",

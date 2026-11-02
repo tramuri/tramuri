@@ -8,6 +8,15 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-01
+
+### Added
+
+- Project-local session gates for supported agent integrations, requiring a successful Tramuri start or resume before substantive work proceeds.
+- Safe, read-only workspace preflight checks that do not initialize or unlock a Mission.
+- Native hook support and corresponding integration guidance for Codex, Claude Code, Cursor, and Gemini CLI; Copilot continues to use project instructions and skills without hooks.
+- A Product Engineer execution-flow diagram and documentation describing the gate behavior.
+
 ## [0.7.0] - 2026-11-01
 
 ### Added

@@ -94,7 +94,17 @@ flowchart TD
 - The CLI records work; it does not call Codex, Claude Code, Cursor, Gemini CLI, or Copilot, build a
   product, or run its tests.
 - If a preferred host tool is unavailable, the host should report that and use a viable local
-  alternative when available.
+  alternative when available. Lack of browser access must not stop implementation: the agent should
+  run existing tests and other available local checks without claiming that it visually validated
+  the interface. If visual inspection remains unavailable, state exactly what remains unverified and
+  give a concrete next action, such as the command to start the project and its local URL. Do not
+  retry a tool that has already failed or leave the user to guess how to continue.
+- Report navigation buttons move to sections of the page; they do not start executions or perform
+  the Mission's next activity. The agent should explain this distinction and identify the actual
+  operational action.
+- At the end of a meaningful work session, the agent should compare the saved focus with the work
+  actually completed. Update the focus if the phase changed; if the next activity is unknown, leave
+  it unselected and say it still needs to be chosen instead of showing an older activity as current.
 
 ### Ship
 

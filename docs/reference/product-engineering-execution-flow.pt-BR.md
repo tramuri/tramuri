@@ -115,7 +115,18 @@ flowchart TD
   só o Codex, Claude Code, Cursor, Gemini CLI ou Copilot, não implementa o SaaS e não executa seus
   testes.
 - Se o agente hospedeiro não tiver a ferramenta de criação necessária, ele deve comunicar a
-  limitação e usar uma alternativa local viável quando disponível.
+  limitação e usar uma alternativa local viável quando disponível. A ausência de navegador não deve
+  interromper a implementação: o agente deve executar verificações existentes e outras verificações
+  locais disponíveis, sem alegar que validou a interface visual. Se a inspeção visual continuar
+  indisponível, deve informar exatamente o que falta e dar um próximo passo concreto, como o comando
+  para iniciar o projeto e a URL local para abrir. Não deve repetir chamadas a uma ferramenta que
+  já falhou nem deixar o usuário adivinhar como continuar.
+- Os botões de navegação do relatório levam a seções da página; eles não iniciam execuções nem fazem
+  a próxima atividade da Mission. O agente deve explicar essa diferença e indicar a ação operacional
+  apropriada.
+- Ao encerrar uma sessão de trabalho significativa, o agente deve comparar o foco salvo com o que foi
+  realmente realizado. Se a fase mudou, deve atualizar o foco; se a próxima atividade não estiver
+  definida, deve deixar isso explícito em vez de apresentar uma atividade antiga como atual.
 
 ### Fim
 

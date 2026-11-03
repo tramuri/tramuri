@@ -55,3 +55,20 @@ Knowledge and Capabilities are relevant to a Mission only when the user explicit
 `tramuri mission link-knowledge` or `tramuri mission link-capability`. Never infer or create links
 from name similarity, path proximity, or agent judgment. `tramuri resume --mission <id>` includes
 only those selected relationships; workspace status and reports omit linked Knowledge statements.
+
+## Continue when a host tool is unavailable
+
+Browser access, a site-building plugin, and other host tools are optional capabilities; their absence
+must not leave the user without a next step. If a tool is unavailable or fails, do not repeat the same
+failed call or end the task at the error. State briefly what is unavailable, then continue with the
+best feasible path inside the user's request: use the project's existing local workflow and tests,
+inspect or create local artifacts when authorized, or use another available tool. Do not install
+new dependencies, perform external actions, or claim a tool ran when it did not.
+
+For a web interface, use this fallback order when browser access is unavailable: run existing tests
+and build checks; use existing browser automation if installed; otherwise perform available static
+and local HTTP checks. Explain the limits: static checks do not prove rendered behavior, and an HTTP
+response does not prove visual correctness. If visual behavior remains unverified, say so and give
+the user one concrete next action, such as the exact local command and URL to open. Never leave the
+user to infer what to do next. Clarify whether a report button navigates to a section or performs an
+operation; do not imply that a navigation control starts or resumes work.

@@ -1554,8 +1554,23 @@ mod tests {
             assert!(product_skill.contains("Do not invent interviews"));
             assert!(product_skill.contains("Product Brief"));
             assert!(product_skill.contains("not an approved decision"));
+            assert!(product_skill.contains("Browser access is optional"));
+            assert!(product_skill.contains("do not stop the build"));
+            assert!(product_skill.contains("Never claim visual behavior was tested"));
+            assert!(product_skill.contains("concrete command and URL"));
+            assert!(
+                product_skill
+                    .contains("compare the recorded focus with the work actually completed")
+            );
             assert!(main_skill.contains("At the end of a coherent session"));
             assert!(main_skill.contains("tramuri status --refresh"));
+            assert!(main_skill.contains(
+                "Browser access, a site-building plugin, and other host tools are optional"
+            ));
+            let main_skill_normalized = main_skill.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                main_skill_normalized.contains("Never leave the user to infer what to do next")
+            );
             let start_skill = fs::read_to_string(
                 project
                     .path()
@@ -1578,6 +1593,8 @@ mod tests {
                 start_skill_normalized
                     .contains("A new Mission always requires the user's perspective choice")
             );
+            assert!(start_skill_normalized.contains("differently worded Mission appears"));
+            assert!(start_skill_normalized.contains("quoted punctuation"));
             assert!(
                 start_skill_normalized
                     .contains("Do not infer the choice from the goal, a saved default")

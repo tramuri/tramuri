@@ -754,7 +754,7 @@ fn render_markdown_with_define(
                 }
                 if let Some(action) = &brief.next_action {
                     output.push_str(&format!(
-                        "- Next action recorded in Brief: {}\n",
+                        "- Suggested action when the Brief was created (may be outdated): {}\n",
                         md_escape(action)
                     ));
                 }
@@ -1030,6 +1030,17 @@ mod tests {
         assert!(!html.contains("__TRAMURI_LOGO_DATA_URI__"));
         assert!(html.contains("id=\"mission-focus\""));
         assert!(html.contains("focusSelectionHelpAria"));
+        assert!(html.contains("Go to Product Brief"));
+        assert!(html.contains("Ir para o Product Brief"));
+        assert!(html.contains("These shortcuts go to sections in this report"));
+        assert!(html.contains("Estes atalhos levam a seções deste relatório"));
+        assert!(html.contains("focusActivityMayNeedReview"));
+        assert!(html.contains("focusBriefRecommendationCaveat"));
+        let planned_activity_branch = REPORT_HTML.find("} else if (plannedActivity) {").unwrap();
+        let brief_recommendation_branch = REPORT_HTML
+            .find("} else if (brief?.next_action && brief.state === \"completed\") {")
+            .unwrap();
+        assert!(planned_activity_branch < brief_recommendation_branch);
         let mut marker_snapshot = snapshot.clone();
         marker_snapshot.missions[0].objective = "__TRAMURI_LOGO_DATA_URI__".to_owned();
         let marker_html =

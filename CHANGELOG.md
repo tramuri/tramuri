@@ -8,6 +8,21 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-02
+
+### Added
+
+- A complete bilingual Product Engineer tutorial for a fictional course platform, with synthetic product context and a reproducible local prototype scope.
+
+### Changed
+
+- Agent guidance now continues with feasible local work when browser or host tools are unavailable, distinguishes approval from observed test evidence, and keeps the recorded Mission focus aligned with completed work.
+- Mission Control labels report shortcuts as navigation and clearly marks Product Brief next-action text as a historical recommendation that may be outdated.
+
+### Fixed
+
+- The integration start gate now accepts punctuation inside quoted CLI arguments while continuing to reject shell chaining, expansions, and command substitution.
+
 ## [0.11.0] - 2026-11-02
 
 ### Added

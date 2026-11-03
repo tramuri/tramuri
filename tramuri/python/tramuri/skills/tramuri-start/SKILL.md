@@ -34,17 +34,25 @@ integration is installed. Do not create a Mission for a simple one-shot question
 2. If Tramuri is missing, explain the install command for the current platform and do not pretend it
    ran. If the workspace is uninitialized, a clear substantive request in this opted-in project
    authorizes starting the Mission. Run `tramuri start --goal "..."` directly; it initializes local
-   state only after a valid goal and perspective are resolved. Do not ask whether to use Tramuri or
-   initialize, and do not initialize for one-shot questions.
-3. In an initialized workspace, match the request against the Missions from `tramuri mission list`.
-   Reuse a Mission automatically only when `tramuri start` reports one unique exact normalized
-   objective match. Do not infer a match from broad topical similarity. If Tramuri reports
-   `MissionSelectionRequired`, present the listed candidates and ask which one to resume; do not
-   create another Mission or combine their context. For other relevant open Missions, resume the
-   selected one with `tramuri resume --mission <id>`.
-   If none matches, start a new Mission only after its work perspective is selected. Never choose an
-   arbitrary Mission when several are plausible; ask which one to resume. Do not use `start --help`
-   or a read-only query as a substitute for start/resume.
+   state only after a valid goal and perspective are resolved. Keep this shell invocation to a
+   concise Mission title; preserve the user's full original intent and detailed context in the
+   authorized DEFINE artifact after the Mission starts, rather than interpolating a long prompt into
+   shell arguments. If the host hook explicitly blocks a genuine start invocation because of quoted
+   punctuation, retry once with a concise goal-only command. Do not chain commands, wrap the CLI, or
+   bypass the hook. Do not ask whether to use Tramuri or initialize, and do not initialize for one-shot
+   questions.
+3. In an initialized workspace, inspect `tramuri mission list` before creating a Mission and match
+   the request against open Missions. Reuse automatically only when `tramuri start` reports one
+   unique exact normalized objective match. Do not infer a match from broad topical similarity. If a
+   differently worded Mission appears to cover the same product or deliverable, show its objective
+   and status and ask whether to resume it or start a distinct Mission; similarity is a reason to
+   clarify, never authority to select. If Tramuri reports `MissionSelectionRequired`, present the
+   listed candidates and ask which one to resume; do not create another Mission or combine their
+   context. For other relevant open Missions, resume the selected one with
+   `tramuri resume --mission <id>`. If none is a plausible continuation, start a new Mission only
+   after its work perspective is selected. Never choose an arbitrary Mission when several are
+   plausible; ask which one to resume. Do not use `start --help` or a read-only query as a substitute
+   for start/resume.
 4. Confirm setup with `tramuri status`, then continue in the same interaction. The user may give
    only a natural-language objective; do not make them learn or repeat CLI syntax. Create an
    exploratory Mission with an empty Success Contract when the objective is clear but criteria are

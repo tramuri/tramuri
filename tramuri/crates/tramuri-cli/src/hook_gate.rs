@@ -344,14 +344,10 @@ fn is_safe_preflight_command(command: &str) -> bool {
 
 fn standalone_tramuri_tokens(command: &str) -> Option<Vec<String>> {
     let command = command.trim();
-    if command.is_empty()
-        || command
-            .chars()
-            .any(|ch| matches!(ch, ';' | '&' | '|' | '>' | '<' | '\n' | '\r' | '$' | '`'))
-    {
+    if command.is_empty() {
         return None;
     }
-    let tokens = shell_tokens(command);
+    let tokens = shell_tokens(command)?;
     let executable = tokens
         .first()?
         .rsplit(['/', '\\'])
@@ -360,29 +356,59 @@ fn standalone_tramuri_tokens(command: &str) -> Option<Vec<String>> {
     matches!(executable.as_str(), "tramuri" | "tramuri.exe").then_some(tokens)
 }
 
-fn shell_tokens(command: &str) -> Vec<String> {
+fn shell_tokens(command: &str) -> Option<Vec<String>> {
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut quote = None;
-    for ch in command.chars() {
-        match (quote, ch) {
-            (Some(active), ch) if active == ch => quote = None,
-            (None, '\'' | '"') => quote = Some(ch),
-            (None, ch) if ch.is_whitespace() => {
-                if !current.is_empty() {
-                    tokens.push(std::mem::take(&mut current));
+    let mut chars = command.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match quote {
+            Some('\'') => match ch {
+                '\'' => quote = None,
+                '\n' | '\r' => return None,
+                _ => current.push(ch),
+            },
+            Some('"') => match ch {
+                '"' => quote = None,
+                '\n' | '\r' | '`' => return None,
+                '$' if chars
+                    .peek()
+                    .is_some_and(|next| starts_shell_expansion(*next)) =>
+                {
+                    return None;
                 }
-            }
-            _ => current.push(ch),
+                _ => current.push(ch),
+            },
+            None => match ch {
+                '\'' | '"' => quote = Some(ch),
+                ch if ch.is_whitespace() => {
+                    if !current.is_empty() {
+                        tokens.push(std::mem::take(&mut current));
+                    }
+                }
+                ';' | '&' | '|' | '>' | '<' | '\n' | '\r' | '$' | '`' => return None,
+                _ => current.push(ch),
+            },
+            Some(_) => return None,
         }
     }
+
     if quote.is_some() {
-        return Vec::new();
+        return None;
     }
     if !current.is_empty() {
         tokens.push(current);
     }
-    tokens
+    Some(tokens)
+}
+
+fn starts_shell_expansion(next: char) -> bool {
+    next.is_alphanumeric()
+        || matches!(
+            next,
+            '_' | '(' | '{' | '?' | '@' | '#' | '!' | '-' | '*' | '$' | '\''
+        )
 }
 
 fn tool_succeeded(input: &Value) -> bool {
@@ -511,6 +537,47 @@ mod tests {
         ] {
             let input = serde_json::json!({"tool_name":"Bash", "tool_input":{"command":command}, "tool_use_id":"1"});
             assert!(!is_start_or_resume(&input), "accepted: {command}");
+        }
+    }
+
+    #[test]
+    fn quoted_punctuation_is_allowed_as_start_data() {
+        for tool_name in ["Bash", "PowerShell"] {
+            for command in [
+                "tramuri start --goal \"Aulae; catálogo R$ 200/mês\" --context \"alunos & instrutores\"",
+                "tramuri start --goal 'product; $HOME; $(literal)'",
+            ] {
+                let input = serde_json::json!({
+                    "tool_name": tool_name,
+                    "tool_input": {"command": command},
+                    "tool_use_id": "quoted-start"
+                });
+                assert!(
+                    is_start_or_resume(&input),
+                    "rejected quoted data: {command}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shell_chaining_and_expansions_remain_rejected_when_quoted() {
+        for command in [
+            "tramuri start --goal \"new product\"; rm -rf .",
+            "tramuri start --goal \"new product\" && cat README.md",
+            "tramuri start --goal \"$(Get-Content secret.txt)\"",
+            "tramuri start --goal \"$env:PATH\"",
+            "tramuri start --goal \"`whoami`\"",
+        ] {
+            let input = serde_json::json!({
+                "tool_name": "PowerShell",
+                "tool_input": {"command": command},
+                "tool_use_id": "unsafe-start"
+            });
+            assert!(
+                !is_start_or_resume(&input),
+                "accepted unsafe command: {command}"
+            );
         }
     }
 

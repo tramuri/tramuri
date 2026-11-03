@@ -234,6 +234,7 @@
     .focus-next-value { display: block; color: var(--navy); font-size: 14px; line-height: 1.4; font-weight: 780; overflow-wrap: anywhere; }
     .focus-next-copy { display: block; margin-top: 2px; color: #315d60; font-size: 10px; }
     .focus-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .focus-actions-help { flex-basis: 100%; color: #315d60; font-size: 10px; line-height: 1.4; }
     .focus-actions .button { min-height: 36px; padding: 7px 11px; font-size: 11px; }
     .button-on-mint { color: var(--navy); background: rgba(255,255,255,.68); border-color: rgba(11,37,48,.14); }
     .button-on-mint:hover { background: #fff; }
@@ -451,9 +452,9 @@
         skipToContent: "Skip to main content", focusKicker: "Work continuity", focusOpenKicker: "Latest open Mission · workspace highlight", focusClosedKicker: "Latest recorded Mission · closed",
         focusNoMissionTitle: "No Mission has been recorded", focusNoMissionCopy: "Start or resume a Mission in Tramuri to see its objective, stage, and recorded next step here.",
         focusOpen: "Open Mission", focusClosed: "Closed Mission", focusPerspective: "Work perspective", focusStage: "Current stage / step", focusActivity: "Recorded focus", focusReadiness: "Context readiness", focusOutcome: "Mission outcome",
-        focusNext: "Next step recorded", focusNoNext: "No next step recorded", focusNoNextCopy: "The report does not invent a next action. Check the Mission details for pending work.",
+        focusNext: "Next step", focusNoNext: "No current next step is recorded", focusNoNextCopy: "Resume this Mission to choose and record what comes next. A Product Brief may contain an earlier recommendation.",
         focusNextDefine: "Authorized DEFINE step", focusNextBlocked: "Resolve the recorded blocker", focusNextCorrection: "Correct the current step", focusNextStale: "Revalidate outdated steps", focusDefineDone: "DEFINE complete · Mission outcome remains separate",
-        focusDefineProgress: "Product Engineering DEFINE", focusStepsValid: "validated steps", focusViewMission: "Open Mission details", focusViewBrief: "View Product Brief", focusViewCriteria: "View criteria", focusViewWork: "View executions and evidence", focusViewHistory: "View Mission history", focusBriefNextAction: "Next action recorded in the Product Brief", focusActivityRecorded: "Activity recorded in the Mission", criteriaRecorded: "criteria recorded", missionDetailsNav: "Mission details navigation", noMissionHistory: "No additional workflow or contract history is recorded.",
+        focusDefineProgress: "Product Engineering DEFINE", focusStepsValid: "validated steps", focusViewMission: "Go to Mission details", focusViewBrief: "Go to Product Brief", focusViewCriteria: "Go to criteria", focusViewWork: "Go to executions and evidence", focusViewHistory: "Go to Mission history", focusBriefNextAction: "Suggested action when this Product Brief was created (may be outdated)", focusBriefRecommendation: "Earlier recommendation from the Product Brief", focusBriefRecommendationCaveat: "Recorded when the Brief was created; it may not reflect later work.", focusActivityRecorded: "This is the activity currently recorded for the Mission.", focusActivityMayNeedReview: "The latest execution was recorded after this focus. Tramuri cannot infer whether the activity changed; confirm it on resume.", focusActionsHelp: "These shortcuts go to sections in this report; they do not perform Mission actions.", criteriaRecorded: "criteria recorded", missionDetailsNav: "Mission details navigation", noMissionHistory: "No additional workflow or contract history is recorded.",
         focusSelectionHelp: "This highlight is the most recently created open Mission in the report. Tramuri does not track who is actively working on it.", perspectiveHelp: "This describes the work perspective selected for the Mission. It is separate from the person or tool recorded as executor.",
         readinessHelp: "Readiness describes the recorded context for a planned activity. It can be unassessed or stale and does not verify the Mission outcome.", outcomeHelpAria: "About verified outcomes", outcomeHelp: "An outcome is shown as verified only when all required criteria have positive recorded assessments. This does not independently confirm an external evidence source.",
         readinessHelpAria: "About context readiness", perspectiveHelpAria: "About work perspective", focusSelectionHelpAria: "How the highlighted Mission was selected", defineHelpAria: "About DEFINE progress", defineHelp: "Progress counts only steps accepted by Tramuri Core. Completing DEFINE creates a Product Brief; it does not mean the product shipped.",
@@ -485,7 +486,7 @@
         outcomeExplanationVerified: "All required criteria have recorded successful assessments.",
         outcomeExplanationNotAchieved: "At least one required criterion is recorded as not met."
         ,defineTitle: "Product Engineering · DEFINE", defineProgress: "validated steps", defineQuestions: "Clarifications used", defineNextStep: "Authorized step", defineStepObjective: "Understand objective and context", defineStepBusiness: "Discover problem, audience, and business", defineStepRequirements: "Identify requirements and criteria", defineStepSynthesis: "Consolidate facts, hypotheses, and gaps", defineStepBrief: "Create Product Brief", defineStateInProgress: "In progress", defineStateBlocked: "Blocked", defineStateValidationFailed: "Needs correction", defineStateCompleted: "DEFINE complete", defineStateStale: "Needs revalidation", defineStatePending: "Pending", defineCaveat: "A completed DEFINE is not a shipped product or a verified Mission Outcome.", defineHistory: "Workflow history", defineNoEvents: "No workflow events recorded."
-        ,refreshReport: "Refresh report", defineBriefSummary: "Product Brief summary", defineObjective: "Objective", defineProblem: "Problem", defineAudience: "Target audience", defineValue: "Value proposition", defineMvp: "Proposed MVP", defineConstraints: "Constraints", defineRisks: "Risks", defineHypotheses: "Important hypotheses", definePending: "Pending decisions or questions", defineNextAction: "Next action recorded", defineNoBrief: "No Product Brief artifact is available.", defineAssessment: "Semantic review", defineAssessmentBoundary: "Host assessment, not a Core-verified truth", defineAssessmentCurrent: "Current", defineAssessmentStale: "Stale",
+        ,refreshReport: "Refresh report", defineBriefSummary: "Product Brief summary", defineObjective: "Objective", defineProblem: "Problem", defineAudience: "Target audience", defineValue: "Value proposition", defineMvp: "Proposed MVP", defineConstraints: "Constraints", defineRisks: "Risks", defineHypotheses: "Important hypotheses", definePending: "Pending decisions or questions", defineNextAction: "Suggested action when the Brief was created (may be outdated)", defineNoBrief: "No Product Brief artifact is available.", defineAssessment: "Semantic review", defineAssessmentBoundary: "Host assessment, not a Core-verified truth", defineAssessmentCurrent: "Current", defineAssessmentStale: "Stale",
         defineHistoryStarted: "DEFINE started", defineHistoryStepStarted: "Step started", defineHistorySubmitted: "Result submitted", defineHistoryCompleted: "Step validated", defineHistoryRejected: "Validation needs correction", defineHistoryBlocked: "Step blocked", defineHistoryStale: "Step needs revalidation", defineHistoryFinished: "DEFINE completed", defineHistoryQuestion: "Clarification requested", defineHistoryDecision: "Decision recorded", defineHistoryUpdated: "Workflow updated"
       },
       pt: {
@@ -500,9 +501,9 @@
         skipToContent: "Ir para o conteúdo principal", focusKicker: "Continuidade do trabalho", focusOpenKicker: "Mission aberta mais recente · destaque do workspace", focusClosedKicker: "Mission registrada mais recente · fechada",
         focusNoMissionTitle: "Nenhuma Mission foi registrada", focusNoMissionCopy: "Inicie ou retome uma Mission no Tramuri para ver aqui o objetivo, a etapa e a próxima ação registrada.",
         focusOpen: "Mission aberta", focusClosed: "Mission fechada", focusPerspective: "Perspectiva de trabalho", focusStage: "Fase ou etapa atual", focusActivity: "Foco registrado", focusReadiness: "Prontidão do contexto", focusOutcome: "Resultado da Mission",
-        focusNext: "Próxima ação registrada", focusNoNext: "Nenhuma próxima ação registrada", focusNoNextCopy: "O relatório não inventa uma próxima ação. Consulte os detalhes da Mission para ver o trabalho pendente.",
+        focusNext: "Próximo passo", focusNoNext: "Nenhum próximo passo atual foi registrado", focusNoNextCopy: "Retome esta Mission para escolher e registrar o que vem a seguir. O Product Brief pode conter uma recomendação anterior.",
         focusNextDefine: "Etapa DEFINE autorizada", focusNextBlocked: "Resolver o bloqueio registrado", focusNextCorrection: "Corrigir a etapa atual", focusNextStale: "Revalidar etapas desatualizadas", focusDefineDone: "DEFINE concluído · resultado da Mission é independente",
-        focusDefineProgress: "Product Engineering · DEFINE", focusStepsValid: "etapas validadas", focusViewMission: "Abrir detalhes da Mission", focusViewBrief: "Ver Product Brief", focusViewCriteria: "Ver critérios", focusViewWork: "Ver execuções e evidências", focusViewHistory: "Ver histórico da Mission", focusBriefNextAction: "Próxima ação registrada no Product Brief", focusActivityRecorded: "Atividade registrada na Mission", criteriaRecorded: "critérios registrados", missionDetailsNav: "Navegação dos detalhes da Mission", noMissionHistory: "Não há outro histórico de workflow ou contrato registrado.",
+        focusDefineProgress: "Product Engineering · DEFINE", focusStepsValid: "etapas validadas", focusViewMission: "Ir para detalhes da Mission", focusViewBrief: "Ir para o Product Brief", focusViewCriteria: "Ir para critérios", focusViewWork: "Ir para execuções e evidências", focusViewHistory: "Ir para o histórico da Mission", focusBriefNextAction: "Ação sugerida quando este Product Brief foi criado (pode estar desatualizada)", focusBriefRecommendation: "Recomendação anterior do Product Brief", focusBriefRecommendationCaveat: "Registrada quando o Brief foi criado; pode não refletir o trabalho posterior.", focusActivityRecorded: "Esta é a atividade atualmente registrada para a Mission.", focusActivityMayNeedReview: "A última execução foi registrada depois deste foco. O Tramuri não infere se a atividade mudou; confirme ao retomar.", focusActionsHelp: "Estes atalhos levam a seções deste relatório; não executam ações da Mission.", criteriaRecorded: "critérios registrados", missionDetailsNav: "Navegação dos detalhes da Mission", noMissionHistory: "Não há outro histórico de workflow ou contrato registrado.",
         focusSelectionHelp: "Este destaque mostra a Mission aberta criada mais recentemente. O Tramuri não registra quem está trabalhando nela neste momento.", perspectiveHelp: "Indica a perspectiva escolhida para a Mission. Ela é diferente da pessoa ou ferramenta registrada como executora.",
         readinessHelp: "A prontidão descreve o contexto registrado para uma atividade planejada. Pode estar sem avaliação ou desatualizada e não verifica o resultado da Mission.", outcomeHelpAria: "Sobre resultados verificados", outcomeHelp: "O resultado só aparece como verificado quando todos os critérios obrigatórios têm avaliações positivas registradas. Isso não confirma por conta própria uma evidência externa.",
         readinessHelpAria: "Sobre prontidão do contexto", perspectiveHelpAria: "Sobre perspectiva de trabalho", focusSelectionHelpAria: "Como a Mission em destaque foi escolhida", defineHelpAria: "Sobre o progresso do DEFINE", defineHelp: "A contagem inclui apenas etapas aceitas pelo Tramuri Core. Concluir o DEFINE gera um Product Brief; não significa que o produto foi lançado.",
@@ -534,7 +535,7 @@
         outcomeExplanationVerified: "Todos os critérios obrigatórios têm avaliações positivas registradas.",
         outcomeExplanationNotAchieved: "Pelo menos um critério obrigatório está registrado como não atendido."
         ,defineTitle: "Product Engineering · DEFINE", defineProgress: "etapas validadas", defineQuestions: "Esclarecimentos usados", defineNextStep: "Etapa autorizada", defineStepObjective: "Compreender objetivos e contexto", defineStepBusiness: "Descobrir problema, público e negócio", defineStepRequirements: "Identificar requisitos e critérios", defineStepSynthesis: "Consolidar fatos, hipóteses e lacunas", defineStepBrief: "Criar Product Brief", defineStateInProgress: "Em andamento", defineStateBlocked: "Bloqueado", defineStateValidationFailed: "Precisa de correção", defineStateCompleted: "DEFINE concluído", defineStateStale: "Precisa revalidar", defineStatePending: "Pendente", defineCaveat: "DEFINE concluído não significa produto lançado nem Outcome da Mission verificado.", defineHistory: "Histórico do workflow", defineNoEvents: "Nenhum evento do workflow registrado."
-        ,refreshReport: "Atualizar relatório", defineBriefSummary: "Resumo do Product Brief", defineObjective: "Objetivo", defineProblem: "Problema", defineAudience: "Público-alvo", defineValue: "Proposta de valor", defineMvp: "MVP proposto", defineConstraints: "Restrições", defineRisks: "Riscos", defineHypotheses: "Hipóteses importantes", definePending: "Decisões ou perguntas pendentes", defineNextAction: "Próxima ação registrada", defineNoBrief: "Nenhum artefato Product Brief disponível.", defineAssessment: "Avaliação semântica", defineAssessmentBoundary: "Avaliação do host, sem verificação semântica pelo Core", defineAssessmentCurrent: "Atual", defineAssessmentStale: "Desatualizada",
+        ,refreshReport: "Atualizar relatório", defineBriefSummary: "Resumo do Product Brief", defineObjective: "Objetivo", defineProblem: "Problema", defineAudience: "Público-alvo", defineValue: "Proposta de valor", defineMvp: "MVP proposto", defineConstraints: "Restrições", defineRisks: "Riscos", defineHypotheses: "Hipóteses importantes", definePending: "Decisões ou perguntas pendentes", defineNextAction: "Ação sugerida quando o Brief foi criado (pode estar desatualizada)", defineNoBrief: "Nenhum artefato Product Brief disponível.", defineAssessment: "Avaliação semântica", defineAssessmentBoundary: "Avaliação do host, sem verificação semântica pelo Core", defineAssessmentCurrent: "Atual", defineAssessmentStale: "Desatualizada",
         defineHistoryStarted: "DEFINE iniciado", defineHistoryStepStarted: "Etapa iniciada", defineHistorySubmitted: "Resultado enviado", defineHistoryCompleted: "Etapa validada", defineHistoryRejected: "Validação precisa de correção", defineHistoryBlocked: "Etapa bloqueada", defineHistoryStale: "Etapa precisa de revalidação", defineHistoryFinished: "DEFINE concluído", defineHistoryQuestion: "Esclarecimento solicitado", defineHistoryDecision: "Decisão registrada", defineHistoryUpdated: "Workflow atualizado"
       }
     };
@@ -657,6 +658,11 @@
       const status = stateLabel(mission.state);
       const defineDetail = (report.define_details || []).find(item => item.mission_id === missionId);
       const brief = defineDetail?.brief;
+      const latestExecutionAt = (mission.executions || []).reduce((latest, execution) =>
+        Math.max(latest, execution.ended_at_unix_ms || execution.started_at_unix_ms || 0), 0);
+      const focusMayNeedReview = Boolean(
+        plannedActivity && workflow.updated_at_unix_ms && latestExecutionAt > workflow.updated_at_unix_ms
+      );
       let nextAction = null;
       let nextActionDetail = null;
       if (defineState === "blocked") nextAction = text("focusNextBlocked");
@@ -664,12 +670,12 @@
       else if (defineState === "stale") nextAction = text("focusNextStale");
       else if (define && defineState !== "completed" && define.current_step) {
         nextAction = text("focusNextDefine") + " · " + (stepName || text("notRecorded"));
-      } else if (brief?.next_action && brief.state === "completed") {
-        nextAction = brief.next_action;
-        nextActionDetail = text("focusBriefNextAction");
       } else if (plannedActivity) {
         nextAction = missionActivityLabel(plannedActivity);
-        nextActionDetail = text("focusActivityRecorded");
+        nextActionDetail = text(focusMayNeedReview ? "focusActivityMayNeedReview" : "focusActivityRecorded");
+      } else if (brief?.next_action && brief.state === "completed") {
+        nextAction = text("focusBriefRecommendation");
+        nextActionDetail = text("focusBriefRecommendationCaveat");
       }
 
       const card = make("section", undefined, "focus-card");
@@ -700,6 +706,7 @@
       nextCopy.append(make("strong", nextAction || text("focusNoNext"), "focus-next-value"));
       nextCopy.append(make("span", nextActionDetail || text("focusNoNextCopy"), "focus-next-copy"));
       const actions = make("div", undefined, "focus-actions");
+      actions.append(make("span", text("focusActionsHelp"), "focus-actions-help"));
       actions.append(focusButton("focusViewMission", missionId, null, true));
       if (brief) actions.append(focusButton("focusViewBrief", missionId, "brief-" + index, false));
       actions.append(focusButton("focusViewCriteria", missionId, "criteria-" + index, false));

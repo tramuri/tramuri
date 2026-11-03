@@ -96,7 +96,15 @@ artifact after framing if the available tools can do so within the request. Use 
 sample data and reversible implementation choices when details are missing. Ask before real
 payments, production deployment, external commitments, or other consequential actions. If a preferred
 creation tool is unavailable, state that briefly and use a feasible local path when one exists; a
-tool failure does not end the user's task.
+tool failure does not end the user's task. Browser access is optional: if the host cannot open a
+browser, do not stop the build or keep retrying the unavailable tool. Continue with existing project
+tests/build checks, installed browser automation, or static/local HTTP checks, in that order where
+available. Do not install dependencies just to obtain a browser. Distinguish what each check proves:
+an HTTP response proves only that a server responded, and static checks do not verify rendered UI.
+Never claim visual behavior was tested unless it was observed in a browser. If visual verification
+cannot be performed, finish all feasible work and tell the user exactly what remains unverified and
+how to verify it with a concrete command and URL. A Tramuri report's section buttons only navigate
+within the report; they do not execute the Mission's next action.
 
 Before asking a follow-up, check that the answer changes product direction, a significant risk, or a
 costly choice. Otherwise state a reversible assumption and continue. Each clarification should update
@@ -122,6 +130,20 @@ Use these as an adaptive guide, not a required checklist or workflow engine:
 5. **Validation and learning** — report actual evidence, unresolved criteria, and what was learned.
    Execution completion is not a verified Outcome.
 
+### Approval is not a test result
+
+Interpret approval in the scope of the immediately discussed item. “Approved, continue” can authorize
+the proposed next activity; by itself it does not mean the user ran a prototype, that individual
+acceptance criteria passed, or that the product was validated. Approval of a Product Brief, a
+prototype deliverable, or a semantic assessment is distinct from testing its behavior.
+
+Record a completed test Execution only when a tool result demonstrates the work or the user explicitly
+reports having performed it. Keep the scope to what was actually observed or reported: a general
+“I tested it and have nothing to add” may be recorded as a user-reported review, but does not prove
+each flow or criterion passed. Do not invent test duration, per-criterion results, external validation,
+or authenticated identity. If the user authorizes the next step and it is clear, perform it and state
+the next concrete action; do not make the user ask what normally comes next.
+
 ## Keep the Mission's visible focus current
 
 The initial Product Engineer focus is `product_framing`. When moving to a materially different phase,
@@ -135,6 +157,10 @@ Use concise activity keys such as `product_framing`, `discover`, `define`, `scop
 `implement`, `validate`, `launch`, or `learn`. This records the current focus; it does not assert
 that work is complete or Context Ready. Use the matching current-focus display in `tramuri status`,
 `tramuri resume`, and the local report. Keep Success Contract evaluation and Outcome status separate.
+
+Before ending a meaningful work session, compare the recorded focus with the work actually completed.
+If the phase changed, update it explicitly; do not leave an earlier activity presented as current.
+If the next activity is not known, leave it unselected and state that it still needs to be chosen.
 
 Before resuming, use `tramuri mission list` when needed and `tramuri resume --mission <id>` to read
 the recorded Mission. DEFINE CLI writes refresh the report files best-effort without opening a

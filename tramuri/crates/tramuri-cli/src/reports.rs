@@ -1091,4 +1091,22 @@ mod tests {
         assert!(!REPORT_HTML.contains("<link rel="));
         assert!(REPORT_HTML.contains("@media print"));
     }
+
+    #[test]
+    fn mission_renderer_uses_shared_define_step_labels() {
+        let shared_labels = REPORT_HTML.find("const defineStepNames = {").unwrap();
+        let focus_renderer = REPORT_HTML.find("function renderMissionFocus()").unwrap();
+        let missions_renderer = REPORT_HTML
+            .find("function renderMissions(query, state)")
+            .unwrap();
+
+        assert!(shared_labels < focus_renderer);
+        assert!(focus_renderer < missions_renderer);
+        assert!(
+            REPORT_HTML[focus_renderer..missions_renderer]
+                .contains("defineStepNames[define.current_step]")
+        );
+        assert!(REPORT_HTML[missions_renderer..].contains("defineStepNames[step.id]"));
+        assert!(REPORT_HTML[missions_renderer..].contains("defineStepNames[event.step]"));
+    }
 }

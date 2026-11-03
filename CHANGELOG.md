@@ -8,6 +8,12 @@ Cargo workspace manifest and exposed to Python by maturin.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-03
+
+### Fixed
+
+- Mission Control now renders Mission details and recent activity when DEFINE history is present.
+
 ## [0.12.0] - 2026-11-02
 
 ### Added

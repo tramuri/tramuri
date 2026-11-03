@@ -439,6 +439,10 @@
     const report = JSON.parse(document.getElementById("report-data").textContent);
     const data = report;
     const actorLabels = new Map((report.execution_actors || []).map(item => [item.execution_id, item.actor_reference]));
+    const defineStepNames = {
+      objective_context: "defineStepObjective", business_discovery: "defineStepBusiness", requirements: "defineStepRequirements",
+      knowledge_synthesis: "defineStepSynthesis", product_brief: "defineStepBrief"
+    };
     const strings = {
       en: {
         documentTitle: "Tramuri · Mission Control", brandTag: "From intent to verified outcomes", workspaceLabel: "Workspace",
@@ -644,11 +648,7 @@
       const defineState = define?.state;
       const workflow = mission.workflow || {};
       const readiness = mission.readiness || { activity: null, state: "not_assessed" };
-      const stepNames = {
-        objective_context: "defineStepObjective", business_discovery: "defineStepBusiness", requirements: "defineStepRequirements",
-        knowledge_synthesis: "defineStepSynthesis", product_brief: "defineStepBrief"
-      };
-      const stepName = define?.current_step ? text(stepNames[define.current_step] || "notRecorded") : null;
+      const stepName = define?.current_step ? text(defineStepNames[define.current_step] || "notRecorded") : null;
       const plannedActivity = workflow.next_activity || readiness.activity;
       const stage = stepName || (plannedActivity ? missionActivityLabel(plannedActivity) : text("activityNotSelected"));
       const activityFocus = define && defineState !== "completed"
@@ -723,7 +723,7 @@
         progress.append(progressHeading);
         const stepper = make("ol", undefined, "define-stepper");
         for (const step of define.steps || []) {
-          const name = stepNames[step.id] || "notRecorded";
+          const name = defineStepNames[step.id] || "notRecorded";
           const item = make("li", text(name) + " · " + text(({
             completed: "defineStateCompleted", in_progress: "defineStateInProgress", blocked: "defineStateBlocked",
             validation_failed: "defineStateValidationFailed", stale: "defineStateStale", pending: "defineStatePending"
@@ -847,10 +847,9 @@
           definePanel.append(make("h3", text("defineTitle") + " · " + text(stateKey)));
           definePanel.append(make("div", define.completed + "/" + define.total + " " + text("defineProgress") + " · " + text("defineQuestions") + ": " + define.clarification_count + "/" + define.clarification_maximum, "activity-meta"));
           const list = make("ul", undefined, "criterion-list");
-          const names = ["defineStepObjective", "defineStepBusiness", "defineStepRequirements", "defineStepSynthesis", "defineStepBrief"];
           for (const step of define.steps || []) {
             const item = make("li", undefined, "criterion");
-            const label = names[step.order - 1] || step.id;
+            const label = defineStepNames[step.id] || "notRecorded";
             item.append(make("span", (step.state === "completed" ? "✓ " : step.state === "in_progress" ? "◉ " : step.state === "blocked" ? "! " : "○ ") + text(label), "criterion-text"));
             item.append(make("span", text(({ completed: "defineStateCompleted", in_progress: "defineStateInProgress", blocked: "defineStateBlocked", validation_failed: "defineStateValidationFailed", stale: "defineStateStale", pending: "defineStatePending" })[step.state] || "defineStatePending"), "badge badge-" + step.state));
             list.append(item);
@@ -989,7 +988,7 @@
           decision_recorded: "defineHistoryDecision"
         };
         for (const event of [...defineEvents].reverse().slice(0, 20)) {
-          const step = event.step ? text(stepNames[event.step] || "notRecorded") : text("defineTitle");
+          const step = event.step ? text(defineStepNames[event.step] || "notRecorded") : text("defineTitle");
           history.append(make("div", step + " · " + text(eventNames[event.event_type] || "defineHistoryUpdated") + " · " + date(event.occurred_at_unix_ms), "history-item"));
         }
         if (!eventCount) history.append(make("div", text("noMissionHistory"), "history-item"));

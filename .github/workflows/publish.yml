@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
       - name: Check tag, Cargo version, and changelog entry
@@ -66,13 +66,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
       - run: uv sync --locked --no-install-project --python 3.11
       - name: Build manylinux wheel
         if: runner.os == 'Linux'
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           command: build
           args: --locked --release --manifest-path tramuri/bindings/python/Cargo.toml --interpreter python3.11 --out dist
@@ -92,7 +92,7 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
               env_file.write(f"TRAMURI_WHEEL={wheels[0].resolve()}\n")
       - run: uv run --no-sync pytest tramuri/tests/python/test_install.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-${{ matrix.os }}
           path: dist/*.whl
@@ -110,7 +110,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
       - run: uv sync --locked --no-install-project --python 3.11
@@ -156,7 +156,7 @@ jobs:
           subprocess.run(["cargo", "metadata", "--no-deps", "--format-version", "1",
                           "--manifest-path", str(source_root / "tramuri/bindings/python/Cargo.toml")],
                          check=True, capture_output=True, text=True)
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-sdist
           path: dist/*.tar.gz
@@ -169,18 +169,18 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: dist-*
           path: dist/
           merge-multiple: true
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: uvx --from twine==7.0.0 twine check --strict dist/*
       - name: Require wheel and source distribution
         run: |
           test -n "$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
           test -n "$(find dist -maxdepth 1 -name '*.tar.gz' -print -quit)"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: validated-dist
           path: dist/*
@@ -194,11 +194,11 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: validated-dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true
@@ -210,7 +210,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Install the tagged version from TestPyPI
         env:
           VERSION: ${{ github.ref_name }}
@@ -262,10 +262,10 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: validated-dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           skip-existing: true

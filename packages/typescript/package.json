@@ -1,0 +1,64 @@
+{
+  "name": "@tramuri/typescript",
+  "version": "0.1.1",
+  "description": "Tramuri's TypeScript CLI preview for explicit work-perspective selection",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tramuri/tramuri.git",
+    "directory": "packages/typescript"
+  },
+  "homepage": "https://github.com/tramuri/tramuri/tree/main/packages/typescript",
+  "bugs": {
+    "url": "https://github.com/tramuri/tramuri/issues"
+  },
+  "keywords": [
+    "tramuri",
+    "cli",
+    "product-engineering",
+    "forward-deployed-engineering"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "packageManager": "bun@1.3.14",
+  "files": [
+    "dist/**",
+    "README.md",
+    "README.pt-BR.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "tramuri-cli": "dist/cli.js",
+    "tramuri-ts": "dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "overrides": {
+    "minimatch": "11.0.1"
+  },
+  "scripts": {
+    "build": "bun build --target=node --outfile dist/cli.js src/cli.ts",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "lint": "eslint src tests eslint.config.js",
+    "test": "bun test tests",
+    "smoke:node": "node dist/cli.js perspective choose --perspective product_engineer --json",
+    "smoke:bun": "bun dist/cli.js perspective choose --perspective fde --json",
+    "ci": "bun run typecheck && bun run lint && bun run test && bun run build && bun run smoke:node && bun run smoke:bun",
+    "pack:check": "npm pack --dry-run",
+    "prepack": "bun run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/bun": "^1.4.4",
+    "@types/node": "22",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

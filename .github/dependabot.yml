@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /packages/typescript
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      bun-development-dependencies:
+        patterns:
+          - "*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"

@@ -6,6 +6,12 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # typescript-eslint@8.72.1 declares TypeScript <6.1.0 and fails at runtime on TS 7.
+      # Keep TS 6.0 patch updates available until the lint stack supports newer TS.
+      - dependency-name: typescript
+        versions:
+          - ">=6.1.0"
     groups:
       bun-development-dependencies:
         patterns:

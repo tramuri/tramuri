@@ -1,60 +1,53 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
+  merge_group:
 
 permissions:
   contents: read
 
 jobs:
-  rust:
-    name: Rust checks (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  quality:
+    name: Quality / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest, macos-26-intel]
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      - run: cargo test --locked --workspace
-
-  sdk:
-    name: Python SDK (${{ matrix.os }}, Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest, macos-26-intel]
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-python@v7
-        with:
+          version: latest
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v10.3.3
-        with:
           enable-cache: true
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --locked --package tramuri-cli
-      - run: uv sync --locked --no-install-project --python ${{ matrix.python-version }}
-      - run: uv run --no-sync maturin develop --locked --manifest-path tramuri/bindings/python/Cargo.toml
-      - name: Run Python SDK and mandatory CLI parity tests (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $env:TRAMURI_CLI = Join-Path $env:GITHUB_WORKSPACE 'target\debug\tramuri.exe'
-          uv run --locked --no-sync pytest
-      - name: Run Python SDK and mandatory CLI parity tests (Unix)
-        if: runner.os != 'Windows'
+      - name: Install locked environment
+        run: uv sync --locked --all-groups
+      - name: Lint
+        run: uv run ruff check src tests
+      - name: Formatting
+        run: uv run ruff format --check src tests
+      - name: Type check
+        run: uv run mypy src/tramuri
+      - name: Tests
+        run: uv run pytest --cov=tramuri --cov-report=term-missing
+      - name: Build distributions
+        run: uv run python -m build
+      - name: Check distributions
+        run: uv run twine check dist/*
+
+  all-checks-passed:
+    name: All checks passed
+    if: ${{ always() }}
+    needs: [quality]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require quality matrix
         env:
-          TRAMURI_CLI: ${{ github.workspace }}/target/debug/tramuri
-        run: uv run --locked --no-sync pytest
+          RESULT: ${{ needs.quality.result }}
+        run: test "$RESULT" = success

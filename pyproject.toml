@@ -1,48 +1,108 @@
 [build-system]
-requires = ["maturin>=1.13,<2.0"]
-build-backend = "maturin"
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
 
 [project]
 name = "tramuri"
-# Maturin reads the single source-of-truth version from Cargo.toml's workspace.package.version.
-dynamic = ["version"]
-description = "Local-first, agent-native infrastructure for verified work outcomes"
+version = "0.13.0"
+description = "From intent to a verifiable product definition with local-first agent integrations."
 readme = "README.md"
-license = "Apache-2.0"
-license-files = ["LICENSE"]
-requires-python = ">=3.11"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+authors = [{ name = "Tramuri maintainers" }]
+keywords = ["product-engineering", "product-management", "agents", "cli", "workflow"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Programming Language :: Rust",
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Utilities",
+]
+dependencies = [
+  "jinja2>=3.1,<4",
+  "rich>=13.9,<15",
+  "typer>=0.16,<1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/tramuri/tramuri"
+Documentation = "https://github.com/tramuri/tramuri/tree/main/docs"
+Issues = "https://github.com/tramuri/tramuri/issues"
+Changelog = "https://github.com/tramuri/tramuri/blob/main/CHANGELOG.md"
+
 [project.scripts]
-tramuri = "tramuri._cli:main"
+tramuri = "tramuri.cli.app:main"
 
 [dependency-groups]
 dev = [
-    "maturin>=1.13,<2.0",
-    "pytest>=9,<10",
+  "build>=1.2,<2",
+  "mypy>=1.13,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<8",
+  "pre-commit>=4,<5",
+  "ruff>=0.8,<1",
+  "twine>=6,<8",
 ]
 
-[tool.maturin]
-manifest-path = "tramuri/bindings/python/Cargo.toml"
-bindings = "pyo3"
-python-source = "tramuri/python"
-module-name = "tramuri._native"
+[tool.hatch.build.targets.wheel]
+packages = ["src/tramuri"]
+exclude = ["**/__pycache__/**", "**/*.py[cod]"]
+
+[tool.hatch.build.targets.sdist]
 include = [
-    { path = "LICENSE", format = "sdist" },
-    { path = "tramuri/always_on/*.md", format = "sdist" },
+  "/src",
+  "/tests",
+  "/docs",
+  "/README.md",
+  "/README.pt-BR.md",
+  "/LICENSE",
+  "/CHANGELOG.md",
 ]
+exclude = ["**/__pycache__/**", "**/*.py[cod]"]
 
 [tool.pytest.ini_options]
-testpaths = ["tramuri/tests/python"]
-addopts = ["-ra"]
-pythonpath = ["tramuri/python"]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["src/tramuri"]
+branch = true
+parallel = true
+relative_files = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/tramuri"]

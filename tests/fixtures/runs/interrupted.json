@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "stage": "shaping",
+  "attempts": 1,
+  "note": "Fixture for resume and checkpoint contract tests."
+}

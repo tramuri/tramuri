@@ -16,3 +16,4 @@ Management result. This documentation describes the first Python release.
 
 - [CLI](reference/cli.md) — command grammar and output contracts.
 - [Providers](reference/providers.md) — detected capabilities and fallbacks.
+- [Hooks](reference/hooks.md) — deterministic provider gate and SQLite contract.

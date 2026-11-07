@@ -78,6 +78,7 @@ class InstallationComponent:
     optional: bool = False
     description: str = ""
     merge_json: bool = False
+    merge_text: bool = False
 
 
 @dataclass(slots=True)

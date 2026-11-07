@@ -21,7 +21,7 @@ from tramuri.core.models import (
 )
 from tramuri.core.workflow import stage_specs, validate_transition
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Database:
@@ -179,9 +179,39 @@ class Database:
                         updated_at TEXT NOT NULL,
                         UNIQUE(project_id, provider)
                     );
-                    PRAGMA user_version = 1;
+                    CREATE TABLE IF NOT EXISTS hook_events (
+                        id TEXT PRIMARY KEY,
+                        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                        provider TEXT NOT NULL,
+                        session_id TEXT,
+                        event_name TEXT NOT NULL,
+                        tool_name TEXT,
+                        prompt_class TEXT,
+                        decision TEXT NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    PRAGMA user_version = 2;
                     """
                 )
+            elif current == 1:
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS hook_events (
+                        id TEXT PRIMARY KEY,
+                        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                        provider TEXT NOT NULL,
+                        session_id TEXT,
+                        event_name TEXT NOT NULL,
+                        tool_name TEXT,
+                        prompt_class TEXT,
+                        decision TEXT NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                db.execute("PRAGMA user_version = 2")
 
     def ensure_project(self) -> str:
         project_id = new_id()
@@ -265,6 +295,59 @@ class Database:
     ) -> None:
         with self.connection() as db:
             self._insert_event(db, run_id, stage_id, event_type, payload)
+
+    def hook_event(
+        self,
+        provider: str,
+        event_name: str,
+        session_id: str | None,
+        tool_name: str | None,
+        prompt_class: str | None,
+        decision: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Persist hook metadata without storing prompts, commands or tool arguments."""
+        project_id = self.project_id()
+        with self.connection() as db:
+            db.execute(
+                "INSERT INTO hook_events(id, project_id, provider, session_id, event_name, "
+                "tool_name, prompt_class, decision, payload_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    new_id(),
+                    project_id,
+                    provider,
+                    session_id,
+                    event_name,
+                    tool_name,
+                    prompt_class,
+                    decision,
+                    json_dumps(payload),
+                    now_iso(),
+                ),
+            )
+
+    def latest_hook_context(self, provider: str, session_id: str | None) -> sqlite3.Row | None:
+        """Return the latest prompt policy for a provider session."""
+        project_id = self.project_id()
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM hook_events WHERE project_id = ? AND provider = ? "
+                "AND session_id IS ? AND event_name IN ('UserPromptSubmit', 'BeforeAgent') "
+                "ORDER BY created_at DESC LIMIT 1",
+                (project_id, provider, session_id),
+            ).fetchone()
+        return cast(sqlite3.Row | None, row)
+
+    def has_completed_run(self) -> bool:
+        """Return whether this project has a verified completed PM execution."""
+        project_id = self.project_id()
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT 1 FROM runs WHERE project_id = ? AND status = 'completed' LIMIT 1",
+                (project_id,),
+            ).fetchone()
+        return row is not None
 
     def stage(self, run_id: str, key: str) -> sqlite3.Row:
         with self.connection() as db:

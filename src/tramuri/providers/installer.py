@@ -9,6 +9,7 @@ from tramuri import __version__
 from tramuri.core.errors import ProviderConflictError
 from tramuri.core.models import InstallationComponent, InstallationPlan, now_iso
 from tramuri.core.safety import atomic_write, backup_file, project_root, safe_child, sha256_bytes
+from tramuri.providers.base import TRAMURI_BLOCK_END, TRAMURI_BLOCK_START
 from tramuri.storage.database import Database
 
 
@@ -30,6 +31,24 @@ class Installer:
         return loaded if isinstance(loaded, dict) else None
 
     def _merged_content(self, component: InstallationComponent, destination: Path) -> str:
+        if component.merge_text:
+            incoming = component.content.strip() + "\n"
+            if not destination.exists():
+                return incoming
+            current = destination.read_text(encoding="utf-8")
+            start = current.find(TRAMURI_BLOCK_START)
+            end = current.find(TRAMURI_BLOCK_END)
+            if (start == -1) != (end == -1) or (start != -1 and end < start):
+                raise ProviderConflictError(
+                    f"Incomplete Tramuri managed block: {component.relative_path}"
+                )
+            if start != -1 and end != -1:
+                end += len(TRAMURI_BLOCK_END)
+                parts = [current[:start].strip(), incoming.strip(), current[end:].strip()]
+                return "\n\n".join(part for part in parts if part) + "\n"
+            if not current.strip():
+                return incoming
+            return current.rstrip() + "\n\n" + incoming
         if not component.merge_json:
             return component.content
         incoming = json.loads(component.content)
@@ -72,6 +91,7 @@ class Installer:
                     "exists": destination.exists(),
                     "changed": existing_content != content,
                     "optional": component.optional,
+                    "merge_text": component.merge_text,
                 }
             )
         return result
@@ -101,6 +121,7 @@ class Installer:
                 and item["changed"]
                 and not force
                 and not components_by_path[str(item["path"])].merge_json
+                and not components_by_path[str(item["path"])].merge_text
                 and (not old or old.get("hash") != sha256_bytes(destination.read_bytes()))
             ):
                 conflicts.append(str(item["path"]))
@@ -123,6 +144,7 @@ class Installer:
                         "key": component.key,
                         "path": component.relative_path,
                         "hash": sha256_bytes(content.encode()),
+                        "merge_text": component.merge_text,
                         "installed_at": now_iso(),
                     }
                 )
@@ -135,6 +157,7 @@ class Installer:
                     "key": component.key,
                     "path": component.relative_path,
                     "hash": sha256_bytes(content.encode()),
+                    "merge_text": component.merge_text,
                     "installed_at": now_iso(),
                 }
             )
@@ -172,6 +195,19 @@ class Installer:
             destination = safe_child(self.project_dir, str(item["path"]))
             if not destination.is_file():
                 continue
+            if item.get("merge_text"):
+                current = destination.read_text(encoding="utf-8")
+                start = current.find(TRAMURI_BLOCK_START)
+                end = current.find(TRAMURI_BLOCK_END)
+                if start != -1 and end > start:
+                    end += len(TRAMURI_BLOCK_END)
+                    remaining = (current[:start].rstrip() + "\n" + current[end:].lstrip()).strip()
+                    if remaining:
+                        atomic_write(destination, remaining + "\n")
+                    else:
+                        destination.unlink()
+                    removed.append(str(item["path"]))
+                    continue
             if force or sha256_bytes(destination.read_bytes()) == item.get("hash"):
                 destination.unlink()
                 removed.append(str(item["path"]))

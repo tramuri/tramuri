@@ -5,6 +5,19 @@ e [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-07
+
+### Fixed
+
+- Provider installation now adds a managed Tramuri identity/workflow block to
+  `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` without replacing existing instructions.
+- The main `tramuri-pm` skill now explains how to identify Tramuri, start a
+  workflow and report the next action.
+- Updates and uninstall remove only Tramuri's managed instruction block.
+- Provider-native hooks now record deterministic checkpoints in SQLite and gate
+  mutating product work until a PM run is completed, subject to each provider's
+  trust and hook coverage rules.
+
 ## [0.13.0] - 2026-11-07
 
 ### Added

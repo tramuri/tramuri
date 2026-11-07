@@ -12,6 +12,7 @@ from tramuri.cli.output import banner, console, emit, stage_table, version_text
 from tramuri.core.errors import TramuriError, UsageError
 from tramuri.core.models import Mode
 from tramuri.core.safety import project_root
+from tramuri.hooks.runtime import main as hook_runtime_main
 from tramuri.pm.demo import run_demo
 from tramuri.pm.runner import PMRunner, ProgressCallback
 from tramuri.providers import adapter_for, adapters, registry
@@ -29,10 +30,12 @@ providers_app = typer.Typer(help="Inspect and manage AI-agent provider integrati
 runs_app = typer.Typer(help="Inspect persisted Tramuri runs.")
 pm_app = typer.Typer(help="Run Product Management workflows.")
 report_app = typer.Typer(help="Generate and open offline reports.")
+hooks_app = typer.Typer(help="Run deterministic provider hook handlers.")
 app.add_typer(providers_app, name="providers")
 app.add_typer(runs_app, name="runs")
 app.add_typer(pm_app, name="pm")
 app.add_typer(report_app, name="report")
+app.add_typer(hooks_app, name="hooks")
 
 
 def _version_callback(value: bool) -> None:
@@ -318,6 +321,14 @@ def report_open(
     if not no_open:
         webbrowser.open(Path(paths["report"]).as_uri())
     emit(paths, _ctx(ctx)["json"], _ctx(ctx)["no_color"])
+
+
+@hooks_app.command("runtime")
+def hooks_runtime(
+    provider: str = typer.Option(..., "--provider", help="codex, claude or gemini"),
+) -> None:
+    """Evaluate one provider hook event from JSON on stdin."""
+    hook_runtime_main(provider.lower())
 
 
 def main() -> None:

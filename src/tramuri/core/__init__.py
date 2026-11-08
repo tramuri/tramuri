@@ -1,1 +1,1 @@
-"""Domain models, transitions and safety primitives."""
+"""Tramuri core contracts and deterministic projections."""

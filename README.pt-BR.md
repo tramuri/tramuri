@@ -9,19 +9,74 @@
 <p align="center"><strong>Da intenção a uma definição de produto verificável.</strong></p>
 
 O Tramuri é uma ferramenta Python local-first para transformar uma ideia de
-produto incompleta em um resultado estruturado e revisável de Product
-Management. Ele persiste o workflow em SQLite, instala orientações nativas para
+produto incompleta em um resultado estruturado e revisável de produto. Ele
+persiste o workflow em SQLite, instala orientações nativas para
 Codex, Claude Code e Gemini CLI e gera um relatório offline com protótipo
 navegável.
 
-A primeira versão implementa apenas Product Management. Ela não simula módulos
+A primeira versão implementa apenas o workflow de definição de produto. Ela não simula módulos
 de UX ou Engenharia, não exige um modelo hospedado e não pede credenciais
 duplicadas dos providers.
 
-## Instalação
+O runtime é dividido entre um core neutro de providers, o módulo de produto e
+harnesses finos para cada plataforma. O core possui estado e política do
+workflow; os harnesses possuem as projeções nativas de Codex, Claude Code e
+Gemini CLI. A API pública expõe diretamente os novos limites de core, produto e
+harness; fachadas legadas não fazem parte desta versão.
+
+## Pré-requisitos
+
+| Requisito | Mínimo | Verificação | Instalação |
+| --- | --- | --- | --- |
+| Python | 3.10+ | `python --version` | [python.org](https://www.python.org/downloads/) |
+| uv (recomendado) | qualquer versão atual | `uv --version` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| pipx (alternativa) | versão atual | `pipx --version` | `python -m pip install --user pipx` |
+
+Atalhos por plataforma:
+
+```bash
+# macOS (Homebrew)
+brew install python@3.12 uv
+
+# Windows (PowerShell)
+winget install --id=astral-sh.uv -e
+
+# Ubuntu/Debian
+sudo apt install python3.12 python3-pip pipx
+# ou instale o uv:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+## Quickstart (30 segundos)
 
 ```bash
 uv tool install tramuri
+tramuri init --provider auto
+```
+
+Abra o seu assistente no mesmo projeto e execute a skill instalada:
+
+```text
+/tramuri .        # Claude Code ou Gemini CLI
+$tramuri .        # Codex
+```
+
+Isso já é suficiente para começar. Use `--provider all` em vez de `auto` para
+instalar explicitamente os componentes dos três providers.
+
+## Instalação
+
+### Importante
+
+O pacote oficial no PyPI é `tramuri`. O comando instalado no `PATH` também é
+`tramuri`. Este projeto não usa o nome de pacote nem o comando do Graphify.
+
+Escolha um método para instalar o CLI isolado:
+
+```bash
+uv tool install tramuri
+# Se `tramuri` não for encontrado, reinicie o shell ou execute:
+# uv tool update-shell
 tramuri --version
 ```
 
@@ -33,16 +88,138 @@ pipx install tramuri
 python -m pip install tramuri
 ```
 
+Não é necessário Rust, Node.js, Docker, backend hospedado ou uma segunda chave
+de API dos providers.
+
+### Instalação com escopo do projeto
+
+No projeto que o Tramuri deve acompanhar, instale os componentes nativos do
+provider uma vez. A instalação é local ao projeto por padrão:
+
+```bash
+tramuri init --provider auto       # detecta providers disponíveis neste projeto
+tramuri init --provider all        # instala explicitamente os três adapters
+```
+
+Depois, inicie o Tramuri dentro do seu assistente:
+
+```text
+Claude Code: /tramuri .
+Gemini CLI:  /tramuri .
+Codex:       $tramuri .
+```
+
+`/tramuri .` significa “use este projeto como contexto”. Claude Code e Gemini
+expõem esse nome como comando nativo. O Codex expõe skills de projeto pela
+notação oficial `$skill-name`, então `$tramuri .` é a forma garantida no Codex;
+as instruções instaladas também reconhecem `/tramuri .` quando ele é enviado
+como uma mensagem normal.
+
+O Tramuri começa pela intenção de produto da pessoa. Se ela não estiver
+presente, faz uma única pergunta curta e agrupada sobre o que criar ou melhorar,
+para quem e qual resultado se espera. Ele não inventa um produto. Com a
+intenção clara, usa MVP por padrão, registra suposições de baixo impacto e só
+pergunta sobre autorizações, segurança ou decisões irreversíveis.
+
+Todo o estado e os artefatos gerados ficam juntos:
+
+```text
+tramuri_output/
+├── portal/index.html                 # mapa central do produto
+├── reports/<run-id>/report.html      # relatório do produto
+├── reports/<run-id>/prototype.html  # protótipo navegável offline
+├── demo/                             # demo navegável
+├── database/tramuri.sqlite3          # memória durável do workflow
+├── manifests/                        # registros de instalação
+└── backups/                          # backups seguros do instalador
+```
+
+Os arquivos nativos dos providers continuam em `.agents/`, `.claude/` ou
+`.gemini/`, pois são os locais que os assistentes reconhecem para skills,
+comandos e hooks.
+
+A skill de entrada é instalada em:
+
+```text
+.agents/skills/tramuri/SKILL.md        # Codex
+.claude/skills/tramuri/SKILL.md        # Claude Code
+.gemini/skills/tramuri/SKILL.md        # Gemini CLI
+.gemini/commands/tramuri.toml          # comando nativo /tramuri do Gemini
+```
+
+Também é possível acompanhar o workflow pelo terminal:
+
+```bash
+tramuri status
+tramuri runs list
+tramuri resume <run-id>
+```
+
+## Comandos comuns
+
+Execute a skill instalada dentro de um assistente:
+
+```text
+/tramuri .                              # Claude Code ou Gemini CLI
+$tramuri .                              # Codex
+/tramuri explain "proposta de valor"   # explicar fatos do produto
+$tramuri explain "escopo do MVP"         # equivalente no Codex
+```
+
+Execute operações determinísticas ou automações pelo shell:
+
+```bash
+tramuri --help
+tramuri status
+tramuri --json explain "proposta de valor"
+tramuri product run --idea-file ideia.md --mode mvp
+tramuri product demo --mode mvp
+tramuri experience check <run-id>
+tramuri report open <run-id>
+tramuri report open <run-id> --no-open
+tramuri runs list
+tramuri runs show <run-id>
+tramuri resume <run-id>
+tramuri providers list
+tramuri doctor
+tramuri init --provider all --dry-run
+tramuri update --provider all
+tramuri uninstall --provider codex
+```
+
+`explain` lê somente artefatos, decisões, dependências e evidências persistidos
+em `tramuri_output`. Quando um assunto não foi registrado, ele informa a lacuna
+em vez de inventar uma explicação.
+
+Se `tramuri` não for encontrado após uma instalação isolada, reinicie o shell ou
+execute `uv tool update-shell`. Se um provider não for detectado, execute
+`tramuri doctor` e instale o CLI do provider seguindo as instruções oficiais
+dele. O Tramuri nunca instala assistentes de terceiros ou servidores MCP
+automaticamente.
+
 ## Demo determinística
 
 ```bash
-tramuri pm demo --mode mvp
+tramuri product demo --mode mvp
 tramuri runs list
 tramuri report open <run-id> --no-open
 ```
 
 A demo não exige rede nem autenticação. Hipóteses e dados de exemplo são
 marcados explicitamente como sintéticos.
+
+Cada demo também produz `tramuri_output/portal/index.html`, o mapa de Product
+Experience, e `tramuri_output/demo/index.html`, uma Product Demo offline com uma
+jornada simulada real. Abra o portal para navegar de Product Definition até a
+demo; Product UX e Product Engineering permanecem visíveis como etapas futuras.
+Valide os artefatos com `tramuri --json experience check <run-id>`.
+
+O workflow sobrevive ao fechamento da sessão do provider. Use `tramuri status`
+para ver a etapa real, checkpoint, gates dos sensores e próxima ação; depois
+execute `tramuri resume <run-id>` para continuar. O Tramuri registra knowledge
+local com proveniência e trata documentos do repositório como dados não
+confiáveis. Ambiguidades de baixo impacto viram hipóteses registradas; somente
+decisões críticas de autorização ou segurança viram gates humanos.
 
 ## Componentes dos providers
 
@@ -68,7 +245,7 @@ uv build
 ```
 
 Consulte [docs/index.md](docs/index.md) para arquitetura, capabilities dos
-providers, workflow de PM e release.
+providers, workflow de produto e release.
 
 ## Licença
 

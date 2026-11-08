@@ -10,6 +10,13 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from tramuri.core.paths import output_root
+from tramuri.core.status import build_status
+from tramuri.experience.demo import ProductDemoBuilder
+from tramuri.experience.portal import ProductPortalBuilder
+from tramuri.experience.reviewer import ProductLeadReviewer
+from tramuri.experience.sensors import DemoQualitySensors
+
 
 class ReportGenerator:
     def __init__(self, project_dir: Path):
@@ -20,9 +27,9 @@ class ReportGenerator:
             autoescape=select_autoescape(("html", "xml")),
         )
 
-    def generate(self, details: dict[str, Any]) -> dict[str, str]:
+    def generate(self, details: dict[str, Any]) -> dict[str, Any]:
         run_id = str(details["run"]["id"])
-        output_dir = self.project_dir / ".tramuri" / "reports" / run_id
+        output_dir = output_root(self.project_dir) / "reports" / run_id
         output_dir.mkdir(parents=True, exist_ok=True)
         context = self._context(details)
         report_path = output_dir / "report.html"
@@ -35,7 +42,20 @@ class ReportGenerator:
         prototype_path.write_text(
             self.environment.get_template("prototype.html").render(**context), encoding="utf-8"
         )
-        return {"report": str(report_path), "prototype": str(prototype_path)}
+        demo = ProductDemoBuilder(self.project_dir).build(details)
+        review = ProductLeadReviewer().review(details, demo.root)
+        sensors = DemoQualitySensors().run(demo.root, details)
+        portal = ProductPortalBuilder(self.project_dir).build(
+            details, report_path, demo.index, review, sensors
+        )
+        return {
+            "report": str(report_path),
+            "prototype": str(prototype_path),
+            "portal": str(portal),
+            "demo": str(demo.index),
+            "review": review.to_dict(),
+            "experience_sensors": [item.to_dict() for item in sensors],
+        }
 
     def _archive_previous(self, path: Path, stem: str) -> None:
         if not path.is_file():
@@ -57,6 +77,7 @@ class ReportGenerator:
                 "ascii"
             )
         run = details["run"]
+        status_view = build_status(details)
         return {
             "run": run,
             "stages": details.get("stages", []),
@@ -65,6 +86,10 @@ class ReportGenerator:
             "hypotheses": details.get("hypotheses", []),
             "evidence": details.get("evidence", []),
             "validations": details.get("validations", []),
+            "checkpoints": details.get("checkpoints", []),
+            "knowledge": details.get("knowledge", []),
+            "sensor_results": details.get("sensor_results", []),
+            "status_view": status_view,
             "framing": by_kind.get("pm.framing", {}),
             "discovery": by_kind.get("pm.discovery", {}),
             "shaping": by_kind.get("pm.shaping", {}),

@@ -1,4 +1,4 @@
-"""Deterministic provider hook gate backed by the project SQLite database."""
+"""Compatibility command boundary for provider lifecycle hooks."""
 
 from __future__ import annotations
 
@@ -8,41 +8,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from tramuri.core.context import build_context_pack
+from tramuri.core.contracts import HookAction, HookDecision, HookEvaluation
+from tramuri.core.paths import output_root
+from tramuri.core.policy import evaluate_hook
+from tramuri.harness.hooks import normalize_payload, render_decision
 from tramuri.storage.database import Database
-
-PRODUCT_TERMS = (
-    "tramuri",
-    "produto",
-    "product",
-    "saas",
-    "mvp",
-    "poc",
-    "feature",
-    "funcionalidade",
-    "ideia",
-    "idea",
-    "usuário",
-    "usuario",
-    "user",
-    "cliente",
-    "customer",
-)
-MUTATING_TOOLS = {
-    "bash",
-    "apply_patch",
-    "edit",
-    "write",
-    "write_file",
-    "replace",
-    "run_shell_command",
-    "run_command",
-}
-BOOTSTRAP_COMMANDS = (
-    "tramuri",
-    "python -m tramuri",
-    "python3 -m tramuri",
-    "py -m tramuri",
-)
 
 
 def _project_dir(payload: dict[str, Any]) -> Path | None:
@@ -57,7 +28,7 @@ def _project_dir(payload: dict[str, Any]) -> Path | None:
             continue
         current = Path(value).expanduser().resolve(strict=False)
         for directory in (current, *current.parents):
-            if (directory / ".tramuri").is_dir():
+            if output_root(directory).is_dir():
                 return directory
     return None
 
@@ -76,147 +47,84 @@ def _tool_name(payload: dict[str, Any]) -> str | None:
     return str(value) if value is not None else None
 
 
-def _tool_input(payload: dict[str, Any]) -> dict[str, Any] | str:
-    value = payload.get("tool_input")
-    if isinstance(value, (dict, str)):
-        return value
-    return {}
-
-
-def _command_or_path(payload: dict[str, Any]) -> str:
-    value = _tool_input(payload)
-    if isinstance(value, str):
-        return value
-    values = [value.get(key) for key in ("command", "file_path", "path", "target_file")]
-    return " ".join(str(item) for item in values if item is not None)
-
-
-def _prompt_class(payload: dict[str, Any]) -> str | None:
-    prompt = payload.get("prompt")
-    if not isinstance(prompt, str) or not prompt.strip():
-        return None
-    lowered = prompt.casefold()
-    return "product_intent" if any(term in lowered for term in PRODUCT_TERMS) else "general"
-
-
-def _is_mutating(payload: dict[str, Any]) -> bool:
-    tool = (_tool_name(payload) or "").casefold()
-    return (
-        tool in MUTATING_TOOLS
-        or tool.startswith("mcp__")
-        and any(word in tool for word in ("write", "edit", "replace", "delete", "update"))
-    )
-
-
-def _is_bootstrap_action(payload: dict[str, Any]) -> bool:
-    command = _command_or_path(payload).casefold()
-    if any(command.lstrip().startswith(candidate) for candidate in BOOTSTRAP_COMMANDS):
-        return True
-    normalized = command.replace("\\", "/")
-    return "/.tramuri/input/" in normalized or normalized.startswith(".tramuri/input/")
-
-
-def _context(has_completed_run: bool) -> str:
-    if has_completed_run:
-        return (
-            "Tramuri is active for this project. A completed Product Management run is recorded; "
-            "use its SQLite state, artifacts and report when continuing."
-        )
-    return (
-        "Tramuri is active for this project, but no completed Product Management run is recorded. "
-        "Before changing project files for a product request, start `tramuri pm run --idea-file "
-        "<file> --mode mvp` (or run the deterministic `tramuri pm demo --mode mvp`)."
-    )
-
-
-def _output(
-    provider: str, event: str, reason: str | None = None, context: str | None = None
-) -> dict[str, Any]:
-    if reason is not None:
-        if provider == "claude":
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": event,
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": reason,
-                }
-            }
-        if provider == "gemini":
-            return {"decision": "deny", "reason": reason}
-        return {"decision": "block", "reason": reason}
-    if context is not None:
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": event,
-                "additionalContext": context,
-            }
-        }
-    return {}
+def _event_id(payload: dict[str, Any]) -> str | None:
+    value = payload.get("event_id") or payload.get("hook_event_id")
+    return str(value) if value is not None else None
 
 
 def evaluate(payload: dict[str, Any], provider: str) -> dict[str, Any]:
-    """Evaluate one provider event without executing its input or any project code."""
+    """Load local facts, evaluate core policy and render the native response."""
     project_dir = _project_dir(payload)
+    if project_dir is None:
+        return {}
     event = _event_name(payload)
     session_id = _session_id(payload)
     tool_name = _tool_name(payload)
-    prompt_class = _prompt_class(payload)
-    if project_dir is None:
-        return {}
-
     database = Database(project_dir)
-    has_completed_run = database.has_completed_run()
-    metadata = {
-        "event": event,
-        "has_completed_run": has_completed_run,
-        "requires_workflow": prompt_class == "product_intent",
-    }
-    if event in {"UserPromptSubmit", "BeforeAgent"}:
-        database.hook_event(
-            provider,
-            event,
-            session_id,
-            None,
-            prompt_class,
-            "context",
-            metadata,
-        )
-        return _output(provider, event, context=_context(has_completed_run))
-
+    completed = database.has_completed_run()
     context_row = database.latest_hook_context(provider, session_id)
-    requires_workflow = bool(context_row and context_row["prompt_class"] == "product_intent")
-    if (
-        event in {"PreToolUse", "BeforeTool"}
-        and requires_workflow
-        and not has_completed_run
-        and _is_mutating(payload)
-        and not _is_bootstrap_action(payload)
-    ):
-        reason = (
-            "Tramuri gate: this product request has no completed PM run. Start the workflow "
-            "with `tramuri pm run --idea-file <file> --mode mvp` before modifying project files."
-        )
-        database.hook_event(
+    prompt_class = (
+        str(context_row["prompt_class"])
+        if context_row and context_row["prompt_class"] is not None
+        else None
+    )
+    requires_workflow = prompt_class == "product_intent"
+    if event in {"UserPromptSubmit", "BeforeAgent"}:
+        prompt_class = None
+        requires_workflow = False
+    normalized = normalize_payload(
+        payload, requires_workflow=requires_workflow, completed=completed
+    )
+    decision = evaluate_hook(HookEvaluation(**normalized))
+    runs = database.list_runs()
+    active_run = runs[0] if runs else None
+    if session_id:
+        database.record_session_event(
             provider,
             event,
             session_id,
-            tool_name,
-            prompt_class,
-            "blocked",
-            metadata | {"reason": "missing_completed_run"},
+            run_id=str(active_run["id"]) if active_run else None,
+            metadata={"source": "provider_hook", "event_kind": event},
+            idempotency_key=(
+                f"{provider}:{session_id}:{_event_id(payload)}" if _event_id(payload) else None
+            ),
         )
-        return _output(provider, event, reason=reason)
-
+    if decision.context and active_run:
+        details = database.run_details(str(active_run["id"]))
+        context_pack = build_context_pack(
+            details,
+            knowledge=database.list_knowledge(run_id=str(active_run["id"])),
+            sensors=database.sensor_results(str(active_run["id"])),
+            max_bytes=12_000,
+        )
+        decision = HookDecision(
+            decision.action,
+            decision.event,
+            requires_workflow=decision.requires_workflow,
+            reason=decision.reason,
+            context=(
+                f"{decision.context} Resume context is persisted locally. "
+                f"Run {active_run['id']} status={details['run']['status']}; "
+                f"context_digest={context_pack['digest']}."
+            ),
+            state_snapshot=decision.state_snapshot
+            | {"context_digest": context_pack["digest"], "run_id": active_run["id"]},
+        )
     database.hook_event(
         provider,
         event,
         session_id,
         tool_name,
-        prompt_class,
-        "allowed",
-        metadata,
+        str(normalized["prompt_class"]) if normalized["prompt_class"] else prompt_class,
+        decision.action.value,
+        {
+            "event": event,
+            "has_completed_run": completed,
+            "requires_workflow": decision.requires_workflow,
+            **decision.state_snapshot,
+        },
     )
-    return {}
+    return render_decision(provider, decision)
 
 
 def main(provider: str) -> None:
@@ -232,12 +140,19 @@ def main(provider: str) -> None:
         result = evaluate(payload, provider)
     except Exception as exc:  # pragma: no cover - defensive hook boundary
         event = _event_name(payload)
-        if event in {"PreToolUse", "BeforeTool"} and _is_mutating(payload):
-            result = _output(
-                provider,
-                event,
-                reason=f"Tramuri gate unavailable; start the workflow before continuing ({type(exc).__name__}).",
-            )
+        if event in {"PreToolUse", "BeforeTool"}:
+            normalized = normalize_payload(payload, requires_workflow=True, completed=False)
+            decision = evaluate_hook(HookEvaluation(**normalized))
+            if decision.action is HookAction.BLOCK:
+                decision = HookDecision(
+                    HookAction.BLOCK,
+                    event,
+                    reason=(
+                        "Tramuri gate unavailable; start the workflow before continuing "
+                        f"({type(exc).__name__})."
+                    ),
+                )
+            result = render_decision(provider, decision)
         else:
             result = {}
     if result:

@@ -1,0 +1,63 @@
+name: Publish Tramuri to TestPyPI
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: testpypi-publish
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify TestPyPI candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: latest
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install locked environment
+        run: uv sync --locked --all-groups
+      - name: Test
+        run: uv run pytest --cov=tramuri --cov-report=term-missing
+      - name: Build distributions
+        run: uv run python -m build
+      - name: Check distributions
+        run: uv run twine check dist/*
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: testpypi-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to TestPyPI
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/tramuri
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: testpypi-distributions
+          path: dist/
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+          skip-existing: true

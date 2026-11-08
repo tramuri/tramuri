@@ -11,6 +11,7 @@ def test_database_persists_run_state_and_events(database: Database) -> None:
     assert details["run"]["id"] == run_id
     assert details["stages"][0]["status"] == "completed"
     assert details["artifacts"][0]["payload"] == {"classification": "confirmed"}
+    assert details["artifacts"][0]["lineage_hash"]
     assert any(event["event_type"] == "artifact.created" for event in details["events"])
 
 

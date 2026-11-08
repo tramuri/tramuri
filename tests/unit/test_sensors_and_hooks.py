@@ -90,7 +90,7 @@ def test_runtime_hook_uses_provider_specific_denial_shapes(tmp_path) -> None:
 def test_database_migrates_hook_events_table(tmp_path) -> None:
     import sqlite3
 
-    database_path = tmp_path / ".tramuri" / "database" / "tramuri.sqlite3"
+    database_path = tmp_path / "tramuri_output" / "database" / "tramuri.sqlite3"
     database_path.parent.mkdir(parents=True)
     connection = sqlite3.connect(database_path)
     try:

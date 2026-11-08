@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections.abc import Iterator
@@ -19,9 +20,10 @@ from tramuri.core.models import (
     new_id,
     now_iso,
 )
+from tramuri.core.paths import output_root
 from tramuri.core.workflow import stage_specs, validate_transition
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 6
 
 
 class Database:
@@ -29,7 +31,7 @@ class Database:
 
     def __init__(self, project_dir: Path):
         self.project_dir = project_dir.resolve()
-        self.path = self.project_dir / ".tramuri" / "database" / "tramuri.sqlite3"
+        self.path = output_root(self.project_dir) / "database" / "tramuri.sqlite3"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._migrate()
 
@@ -101,6 +103,7 @@ class Database:
                         payload_json TEXT NOT NULL,
                         dependencies_json TEXT NOT NULL DEFAULT '[]',
                         content_hash TEXT NOT NULL,
+                        lineage_hash TEXT NOT NULL DEFAULT '',
                         created_at TEXT NOT NULL,
                         supersedes_id TEXT
                     );
@@ -141,6 +144,7 @@ class Database:
                         id TEXT PRIMARY KEY,
                         run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
                         stage_id TEXT,
+                        sequence INTEGER NOT NULL DEFAULT 0,
                         event_type TEXT NOT NULL,
                         payload_json TEXT NOT NULL,
                         created_at TEXT NOT NULL
@@ -191,7 +195,76 @@ class Database:
                         payload_json TEXT NOT NULL,
                         created_at TEXT NOT NULL
                     );
-                    PRAGMA user_version = 2;
+                    CREATE TABLE IF NOT EXISTS event_idempotency (
+                        idempotency_key TEXT PRIMARY KEY,
+                        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        id TEXT PRIMARY KEY,
+                        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                        run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+                        provider TEXT NOT NULL,
+                        external_session_id TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        metadata_json TEXT NOT NULL DEFAULT '{}',
+                        started_at TEXT NOT NULL,
+                        last_event_at TEXT NOT NULL,
+                        ended_at TEXT,
+                        UNIQUE(project_id, provider, external_session_id)
+                    );
+                    CREATE TABLE IF NOT EXISTS session_events (
+                        id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                        event_name TEXT NOT NULL,
+                        payload_json TEXT NOT NULL DEFAULT '{}',
+                        idempotency_key TEXT UNIQUE,
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS checkpoints (
+                        id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                        stage_id TEXT REFERENCES stages(id),
+                        session_id TEXT REFERENCES sessions(id),
+                        status TEXT NOT NULL,
+                        next_action TEXT NOT NULL,
+                        state_json TEXT NOT NULL,
+                        pending_json TEXT NOT NULL,
+                        state_digest TEXT NOT NULL,
+                        context_digest TEXT NOT NULL DEFAULT '',
+                        idempotency_key TEXT UNIQUE,
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS knowledge_entries (
+                        id TEXT PRIMARY KEY,
+                        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                        run_id TEXT REFERENCES runs(id) ON DELETE CASCADE,
+                        tier TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        classification TEXT NOT NULL,
+                        source_kind TEXT NOT NULL,
+                        source_ref TEXT,
+                        content_hash TEXT NOT NULL,
+                        source_hash TEXT,
+                        freshness TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        supersedes_id TEXT REFERENCES knowledge_entries(id)
+                    );
+                    CREATE TABLE IF NOT EXISTS sensor_results (
+                        id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                        stage_id TEXT REFERENCES stages(id),
+                        sensor_key TEXT NOT NULL,
+                        severity TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        evidence_json TEXT NOT NULL DEFAULT '{}',
+                        checked_at TEXT NOT NULL,
+                        idempotency_key TEXT UNIQUE
+                    );
+                    PRAGMA user_version = 6;
                     """
                 )
             elif current == 1:
@@ -211,7 +284,149 @@ class Database:
                     )
                     """
                 )
-                db.execute("PRAGMA user_version = 2")
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS event_idempotency ("
+                    "idempotency_key TEXT PRIMARY KEY, event_id TEXT NOT NULL REFERENCES events(id) "
+                    "ON DELETE CASCADE, created_at TEXT NOT NULL)"
+                )
+                artifact_table = db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'artifacts'"
+                ).fetchone()
+                if artifact_table:
+                    columns = {
+                        str(row[1]) for row in db.execute("PRAGMA table_info(artifacts)").fetchall()
+                    }
+                    if "lineage_hash" not in columns:
+                        db.execute(
+                            "ALTER TABLE artifacts ADD COLUMN lineage_hash TEXT NOT NULL DEFAULT ''"
+                        )
+                events_table = db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'events'"
+                ).fetchone()
+                if events_table:
+                    event_columns = {
+                        str(row[1]) for row in db.execute("PRAGMA table_info(events)").fetchall()
+                    }
+                    if "sequence" not in event_columns:
+                        db.execute(
+                            "ALTER TABLE events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0"
+                        )
+                db.execute("PRAGMA user_version = 5")
+            elif current == 2:
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS event_idempotency ("
+                    "idempotency_key TEXT PRIMARY KEY, event_id TEXT NOT NULL REFERENCES events(id) "
+                    "ON DELETE CASCADE, created_at TEXT NOT NULL)"
+                )
+                columns = {
+                    str(row[1]) for row in db.execute("PRAGMA table_info(artifacts)").fetchall()
+                }
+                if "lineage_hash" not in columns:
+                    db.execute(
+                        "ALTER TABLE artifacts ADD COLUMN lineage_hash TEXT NOT NULL DEFAULT ''"
+                    )
+                event_columns = {
+                    str(row[1]) for row in db.execute("PRAGMA table_info(events)").fetchall()
+                }
+                if "sequence" not in event_columns:
+                    db.execute("ALTER TABLE events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0")
+                db.execute("PRAGMA user_version = 5")
+            elif current == 3:
+                columns = {
+                    str(row[1]) for row in db.execute("PRAGMA table_info(artifacts)").fetchall()
+                }
+                if "lineage_hash" not in columns:
+                    db.execute(
+                        "ALTER TABLE artifacts ADD COLUMN lineage_hash TEXT NOT NULL DEFAULT ''"
+                    )
+                event_columns = {
+                    str(row[1]) for row in db.execute("PRAGMA table_info(events)").fetchall()
+                }
+                if "sequence" not in event_columns:
+                    db.execute("ALTER TABLE events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0")
+                db.execute("PRAGMA user_version = 5")
+            elif current == 4:
+                event_columns = {
+                    str(row[1]) for row in db.execute("PRAGMA table_info(events)").fetchall()
+                }
+                if "sequence" not in event_columns:
+                    db.execute("ALTER TABLE events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0")
+                db.execute("PRAGMA user_version = 5")
+            if current < SCHEMA_VERSION:
+                self._create_resumable_tables(db)
+                db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    @staticmethod
+    def _create_resumable_tables(db: sqlite3.Connection) -> None:
+        """Create additive v6 tables for sessions, checkpoints, knowledge and sensors."""
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+                provider TEXT NOT NULL,
+                external_session_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                started_at TEXT NOT NULL,
+                last_event_at TEXT NOT NULL,
+                ended_at TEXT,
+                UNIQUE(project_id, provider, external_session_id)
+            );
+            CREATE TABLE IF NOT EXISTS session_events (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                event_name TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                idempotency_key TEXT UNIQUE,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS checkpoints (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                stage_id TEXT REFERENCES stages(id),
+                session_id TEXT REFERENCES sessions(id),
+                status TEXT NOT NULL,
+                next_action TEXT NOT NULL,
+                state_json TEXT NOT NULL,
+                pending_json TEXT NOT NULL,
+                state_digest TEXT NOT NULL,
+                context_digest TEXT NOT NULL DEFAULT '',
+                idempotency_key TEXT UNIQUE,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS knowledge_entries (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                run_id TEXT REFERENCES runs(id) ON DELETE CASCADE,
+                tier TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                classification TEXT NOT NULL,
+                source_kind TEXT NOT NULL,
+                source_ref TEXT,
+                content_hash TEXT NOT NULL,
+                source_hash TEXT,
+                freshness TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                supersedes_id TEXT REFERENCES knowledge_entries(id)
+            );
+            CREATE TABLE IF NOT EXISTS sensor_results (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                stage_id TEXT REFERENCES stages(id),
+                sensor_key TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                status TEXT NOT NULL,
+                evidence_json TEXT NOT NULL DEFAULT '{}',
+                checked_at TEXT NOT NULL,
+                idempotency_key TEXT UNIQUE
+            );
+            """
+        )
 
     def ensure_project(self) -> str:
         project_id = new_id()
@@ -284,17 +499,43 @@ class Database:
         stage_id: str | None,
         event_type: str,
         payload: Any,
-    ) -> None:
-        db.execute(
-            "INSERT INTO events(id, run_id, stage_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (new_id(), run_id, stage_id, event_type, json_dumps(payload), now_iso()),
+        idempotency_key: str | None = None,
+    ) -> str:
+        if idempotency_key:
+            existing = db.execute(
+                "SELECT event_id FROM event_idempotency WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+            if existing:
+                return str(existing[0])
+        event_id = new_id()
+        sequence = int(
+            db.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM events WHERE run_id = ?", (run_id,)
+            ).fetchone()[0]
         )
+        db.execute(
+            "INSERT INTO events(id, run_id, stage_id, sequence, event_type, payload_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (event_id, run_id, stage_id, sequence, event_type, json_dumps(payload), now_iso()),
+        )
+        if idempotency_key:
+            db.execute(
+                "INSERT INTO event_idempotency(idempotency_key, event_id, created_at) VALUES (?, ?, ?)",
+                (idempotency_key, event_id, now_iso()),
+            )
+        return event_id
 
     def event(
-        self, run_id: str, event_type: str, payload: Any, stage_id: str | None = None
+        self,
+        run_id: str,
+        event_type: str,
+        payload: Any,
+        stage_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
         with self.connection() as db:
-            self._insert_event(db, run_id, stage_id, event_type, payload)
+            self._insert_event(db, run_id, stage_id, event_type, payload, idempotency_key)
 
     def hook_event(
         self,
@@ -327,6 +568,341 @@ class Database:
                 ),
             )
 
+    def record_session_event(
+        self,
+        provider: str,
+        event_name: str,
+        external_session_id: str,
+        *,
+        run_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+    ) -> str:
+        """Persist provider lifecycle metadata without prompts or tool arguments."""
+        project_id = self.project_id()
+        safe_metadata = {
+            key: value
+            for key, value in (metadata or {}).items()
+            if key in {"source", "reason", "phase", "status", "event_kind"}
+            and isinstance(value, (str, int, float, bool, type(None)))
+        }
+        event_lower = event_name.casefold()
+        status = (
+            "compacted"
+            if "compact" in event_lower
+            else "ended"
+            if event_lower in {"sessionend", "session_end", "stop"}
+            else "started"
+            if event_lower in {"sessionstart", "session_start", "startup"}
+            else "active"
+        )
+        timestamp = now_iso()
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT id FROM sessions WHERE project_id = ? AND provider = ? "
+                "AND external_session_id = ?",
+                (project_id, provider, external_session_id),
+            ).fetchone()
+            if row:
+                session_id = str(row[0])
+                db.execute(
+                    "UPDATE sessions SET run_id = COALESCE(?, run_id), status = ?, "
+                    "metadata_json = ?, last_event_at = ?, ended_at = ? WHERE id = ?",
+                    (
+                        run_id,
+                        status,
+                        json_dumps(safe_metadata),
+                        timestamp,
+                        timestamp if status == "ended" else None,
+                        session_id,
+                    ),
+                )
+            else:
+                session_id = new_id()
+                db.execute(
+                    "INSERT INTO sessions(id, project_id, run_id, provider, external_session_id, "
+                    "status, metadata_json, started_at, last_event_at, ended_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        session_id,
+                        project_id,
+                        run_id,
+                        provider,
+                        external_session_id,
+                        status,
+                        json_dumps(safe_metadata),
+                        timestamp,
+                        timestamp,
+                        timestamp if status == "ended" else None,
+                    ),
+                )
+            existing_event = (
+                db.execute(
+                    "SELECT 1 FROM session_events WHERE idempotency_key = ?", (idempotency_key,)
+                ).fetchone()
+                if idempotency_key
+                else None
+            )
+            if not existing_event:
+                db.execute(
+                    "INSERT INTO session_events(id, session_id, event_name, payload_json, "
+                    "idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        new_id(),
+                        session_id,
+                        event_name,
+                        json_dumps(safe_metadata),
+                        idempotency_key,
+                        timestamp,
+                    ),
+                )
+        return session_id
+
+    def save_checkpoint(
+        self,
+        run_id: str,
+        stage_key: str | None,
+        session_id: str | None,
+        *,
+        next_action: str,
+        state: dict[str, Any],
+        pending: dict[str, Any] | list[Any] | None = None,
+        context_digest: str = "",
+        idempotency_key: str | None = None,
+    ) -> str:
+        """Save a resumable handoff and supersede the prior valid checkpoint."""
+        pending_value: dict[str, Any] | list[Any] = pending if pending is not None else {}
+        state_digest = hashlib.sha256(json_dumps(state).encode("utf-8")).hexdigest()
+        with self.connection() as db:
+            if idempotency_key:
+                existing = db.execute(
+                    "SELECT id FROM checkpoints WHERE idempotency_key = ?", (idempotency_key,)
+                ).fetchone()
+                if existing:
+                    return str(existing[0])
+            stage_id: str | None = None
+            if stage_key:
+                stage = db.execute(
+                    "SELECT id FROM stages WHERE run_id = ? AND stage_key = ?", (run_id, stage_key)
+                ).fetchone()
+                stage_id = str(stage[0]) if stage else None
+            db.execute(
+                "UPDATE checkpoints SET status = 'superseded' WHERE run_id = ? AND status = 'valid'",
+                (run_id,),
+            )
+            checkpoint_id = new_id()
+            db.execute(
+                "INSERT INTO checkpoints(id, run_id, stage_id, session_id, status, next_action, "
+                "state_json, pending_json, state_digest, context_digest, idempotency_key, created_at) "
+                "VALUES (?, ?, ?, ?, 'valid', ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    checkpoint_id,
+                    run_id,
+                    stage_id,
+                    session_id,
+                    next_action,
+                    json_dumps(state),
+                    json_dumps(pending_value),
+                    state_digest,
+                    context_digest,
+                    idempotency_key,
+                    now_iso(),
+                ),
+            )
+            self._insert_event(
+                db,
+                run_id,
+                stage_id,
+                "checkpoint.saved",
+                {"id": checkpoint_id, "stage": stage_key, "next_action": next_action},
+                idempotency_key=f"checkpoint-event:{checkpoint_id}",
+            )
+        return checkpoint_id
+
+    def latest_checkpoint(self, run_id: str) -> dict[str, Any] | None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM checkpoints WHERE run_id = ? AND status = 'valid' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        for key in ("state_json", "pending_json"):
+            result[key.removesuffix("_json")] = json.loads(str(result.pop(key)))
+        return result
+
+    def add_knowledge(
+        self,
+        *,
+        title: str,
+        content: str,
+        classification: str,
+        source_kind: str,
+        tier: str = "project",
+        run_id: str | None = None,
+        source_ref: str | None = None,
+        source_hash: str | None = None,
+        freshness: str = "unknown",
+        status: str = "active",
+    ) -> str:
+        """Store a provenance-labelled knowledge entry, never executable instructions."""
+        project_id = self.project_id()
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        entry_id = new_id()
+        timestamp = now_iso()
+        with self.connection() as db:
+            db.execute(
+                "INSERT INTO knowledge_entries(id, project_id, run_id, tier, title, content, "
+                "classification, source_kind, source_ref, content_hash, source_hash, freshness, "
+                "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    entry_id,
+                    project_id,
+                    run_id,
+                    tier,
+                    title,
+                    content,
+                    classification,
+                    source_kind,
+                    source_ref,
+                    content_hash,
+                    source_hash,
+                    freshness,
+                    status,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            if run_id:
+                self._insert_event(
+                    db,
+                    run_id,
+                    None,
+                    "knowledge.recorded",
+                    {"entry_id": entry_id, "classification": classification},
+                    idempotency_key=f"knowledge-recorded:{entry_id}",
+                )
+        return entry_id
+
+    def list_knowledge(
+        self, *, run_id: str | None = None, status: str = "active"
+    ) -> list[dict[str, Any]]:
+        project_id = self.project_id()
+        with self.connection() as db:
+            if run_id:
+                rows = db.execute(
+                    "SELECT * FROM knowledge_entries WHERE project_id = ? AND run_id = ? "
+                    "AND status = ? ORDER BY updated_at DESC",
+                    (project_id, run_id, status),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT * FROM knowledge_entries WHERE project_id = ? AND status = ? "
+                    "ORDER BY updated_at DESC",
+                    (project_id, status),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def knowledge_entry(self, entry_id: str) -> dict[str, Any] | None:
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM knowledge_entries WHERE id = ?", (entry_id,)).fetchone()
+        return dict(row) if row else None
+
+    def update_knowledge_status(
+        self, entry_id: str, *, status: str, freshness: str, reason: str
+    ) -> None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT run_id FROM knowledge_entries WHERE id = ?", (entry_id,)
+            ).fetchone()
+            if not row:
+                raise ValidationError(f"Knowledge entry not found: {entry_id}")
+            db.execute(
+                "UPDATE knowledge_entries SET status = ?, freshness = ?, updated_at = ? WHERE id = ?",
+                (status, freshness, now_iso(), entry_id),
+            )
+            if row[0]:
+                self._insert_event(
+                    db,
+                    str(row[0]),
+                    None,
+                    "knowledge.status_changed",
+                    {"entry_id": entry_id, "status": status, "reason": reason},
+                    idempotency_key=f"knowledge-status:{entry_id}:{status}:{freshness}",
+                )
+
+    def record_sensor_result(
+        self,
+        run_id: str,
+        stage_key: str | None,
+        sensor_key: str,
+        severity: str,
+        status: str,
+        evidence: dict[str, Any] | None = None,
+        *,
+        idempotency_key: str | None = None,
+    ) -> str:
+        """Persist a deterministic sensor receipt; failure is never coerced to success."""
+        with self.connection() as db:
+            if idempotency_key:
+                existing = db.execute(
+                    "SELECT id FROM sensor_results WHERE idempotency_key = ?", (idempotency_key,)
+                ).fetchone()
+                if existing:
+                    return str(existing[0])
+            stage_id: str | None = None
+            if stage_key:
+                stage = db.execute(
+                    "SELECT id FROM stages WHERE run_id = ? AND stage_key = ?", (run_id, stage_key)
+                ).fetchone()
+                stage_id = str(stage[0]) if stage else None
+            result_id = new_id()
+            db.execute(
+                "INSERT INTO sensor_results(id, run_id, stage_id, sensor_key, severity, status, "
+                "evidence_json, checked_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    result_id,
+                    run_id,
+                    stage_id,
+                    sensor_key,
+                    severity,
+                    status,
+                    json_dumps(evidence or {}),
+                    now_iso(),
+                    idempotency_key,
+                ),
+            )
+            self._insert_event(
+                db,
+                run_id,
+                stage_id,
+                "sensor.recorded",
+                {"sensor_key": sensor_key, "status": status, "id": result_id},
+                idempotency_key=f"sensor-event:{result_id}",
+            )
+        return result_id
+
+    def sensor_results(self, run_id: str, stage_key: str | None = None) -> list[dict[str, Any]]:
+        with self.connection() as db:
+            query = (
+                "SELECT sr.*, s.stage_key FROM sensor_results sr "
+                "LEFT JOIN stages s ON s.id = sr.stage_id WHERE sr.run_id = ?"
+            )
+            parameters: list[Any] = [run_id]
+            if stage_key:
+                query += " AND s.stage_key = ?"
+                parameters.append(stage_key)
+            query += " ORDER BY checked_at"
+            rows = db.execute(query, parameters).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["evidence"] = json.loads(str(item.pop("evidence_json")))
+            results.append(item)
+        return results
+
     def latest_hook_context(self, provider: str, session_id: str | None) -> sqlite3.Row | None:
         """Return the latest prompt policy for a provider session."""
         project_id = self.project_id()
@@ -340,7 +916,7 @@ class Database:
         return cast(sqlite3.Row | None, row)
 
     def has_completed_run(self) -> bool:
-        """Return whether this project has a verified completed PM execution."""
+        """Return whether this project has a verified completed product execution."""
         project_id = self.project_id()
         with self.connection() as db:
             row = db.execute(
@@ -366,9 +942,21 @@ class Database:
         return {str(row[0]) for row in rows}
 
     def transition_stage(
-        self, run_id: str, key: str, status: StageStatus, error: str | None = None
+        self,
+        run_id: str,
+        key: str,
+        status: StageStatus,
+        error: str | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
         with self.connection() as db:
+            if idempotency_key:
+                already_applied = db.execute(
+                    "SELECT 1 FROM event_idempotency WHERE idempotency_key = ?",
+                    (idempotency_key,),
+                ).fetchone()
+                if already_applied:
+                    return
             row = db.execute(
                 "SELECT * FROM stages WHERE run_id = ? AND stage_key = ?", (run_id, key)
             ).fetchone()
@@ -393,7 +981,12 @@ class Database:
                 ),
             )
             self._insert_event(
-                db, run_id, row["id"], f"stage.{status.value}", {"stage": key, "error": error}
+                db,
+                run_id,
+                row["id"],
+                f"stage.{status.value}",
+                {"stage": key, "error": error},
+                idempotency_key,
             )
 
     def add_artifact(
@@ -403,6 +996,7 @@ class Database:
         kind: str,
         payload: dict[str, Any],
         dependencies: list[str] | None = None,
+        idempotency_key: str | None = None,
     ) -> str:
         import hashlib
 
@@ -411,7 +1005,22 @@ class Database:
         dependencies = dependencies or []
         serialized = json_dumps(payload)
         content_hash = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        lineage_hash = hashlib.sha256(
+            json_dumps({"content_hash": content_hash, "dependencies": sorted(dependencies)}).encode(
+                "utf-8"
+            )
+        ).hexdigest()
         with self.connection() as db:
+            if idempotency_key:
+                existing = db.execute(
+                    "SELECT e.payload_json FROM event_idempotency k "
+                    "JOIN events e ON e.id = k.event_id "
+                    "WHERE k.idempotency_key = ? AND e.event_type = 'artifact.created'",
+                    (idempotency_key,),
+                ).fetchone()
+                if existing:
+                    stored = json.loads(existing[0])
+                    return str(stored["id"])
             revision = db.execute(
                 "SELECT COALESCE(MAX(revision), 0) + 1 FROM artifacts WHERE run_id = ? AND kind = ?",
                 (run_id, kind),
@@ -426,8 +1035,8 @@ class Database:
                     (ArtifactStatus.SUPERSEDED.value, previous[0]),
                 )
             db.execute(
-                "INSERT INTO artifacts(id, run_id, stage_id, kind, revision, status, payload_json, dependencies_json, content_hash, created_at, supersedes_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO artifacts(id, run_id, stage_id, kind, revision, status, payload_json, dependencies_json, content_hash, lineage_hash, created_at, supersedes_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     artifact_id,
                     run_id,
@@ -438,6 +1047,7 @@ class Database:
                     serialized,
                     json_dumps(dependencies),
                     content_hash,
+                    lineage_hash,
                     now_iso(),
                     previous[0] if previous else None,
                 ),
@@ -446,23 +1056,41 @@ class Database:
                 "UPDATE stages SET current_artifact_id = ? WHERE id = ?", (artifact_id, stage["id"])
             )
             self._insert_event(
-                db, run_id, stage["id"], "artifact.created", {"kind": kind, "id": artifact_id}
+                db,
+                run_id,
+                stage["id"],
+                "artifact.created",
+                {"kind": kind, "id": artifact_id},
+                idempotency_key,
             )
         return artifact_id
 
     def invalidate_from_stage(self, run_id: str, changed_stage: str) -> int:
-        """Mark only artifacts that declare the changed stage as stale."""
+        """Mark direct and transitive dependent artifacts as stale."""
         with self.connection() as db:
             rows = db.execute(
-                "SELECT id, dependencies_json FROM artifacts WHERE run_id = ? AND status = ?",
+                "SELECT a.id, a.stage_id, a.dependencies_json, s.stage_key "
+                "FROM artifacts a JOIN stages s ON s.id = a.stage_id "
+                "WHERE a.run_id = ? AND a.status = ?",
                 (run_id, ArtifactStatus.VALID.value),
             ).fetchall()
             stale: list[str] = []
-            for row in rows:
-                dependencies = json.loads(row[1])
-                if changed_stage in dependencies:
-                    stale.append(str(row[0]))
-            for artifact_id in stale:
+            stale_stages = {changed_stage}
+            remaining = list(rows)
+            while remaining:
+                progressed = False
+                for row in remaining[:]:
+                    dependencies = json.loads(row["dependencies_json"])
+                    if any(
+                        str(item) in stale_stages or str(item) in stale for item in dependencies
+                    ):
+                        stale.append(str(row["id"]))
+                        stale_stages.add(str(row["stage_key"]))
+                        remaining.remove(row)
+                        progressed = True
+                if not progressed:
+                    break
+            for artifact_id in set(stale):
                 db.execute(
                     "UPDATE artifacts SET status = ? WHERE id = ?",
                     (ArtifactStatus.STALE.value, artifact_id),
@@ -528,15 +1156,30 @@ class Database:
         key: str,
         result: str,
         details: str,
+        idempotency_key: str | None = None,
     ) -> None:
         with self.connection() as db:
+            if (
+                idempotency_key
+                and db.execute(
+                    "SELECT 1 FROM event_idempotency WHERE idempotency_key = ?",
+                    (idempotency_key,),
+                ).fetchone()
+            ):
+                return
+            validation_id = new_id()
             db.execute(
                 "INSERT INTO validations(id, run_id, stage_id, artifact_id, check_key, result, details, checked_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (new_id(), run_id, stage_id, artifact_id, key, result, details, now_iso()),
+                (validation_id, run_id, stage_id, artifact_id, key, result, details, now_iso()),
             )
             self._insert_event(
-                db, run_id, stage_id, "validation.recorded", {"check": key, "result": result}
+                db,
+                run_id,
+                stage_id,
+                "validation.recorded",
+                {"check": key, "result": result, "id": validation_id},
+                idempotency_key,
             )
 
     def save_capabilities(self, capabilities: list[dict[str, Any]]) -> None:
@@ -636,10 +1279,24 @@ class Database:
                 "SELECT * FROM evidence WHERE run_id = ? ORDER BY created_at", (run_id,)
             ).fetchall()
             events = db.execute(
-                "SELECT * FROM events WHERE run_id = ? ORDER BY created_at", (run_id,)
+                "SELECT * FROM events WHERE run_id = ? ORDER BY sequence, created_at", (run_id,)
             ).fetchall()
             validations = db.execute(
                 "SELECT * FROM validations WHERE run_id = ? ORDER BY checked_at", (run_id,)
+            ).fetchall()
+            checkpoints = db.execute(
+                "SELECT * FROM checkpoints WHERE run_id = ? ORDER BY created_at", (run_id,)
+            ).fetchall()
+            sessions = db.execute(
+                "SELECT * FROM sessions WHERE run_id = ? ORDER BY last_event_at", (run_id,)
+            ).fetchall()
+            knowledge = db.execute(
+                "SELECT * FROM knowledge_entries WHERE run_id = ? ORDER BY updated_at", (run_id,)
+            ).fetchall()
+            sensor_results = db.execute(
+                "SELECT sr.*, s.stage_key FROM sensor_results sr "
+                "LEFT JOIN stages s ON s.id = sr.stage_id WHERE sr.run_id = ? ORDER BY checked_at",
+                (run_id,),
             ).fetchall()
 
         def unpack(row: sqlite3.Row) -> dict[str, Any]:
@@ -659,6 +1316,20 @@ class Database:
             "evidence": [dict(row) for row in evidence],
             "events": [unpack(row) for row in events],
             "validations": [dict(row) for row in validations],
+            "checkpoints": [
+                {
+                    **dict(row),
+                    "state": json.loads(str(row["state_json"])),
+                    "pending": json.loads(str(row["pending_json"])),
+                }
+                for row in checkpoints
+            ],
+            "sessions": [dict(row) for row in sessions],
+            "knowledge": [dict(row) for row in knowledge],
+            "sensor_results": [
+                {**dict(row), "evidence": json.loads(str(row["evidence_json"]))}
+                for row in sensor_results
+            ],
         }
 
     def complete_run(self, run_id: str, status: RunStatus = RunStatus.COMPLETED) -> None:
@@ -674,7 +1345,7 @@ class Database:
             )
             self._insert_event(db, run_id, None, f"run.{status.value}", {})
 
-    def resume_run(self, run_id: str) -> None:
+    def resume_run(self, run_id: str, idempotency_key: str | None = None) -> None:
         with self.connection() as db:
             row = db.execute("SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone()
             if not row:
@@ -683,4 +1354,4 @@ class Database:
                 "UPDATE runs SET status = ?, updated_at = ? WHERE id = ?",
                 (RunStatus.RUNNING.value, now_iso(), run_id),
             )
-            self._insert_event(db, run_id, None, "run.resumed", {})
+            self._insert_event(db, run_id, None, "run.resumed", {}, idempotency_key)

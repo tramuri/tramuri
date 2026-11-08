@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from tramuri.providers import adapter_for
-from tramuri.providers.installer import Installer
+from tramuri.harness import adapter_for
+from tramuri.harness.installer import Installer
 from tramuri.storage.database import Database
 
 
@@ -20,10 +20,10 @@ def test_installer_is_idempotent_and_preserves_user_changes(tmp_path: Path) -> N
         for item in second["components"]
     ]
     assert first_components == second_components
-    managed = tmp_path / ".agents" / "skills" / "tramuri-pm" / "SKILL.md"
+    managed = tmp_path / ".agents" / "skills" / "tramuri" / "SKILL.md"
     managed.write_text(managed.read_text(encoding="utf-8") + "\nuser change\n", encoding="utf-8")
     result = installer.uninstall("codex")
-    assert ".agents/skills/tramuri-pm/SKILL.md" in [
+    assert ".agents/skills/tramuri/SKILL.md" in [
         str(value).replace("\\", "/") for value in result["preserved"]
     ]
     assert managed.is_file()
@@ -51,7 +51,7 @@ def test_project_instructions_add_identity_without_overwriting_user_content(tmp_
     installer.install(plan)
     installed = instructions.read_text(encoding="utf-8")
     assert "# Existing project guidance" in installed
-    assert "# Tramuri — Product Management companion" in installed
+    assert "# Tramuri — Product companion" in installed
     assert "<!-- tramuri:managed:start -->" in installed
 
     installer.install(plan)

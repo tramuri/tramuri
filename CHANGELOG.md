@@ -5,6 +5,23 @@ e [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-08
+
+### Added
+
+- Deterministic product workflows with resumable local context, status, knowledge
+  and explain capabilities.
+- Product Experience portal, navigable product demos and browser-oriented quality
+  sensors.
+- Manual TestPyPI publishing workflow with OIDC and Dependabot updates for uv and
+  GitHub Actions.
+
+### Changed
+
+- Provider integrations now install the `/tramuri` or `$tramuri` product skill and
+  keep the product workflow gate aligned across Codex, Claude Code and Gemini CLI.
+- Output, reports and persistent state use the `tramuri_output/` project directory.
+
 ## [0.13.1] - 2026-11-07
 
 ### Fixed

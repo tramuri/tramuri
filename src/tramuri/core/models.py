@@ -57,6 +57,60 @@ class CapabilityStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+class SessionStatus(StrEnum):
+    STARTED = "started"
+    ACTIVE = "active"
+    ENDED = "ended"
+    COMPACTED = "compacted"
+    UNKNOWN = "unknown"
+
+
+class CheckpointStatus(StrEnum):
+    VALID = "valid"
+    SUPERSEDED = "superseded"
+    INVALID = "invalid"
+
+
+class KnowledgeTier(StrEnum):
+    METHODOLOGY = "methodology"
+    PROJECT = "project"
+
+
+class KnowledgeClassification(StrEnum):
+    FACT = "fact"
+    EVIDENCE = "evidence"
+    INFERENCE = "inference"
+    HYPOTHESIS = "hypothesis"
+    ASSUMPTION = "assumption"
+    DECISION = "decision"
+    PENDING_VALIDATION = "pending_validation"
+
+
+class KnowledgeFreshness(StrEnum):
+    CURRENT = "current"
+    STALE = "stale"
+    UNKNOWN = "unknown"
+
+
+class KnowledgeStatus(StrEnum):
+    ACTIVE = "active"
+    INVALIDATED = "invalidated"
+    UNAVAILABLE = "unavailable"
+
+
+class SensorSeverity(StrEnum):
+    ADVISORY = "advisory"
+    BLOCKING = "blocking"
+
+
+class SensorStatus(StrEnum):
+    PASSED = "passed"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    NOT_RUN = "not_run"
+    COULD_NOT_RUN = "could_not_run"
+
+
 @dataclass(slots=True)
 class Capability:
     provider: str

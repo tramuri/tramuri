@@ -1,1 +1,1 @@
-"""Packaged provider and Product Management templates."""
+"""Packaged provider and product templates."""

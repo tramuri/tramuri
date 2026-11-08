@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from tramuri.core.models import Mode
-from tramuri.pm.runner import PMRunner
+from tramuri.modules.pm.runner import PMRunner
 from tramuri.reports.generator import ReportGenerator
 from tramuri.storage.database import Database
 

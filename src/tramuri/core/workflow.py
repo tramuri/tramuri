@@ -4,42 +4,43 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from tramuri.core.contracts import StageDefinition
 from tramuri.core.errors import ValidationError
 from tramuri.core.models import Mode, StageSpec, StageStatus
 
 MODE_STAGES: dict[Mode, tuple[StageSpec, ...]] = {
     Mode.POC: (
-        StageSpec("intent", "product_strategist"),
-        StageSpec("framing", "product_strategist", ("intent",)),
-        StageSpec("experiment", "discovery_specialist", ("framing",)),
-        StageSpec("success", "product_analyst", ("experiment",)),
-        StageSpec("critical_review", "critical_reviewer", ("success",)),
+        StageSpec("intent", "product-framing"),
+        StageSpec("framing", "product-framing", ("intent",)),
+        StageSpec("experiment", "product-discovery", ("framing",)),
+        StageSpec("success", "product-analysis", ("experiment",)),
+        StageSpec("critical_review", "product-review", ("success",)),
         StageSpec("report", "system", ("critical_review",)),
     ),
     Mode.MVP: (
-        StageSpec("intent", "product_strategist"),
-        StageSpec("framing", "product_strategist", ("intent",)),
-        StageSpec("discovery", "discovery_specialist", ("framing",)),
-        StageSpec("hypothesis", "discovery_specialist", ("discovery",)),
-        StageSpec("shaping", "scope_specialist", ("hypothesis",)),
-        StageSpec("success", "product_analyst", ("shaping",)),
-        StageSpec("delivery", "scope_specialist", ("success",)),
-        StageSpec("critical_review", "critical_reviewer", ("delivery",)),
+        StageSpec("intent", "product-framing"),
+        StageSpec("framing", "product-framing", ("intent",)),
+        StageSpec("discovery", "product-discovery", ("framing",)),
+        StageSpec("hypothesis", "product-discovery", ("discovery",)),
+        StageSpec("shaping", "product-scope", ("hypothesis",)),
+        StageSpec("success", "product-analysis", ("shaping",)),
+        StageSpec("delivery", "product-scope", ("success",)),
+        StageSpec("critical_review", "product-review", ("delivery",)),
         StageSpec("report", "system", ("critical_review",)),
         StageSpec("navigation", "system", ("report",)),
     ),
     Mode.ENTERPRISE: (
-        StageSpec("intent", "product_strategist"),
-        StageSpec("framing", "product_strategist", ("intent",)),
-        StageSpec("discovery", "discovery_specialist", ("framing",)),
-        StageSpec("hypothesis", "discovery_specialist", ("discovery",)),
-        StageSpec("shaping", "scope_specialist", ("hypothesis",)),
-        StageSpec("success", "product_analyst", ("shaping",)),
-        StageSpec("governance", "product_analyst", ("success",)),
-        StageSpec("traceability", "discovery_specialist", ("governance",)),
-        StageSpec("delivery", "scope_specialist", ("traceability",)),
-        StageSpec("risk_review", "critical_reviewer", ("delivery",)),
-        StageSpec("critical_review", "critical_reviewer", ("risk_review",)),
+        StageSpec("intent", "product-framing"),
+        StageSpec("framing", "product-framing", ("intent",)),
+        StageSpec("discovery", "product-discovery", ("framing",)),
+        StageSpec("hypothesis", "product-discovery", ("discovery",)),
+        StageSpec("shaping", "product-scope", ("hypothesis",)),
+        StageSpec("success", "product-analysis", ("shaping",)),
+        StageSpec("governance", "product-analysis", ("success",)),
+        StageSpec("traceability", "product-discovery", ("governance",)),
+        StageSpec("delivery", "product-scope", ("traceability",)),
+        StageSpec("risk_review", "product-review", ("delivery",)),
+        StageSpec("critical_review", "product-review", ("risk_review",)),
         StageSpec("report", "system", ("critical_review",)),
         StageSpec("navigation", "system", ("report",)),
     ),
@@ -68,6 +69,26 @@ ALLOWED_TRANSITIONS = {
 
 def stage_specs(mode: Mode) -> tuple[StageSpec, ...]:
     return MODE_STAGES[mode]
+
+
+def stage_definitions(mode: Mode) -> tuple[StageDefinition, ...]:
+    """Expose declarative stage metadata without coupling it to a provider."""
+    definitions: list[StageDefinition] = []
+    for spec in stage_specs(mode):
+        output = f"pm.{spec.key}"
+        definitions.append(
+            StageDefinition(
+                key=spec.key,
+                owner=spec.owner,
+                dependencies=spec.dependencies,
+                inputs=spec.dependencies,
+                outputs=(output,),
+                sensors=("structured_payload", "classification"),
+                completion_criteria=("artifact_persisted", "validation_recorded"),
+                max_attempts=3,
+            )
+        )
+    return tuple(definitions)
 
 
 def validate_transition(old: StageStatus, new: StageStatus) -> Transition:

@@ -5,6 +5,15 @@ e [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-11-08
+
+### Fixed
+
+- Provider detection now treats an executable as installed even when its
+  `--version` probe fails or returns no version output.
+- The automatic installation guidance now explains how to choose a provider
+  explicitly when no supported CLI is detected.
+
 ## [0.13.2] - 2026-11-08
 
 ### Added

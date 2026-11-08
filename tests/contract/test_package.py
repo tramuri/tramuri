@@ -9,7 +9,7 @@ from tramuri.modules.pm.runner import PMRunner
 
 def test_package_identity_and_version() -> None:
     assert version("tramuri") == __version__
-    assert __version__ == "0.13.2"
+    assert __version__ == "0.13.3"
 
 
 def test_public_core_harness_and_module_boundaries_import() -> None:

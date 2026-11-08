@@ -17,7 +17,7 @@ the README and packaged under `src/tramuri/assets/logo.png`.
    uv run twine check dist/*
    ```
 
-3. Commit and push a tag such as `v0.13.2`.
+3. Commit and push a tag such as `v0.13.3`.
 
 `.github/workflows/publish.yml` verifies that the tag matches the package,
 re-runs tests, builds the wheel/sdist, and publishes through the protected

@@ -49,7 +49,13 @@ class ProviderAdapter(Protocol):
 
 
 def probe_executable(command: str, timeout: float = 2.0) -> tuple[bool, str | None, str]:
-    """Probe only a version command; never execute project files or hooks."""
+    """Find a provider executable and optionally read its version.
+
+    Finding the executable is enough to identify an installed provider. A
+    version probe can fail because a CLI needs authentication, is a wrapper
+    script, or does not implement ``--version``; that must not turn a real
+    installation into a false negative.
+    """
     executable = shutil.which(command)
     if not executable:
         return False, None, f"{command} was not found on PATH"
@@ -63,9 +69,11 @@ def probe_executable(command: str, timeout: float = 2.0) -> tuple[bool, str | No
             env={"PATH": os.environ.get("PATH", "")},
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return False, executable, f"version probe failed: {type(exc).__name__}"
+        return True, executable, f"version probe failed: {type(exc).__name__}"
     output = (completed.stdout or completed.stderr).strip().splitlines()
-    return completed.returncode == 0, executable, output[0][:160] if output else "no version output"
+    if completed.returncode != 0:
+        return True, executable, f"version probe exited with code {completed.returncode}"
+    return True, executable, output[0][:160] if output else "version unavailable"
 
 
 __all__ = [

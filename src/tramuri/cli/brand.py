@@ -179,7 +179,10 @@ def next_steps(console: Console, selected: list[str], dry_run: bool = False) -> 
             "(Codex: `$tramuri .`). Results go to `tramuri_output/`."
         )
     else:
-        message = "Install a detected provider with `tramuri install --provider <name>`."
+        message = (
+            "No provider was detected. Auto only installs providers whose CLI is available. "
+            "Choose one explicitly: `tramuri install --provider codex|claude|gemini`."
+        )
     console.print(
         Panel(
             f"[bold {COLORS['orange']}]Next[/bold {COLORS['orange']}]  {message}",

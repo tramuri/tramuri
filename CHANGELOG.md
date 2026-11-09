@@ -5,6 +5,44 @@ e [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Nothing yet.
+
+### Changed
+
+- Nothing yet.
+
+## [0.14.0] - 2026-11-08
+
+### Added
+
+- A context-aware Product Demo Engine that classifies product experiences and
+  generates versioned, offline demo specifications, templates, interactions,
+  and traceability from persisted product context.
+- Evidence-backed product research packs for market signals, competitors,
+  buying motivation, positioning, sizing, and build/buy/partner trade-offs.
+- Curated project-memory `save`, `search`, and `show` commands with SQLite
+  persistence and regenerable Markdown projections under
+  `tramuri_output/memorys/`.
+- Focused product capabilities with Tramuri-prefixed skills, including
+  `$tramuri-status`, `$tramuri-memory`, and `$tramuri-experience`.
+
+### Changed
+
+- Provider integrations install focused Tramuri-prefixed product skills
+  individually and direct work to the relevant capability.
+- Product Experience reports now expose persisted delivery, browser validation,
+  review results, and product-to-demo traceability.
+
+### Fixed
+
+- Browser validation now distinguishes unavailable browser tooling from failed
+  product interactions, and `experience check` persists the resulting delivery
+  status accurately.
+- Experience lifecycle status now follows the latest recorded transition,
+  including when a workflow returns to a previously seen state.
+
 ## [0.13.3] - 2026-11-08
 
 ### Fixed

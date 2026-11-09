@@ -9,7 +9,7 @@ from tramuri.modules.pm.runner import PMRunner
 
 def test_package_identity_and_version() -> None:
     assert version("tramuri") == __version__
-    assert __version__ == "0.13.3"
+    assert __version__ == "0.14.0"
 
 
 def test_public_core_harness_and_module_boundaries_import() -> None:
@@ -29,3 +29,10 @@ def test_terminal_brand_assets_are_packaged() -> None:
     assert assets.joinpath("tramuri-logo-compact.txt").is_file()
     assert assets.joinpath("tramuri-logo-mono.txt").is_file()
     assert assets.joinpath("tramuri-logo-ascii.txt").is_file()
+
+
+def test_product_memory_skill_template_is_packaged() -> None:
+    skill = resource_files("tramuri").joinpath(
+        "templates", "product_skills", "product-memory", "SKILL.md"
+    )
+    assert skill.is_file()

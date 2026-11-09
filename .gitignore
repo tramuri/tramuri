@@ -3,6 +3,39 @@ __pycache__/
 *.py[codz]
 *$py.class
 tramuri-harness-kit/
+!tramuri-harness-kit/
+tramuri-harness-kit/*
+!tramuri-harness-kit/AGENTS.md
+!tramuri-harness-kit/.agents/
+tramuri-harness-kit/.agents/*
+!tramuri-harness-kit/.agents/skills/
+tramuri-harness-kit/.agents/skills/*
+!tramuri-harness-kit/.agents/skills/tramuri-report-design/
+!tramuri-harness-kit/.agents/skills/tramuri-report-design/**
+!tramuri-harness-kit/.agents/skills/tramuri-product-demo-engine/
+!tramuri-harness-kit/.agents/skills/tramuri-product-demo-engine/**
+!tramuri-harness-kit/harness/
+tramuri-harness-kit/harness/*
+!tramuri-harness-kit/harness/README.md
+!tramuri-harness-kit/harness/core/
+tramuri-harness-kit/harness/core/*
+!tramuri-harness-kit/harness/core/policies/
+tramuri-harness-kit/harness/core/policies/*
+!tramuri-harness-kit/harness/core/policies/skill-selection.md
+!tramuri-harness-kit/harness/core/checklists/
+tramuri-harness-kit/harness/core/checklists/*
+!tramuri-harness-kit/harness/core/checklists/experience.md
+!tramuri-harness-kit/harness/core/decisions/
+tramuri-harness-kit/harness/core/decisions/*
+!tramuri-harness-kit/harness/core/decisions/0001-product-demo-engine.md
+!tramuri-harness-kit/harness/skills-manifest.md
+!tramuri-harness-kit/harness/core/workflows/
+tramuri-harness-kit/harness/core/workflows/*
+!tramuri-harness-kit/harness/core/workflows/agent-orchestration.md
+!tramuri-harness-kit/specs/
+tramuri-harness-kit/specs/*
+!tramuri-harness-kit/specs/007-premium-report-system/
+!tramuri-harness-kit/specs/007-premium-report-system/**
 research/
 graphify-out/
 
@@ -13,6 +46,7 @@ graphify-out/
 # Distribution / packaging
 .Python
 build/
+.tmp-release-*/
 develop-eggs/
 dist/
 downloads/

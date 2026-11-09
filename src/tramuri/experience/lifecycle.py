@@ -28,11 +28,15 @@ class ExperienceLifecycle:
         fingerprint = hashlib.sha256(
             json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
         ).hexdigest()[:16]
+        latest = self.status().get(step, {})
+        if latest.get("status") == "recorded" and latest.get("payload") == payload:
+            return
+        previous_sequence = latest.get("sequence", "initial")
         self.database.event(
             self.run_id,
             f"experience.{step}",
             payload,
-            idempotency_key=f"{self.run_id}:experience:{step}:{fingerprint}",
+            idempotency_key=(f"{self.run_id}:experience:{step}:{previous_sequence}:{fingerprint}"),
         )
 
     def status(self) -> dict[str, dict[str, Any]]:

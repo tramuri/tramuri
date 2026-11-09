@@ -9,8 +9,9 @@ que podem ser verificados.
 
 ## Primeira versão
 
-A primeira versão implementa exclusivamente o módulo Product Manager. Ele ajuda
-Product Engineers, FDEs e equipes de produto a organizar:
+A primeira versão implementa capacidades para transformar uma intenção em uma
+definição de produto verificável. Ela ajuda Product Engineers, FDEs e equipes
+de produto a organizar:
 
 - problema, público e proposta de valor;
 - lacunas de descoberta, hipóteses e evidências pendentes;
@@ -20,6 +21,10 @@ Product Engineers, FDEs e equipes de produto a organizar:
 
 UX e Engineering possuem contratos de extensão, mas não são simulados como
 capacidades presentes.
+
+Tramuri organiza o trabalho do produto por capacidades e artefatos. O produto
+não cria uma persona profissional de Product Manager nem exige que a pessoa
+usuária conheça uma profissão ou metodologia específica.
 
 ## Arquitetura
 

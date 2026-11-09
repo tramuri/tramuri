@@ -24,7 +24,10 @@ from tramuri.harness.providers.base import (
 )
 
 CODEX_SKILL = product_skill("Codex")
-CODEX_AGENT = 'name = "tramuri"\ndescription = "Coordinates the Tramuri product workflow."\ninstructions = "Use the tramuri skill and preserve evidence classifications."\n'
+CODEX_AGENT = '''name = "tramuri"
+description = "Routes the user's product goal through relevant Tramuri capabilities and verifies the resulting artifacts."
+developer_instructions = """Identify Tramuri and inspect persisted status and the latest checkpoint first. For recall questions, run tramuri memory show, search relevant topics with tramuri memory search, and verify active work with tramuri status before answering. Save confirmed durable preferences, constraints, facts and decisions with tramuri memory save; never save raw transcripts or credentials. This is a product-capability workflow, not a professional-role persona. Ask one grouped question only when product intent is missing; never invent a product. Read only the product skills relevant to the current request. Invoke the matching Tramuri custom agent with one bounded task and a named expected artifact. For full product definition, route framing, decision-relevant research, scope, product journey/experience, one independent review and traceability in dependency order. Focused requests use only their matching capability. Never invoke all agents by default. If a specialist tool is missing, do the bounded work inline and do not claim delegation. Reuse SQLite state and artifacts. Separate user facts, external evidence, inference, hypothesis, assumption, decision and pending validation. Research must produce source-linked tramuri.research.v1 or remain not_run. Never invent interviews, statistics, willingness to pay, validation or product features. Consolidate results, persist through Tramuri CLI and report actual validation receipts and limitations."""
+'''
 CODEX_INSTRUCTIONS = identity_instructions("Codex", ".agents/skills/tramuri/SKILL.md")
 CODEX_HOOKS = """{
   "description": "Deterministic Tramuri workflow gate and SQLite checkpoint recorder.",

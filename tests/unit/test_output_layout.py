@@ -44,3 +44,41 @@ def test_tramuri_skill_requires_intent_and_limits_questions(tmp_path: Path) -> N
         assert "Do not invent a product" in skill.content
         assert "ask one concise" in skill.content
         assert "tramuri --json explain" in skill.content
+        assert "tramuri --json memory show" in skill.content
+        assert "tramuri-memory" in skill.content
+
+
+def test_provider_installation_exposes_focused_product_skills(tmp_path: Path) -> None:
+    from tramuri.harness import adapter_for
+
+    for provider, root in (("codex", ".agents"), ("claude", ".claude"), ("gemini", ".gemini")):
+        paths = {
+            item.relative_path
+            for item in adapter_for(provider).installation_plan(tmp_path).components
+        }
+        assert f"{root}/skills/product-framing/SKILL.md" in paths
+        assert f"{root}/skills/product-status/SKILL.md" in paths
+        assert f"{root}/skills/product-memory/SKILL.md" in paths
+        memory_skill = next(
+            item
+            for item in adapter_for(provider).installation_plan(tmp_path).components
+            if item.key == "skill-product-memory"
+        )
+        assert "what Tramuri remembers" in memory_skill.content
+        assert "tramuri memory search" in memory_skill.content
+        assert "raw conversations" in memory_skill.content
+        assert "credentials" in memory_skill.content
+
+
+def test_focused_product_skill_names_are_tramuri_prefixed(tmp_path: Path) -> None:
+    from tramuri.harness import adapter_for
+
+    for provider in ("codex", "claude", "gemini"):
+        plan = adapter_for(provider).installation_plan(tmp_path)
+        focused = [item for item in plan.components if item.key.startswith("skill-")]
+        assert len(focused) == 20
+        for component in focused:
+            folder_name = component.relative_path.split("/")[-2]
+            capability = folder_name.removeprefix("product-")
+            expected_name = f"tramuri-{capability}"
+            assert f"name: {expected_name}" in component.content

@@ -27,14 +27,17 @@ from tramuri.core.paths import output_root
 from tramuri.core.safety import project_root
 from tramuri.core.status import build_status
 from tramuri.experience.browser import run_browser_validation
+from tramuri.experience.classifier import ExperienceCategory
 from tramuri.experience.lifecycle import ExperienceLifecycle
+from tramuri.experience.models import SensorResult
 from tramuri.experience.reviewer import ProductLeadReviewer
-from tramuri.experience.skills import SkillCatalog
 from tramuri.harness import adapter_for, adapters, registry
 from tramuri.harness.installer import Installer
 from tramuri.harness.projection import project_manifest
 from tramuri.hooks.runtime import main as hook_runtime_main
+from tramuri.knowledge.memory import MemoryService
 from tramuri.modules.pm.demo import run_demo
+from tramuri.modules.pm.research import import_research_pack
 from tramuri.modules.pm.runner import PMRunner, ProgressCallback
 from tramuri.reports.generator import ReportGenerator
 from tramuri.sensors.checks import check_experience, check_run
@@ -51,13 +54,15 @@ runs_app = typer.Typer(help="Inspect persisted Tramuri runs.")
 product_app = typer.Typer(help="Run product workflows.")
 report_app = typer.Typer(help="Generate and open offline reports.")
 hooks_app = typer.Typer(help="Run deterministic provider hook handlers.")
-experience_app = typer.Typer(help="Inspect Product Experience artifacts and skills.")
+experience_app = typer.Typer(help="Inspect Product Experience artifacts and quality checks.")
+memory_app = typer.Typer(help="Save and retrieve curated project memory.")
 app.add_typer(providers_app, name="providers")
 app.add_typer(runs_app, name="runs")
 app.add_typer(product_app, name="product")
 app.add_typer(report_app, name="report")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(experience_app, name="experience")
+app.add_typer(memory_app, name="memory")
 
 
 def _version_callback(value: bool) -> None:
@@ -128,31 +133,54 @@ def _installation_for(name: str, project_dir: Path) -> InstallationPlan:
     return adapter.installation_plan(project_dir)
 
 
+def _record_experience_delivery(
+    lifecycle: ExperienceLifecycle,
+    run_status: str,
+    sensors: list[dict[str, Any]],
+    review: dict[str, Any],
+    browser: SensorResult,
+) -> dict[str, Any]:
+    """Persist correction and delivery status from the latest experience checks."""
+    browser_payload = browser.to_dict()
+    sensors_passed = bool(sensors) and all(item.get("status") == "passed" for item in sensors)
+    review_passed = review.get("status") == "passed"
+    complete = run_status == "completed" and sensors_passed and review_passed
+    delivery_status = (
+        "completed"
+        if complete and browser.status == "passed"
+        else "completed_with_browser_not_run"
+        if complete and browser.status == "not_run"
+        else "blocked"
+    )
+    lifecycle.record(
+        "correction",
+        {"status": "not_required" if delivery_status.startswith("completed") else "required"},
+    )
+    payload = {
+        "status": delivery_status,
+        "sensors": sensors,
+        "browser": browser_payload,
+        "review": review,
+    }
+    lifecycle.record("delivery", payload)
+    return payload
+
+
 def _record_experience(database: Database, run_id: str, reports: dict[str, Any]) -> dict[str, Any]:
     lifecycle = ExperienceLifecycle(database, run_id)
-    lifecycle.record("product_definition", {"status": "completed"})
-    lifecycle.record("product_review", reports.get("review", {}))
+    run_status = str(database.run_details(run_id)["run"].get("status", "unknown"))
+    review = reports.get("review", {})
+    lifecycle.record(
+        "product_definition",
+        {"status": "completed" if run_status == "completed" else run_status},
+    )
+    lifecycle.record("product_review", review)
     lifecycle.record("demo_generation", {"status": "completed", "path": reports.get("demo")})
     browser = run_browser_validation(Path(str(reports["demo"])))
     lifecycle.record("browser_validation", browser.to_dict())
-    lifecycle.record("critical_review", reports.get("review", {}))
+    lifecycle.record("critical_review", review)
     sensor_statuses = reports.get("experience_sensors", [])
-    deterministic_passed = all(item.get("status") == "passed" for item in sensor_statuses)
-    review_passed = reports.get("review", {}).get("status") == "passed"
-    correction_status = "not_required" if deterministic_passed and review_passed else "required"
-    lifecycle.record("correction", {"status": correction_status})
-    lifecycle.record(
-        "delivery",
-        {
-            "status": "completed"
-            if deterministic_passed and review_passed and browser.status == "passed"
-            else "completed_with_browser_not_run"
-            if deterministic_passed and review_passed and browser.status == "not_run"
-            else "blocked",
-            "sensors": sensor_statuses,
-            "browser": browser.to_dict(),
-        },
-    )
+    _record_experience_delivery(lifecycle, run_status, sensor_statuses, review, browser)
     return browser.to_dict()
 
 
@@ -371,6 +399,71 @@ def explain(
         render_explanation(view, _ctx(ctx)["no_color"])
 
 
+@memory_app.command("show")
+def memory_show(
+    ctx: typer.Context,
+    run_id: str | None = typer.Option(None, "--run-id", help="Run memory to display."),
+) -> None:
+    """Refresh and display the saved project memory and current work."""
+    view = MemoryService(_database(ctx)).show(run_id=run_id)
+    if _ctx(ctx)["json"]:
+        emit(view, True)
+    else:
+        typer.echo(Path(view["display_file"]).read_text(encoding="utf-8"))
+
+
+@memory_app.command("search")
+def memory_search(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="Topic to retrieve from saved project memory."),
+    run_id: str | None = typer.Option(
+        None, "--run-id", help="Limit results to a run and project memory."
+    ),
+    limit: int = typer.Option(8, min=1, max=50, help="Maximum number of records."),
+) -> None:
+    """Search persisted knowledge and saved project memories."""
+    results = MemoryService(_database(ctx)).search(query, run_id=run_id, limit=limit)
+    payload = {"schema_version": "tramuri.memory-search.v1", "query": query, "results": results}
+    if _ctx(ctx)["json"]:
+        emit(payload, True)
+    elif not results:
+        typer.echo("No stored memory matches that topic.")
+    else:
+        for item in results:
+            typer.echo(
+                f"[{item.get('classification')}] {item.get('title')}\n"
+                f"{item.get('content')}\n"
+                f"Source: {item.get('source_ref') or item.get('source_kind')}\n"
+            )
+
+
+@memory_app.command("save")
+def memory_save(
+    ctx: typer.Context,
+    title: str = typer.Option(..., help="Short title for a durable memory."),
+    content: str = typer.Option(..., help="Concise fact, preference, decision or next action."),
+    classification: str = typer.Option(
+        ...,
+        help="fact, evidence, inference, hypothesis, assumption, decision or pending_validation.",
+    ),
+    source_ref: str | None = typer.Option(
+        None, "--source-ref", help="Where this memory came from, without copying a transcript."
+    ),
+    run_id: str | None = typer.Option(
+        None, "--run-id", help="Attach this memory to a persisted run."
+    ),
+) -> None:
+    """Save a concise, provenance-labelled memory in SQLite and refresh its files."""
+    result = MemoryService(_database(ctx)).save(
+        title=title,
+        content=content,
+        classification=classification,
+        source_ref=source_ref,
+        run_id=run_id,
+    )
+    emit(result, _ctx(ctx)["json"], _ctx(ctx)["no_color"])
+
+
 @runs_app.command("list")
 def runs_list(ctx: typer.Context) -> None:
     emit(_database(ctx).list_runs(), _ctx(ctx)["json"], _ctx(ctx)["no_color"])
@@ -408,16 +501,47 @@ def product_run(
     idea_file: Path = typer.Option(..., "--idea-file", exists=True, dir_okay=False),
     mode: str = typer.Option("mvp", "--mode"),
     provider: str = typer.Option("local-demo", "--provider"),
+    research_file: Path | None = typer.Option(
+        None,
+        "--research-file",
+        exists=True,
+        dir_okay=False,
+        help="Validated provider research JSON.",
+    ),
 ) -> None:
     """Run the product workflow from a local idea file."""
     idea = idea_file.read_text(encoding="utf-8")
     database = _database(ctx)
-    run_id = PMRunner(database, _progress(ctx)).run(idea, _mode(mode), provider)
+    run_id = PMRunner(database, _progress(ctx)).run(
+        idea, _mode(mode), provider, research_file=research_file
+    )
     details = database.run_details(run_id)
     reports = ReportGenerator(_ctx(ctx)["project_dir"]).generate(details)
     reports["browser_validation"] = _record_experience(database, run_id, reports)
     emit(
         {"run_id": run_id, "status": details["run"]["status"], "reports": reports},
+        _ctx(ctx)["json"],
+        _ctx(ctx)["no_color"],
+    )
+
+
+@product_app.command("research")
+def product_research(
+    ctx: typer.Context,
+    run_id: str = typer.Option(..., "--run-id", help="Existing blocked or demo run."),
+    research_file: Path = typer.Option(
+        ..., "--research-file", exists=True, dir_okay=False, help="Provider-produced research JSON."
+    ),
+) -> None:
+    """Import source-backed research and resume the dependent product stages."""
+    database = _database(ctx)
+    import_research_pack(database, run_id, research_file)
+    result = PMRunner(database, _progress(ctx)).resume(run_id)
+    details = database.run_details(result)
+    reports = ReportGenerator(_ctx(ctx)["project_dir"]).generate(details)
+    reports["browser_validation"] = _record_experience(database, result, reports)
+    emit(
+        {"run_id": result, "status": details["run"]["status"], "reports": reports},
         _ctx(ctx)["json"],
         _ctx(ctx)["no_color"],
     )
@@ -463,24 +587,66 @@ def experience_check(ctx: typer.Context, run_id: str) -> None:
     sensors = check_experience(demo_path.parent, details)
     browser = run_browser_validation(demo_path)
     review = ProductLeadReviewer().review(details, demo_path.parent)
-    ExperienceLifecycle(database, run_id).record("browser_validation", browser.to_dict())
-    ExperienceLifecycle(database, run_id).record("critical_review", review.to_dict())
+    lifecycle = ExperienceLifecycle(database, run_id)
+    review_payload = review.to_dict()
+    lifecycle.record("browser_validation", browser.to_dict())
+    lifecycle.record("critical_review", review_payload)
+    delivery = _record_experience_delivery(
+        lifecycle,
+        str(details.get("run", {}).get("status", "unknown")),
+        sensors,
+        review_payload,
+        browser,
+    )
     payload = {
         "run_id": run_id,
         "sensors": sensors,
         "browser": browser.to_dict(),
-        "review": review.to_dict(),
-        "lifecycle": ExperienceLifecycle(database, run_id).status(),
+        "review": review_payload,
+        "delivery": delivery,
+        "lifecycle": lifecycle.status(),
     }
     emit(payload, _ctx(ctx)["json"], _ctx(ctx)["no_color"])
 
 
-@experience_app.command("skills")
-def experience_skills(ctx: typer.Context, task_kind: str) -> None:
-    """Show only the installed harness skills relevant to a task kind."""
-    harness_root = Path(__file__).resolve().parents[3] / "tramuri-harness-kit"
-    selection = SkillCatalog(harness_root).resolve(task_kind)
-    emit(selection.to_dict(), _ctx(ctx)["json"], _ctx(ctx)["no_color"])
+@experience_app.command("render")
+def experience_render(
+    ctx: typer.Context,
+    run_id: str,
+    category: str | None = typer.Option(
+        None,
+        "--category",
+        help=(
+            "Correct the inferred category: mobile_app, web_saas, cli_developer_tool, "
+            "desktop_app, api_backend, data_ai_pipeline, iot_hardware, hybrid, or other."
+        ),
+    ),
+) -> None:
+    """Regenerate the offline Product Demo, optionally correcting its category."""
+    database = _database(ctx)
+    details = database.run_details(run_id)
+    if category:
+        category = category.casefold()
+        categories = {item.value for item in ExperienceCategory}
+        if category not in categories:
+            raise typer.BadParameter(f"Choose one of: {', '.join(sorted(categories))}")
+        ExperienceLifecycle(database, run_id).record(
+            "classification_override",
+            {"category": category, "classification": "decision"},
+        )
+        details = database.run_details(run_id)
+    reports = ReportGenerator(_ctx(ctx)["project_dir"]).generate(details)
+    reports["browser_validation"] = _record_experience(database, run_id, reports)
+    emit(
+        {
+            "run_id": run_id,
+            "demo_category": reports["demo_category"],
+            "demo_template": reports["demo_template"],
+            "reports": reports,
+        },
+        _ctx(ctx)["json"],
+        _ctx(ctx)["no_color"],
+    )
 
 
 @hooks_app.command("runtime")

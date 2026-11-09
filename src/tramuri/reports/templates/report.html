@@ -1,22 +1,239 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Tramuri · {{ run.id }}</title>
-  <style>
-    :root{--deep:#0B2530;--teal:#00B3A6;--dark:#006D6A;--mint:#4FD6C7;--orange:#FFA229;--pale:#A8EFE1;--ink:#183640;--bg:#f4faf9}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}.shell{display:grid;grid-template-columns:250px 1fr;min-height:100vh}.side{background:var(--deep);color:#fff;padding:24px 18px;position:sticky;top:0;height:100vh}.side img{max-width:170px;max-height:70px;object-fit:contain;background:white;border-radius:8px;margin-bottom:20px}.side h1{font-size:18px;margin:0 0 6px}.side p{color:var(--pale);font-size:12px}.side a{display:block;color:#d9fffa;text-decoration:none;padding:8px;border-radius:6px}.side a:hover,.side a:focus{background:var(--dark)}main{padding:36px;max-width:1200px;width:100%}.eyebrow{color:var(--dark);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}.hero{display:flex;justify-content:space-between;gap:20px;align-items:start}.hero h2{font-size:32px;line-height:1.1;margin:6px 0 10px}.tag{display:inline-block;padding:5px 10px;border-radius:999px;background:var(--pale);color:var(--deep);font-size:12px;font-weight:700}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:22px 0}.card,section{background:#fff;border:1px solid #d7ece8;border-radius:12px;padding:18px;box-shadow:0 2px 8px #0b25300d}.card strong{display:block;font-size:25px;color:var(--dark)}section{margin:18px 0}section h3{margin-top:0;color:var(--deep)}.stage{display:flex;gap:10px;align-items:center;border-bottom:1px solid #e5f1ef;padding:8px 0}.stage:last-child{border:0}.dot{width:10px;height:10px;border-radius:50%;background:#b9c9c7}.completed .dot{background:var(--teal)}.running .dot{background:var(--orange)}.failed .dot,.blocked .dot{background:#c94d3d}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #e5f1ef;vertical-align:top}th{color:var(--dark)}code{background:#eaf5f3;padding:2px 5px;border-radius:4px}li{margin:5px 0}.notice{border-left:4px solid var(--orange);background:#fff7eb;padding:12px}.footer{font-size:12px;color:#607b80;margin-top:30px}@media(max-width:760px){.shell{display:block}.side{position:static;height:auto}.side nav{display:flex;flex-wrap:wrap;gap:4px}.side a{padding:5px}.hero h2{font-size:25px}main{padding:20px}}
-  </style>
-</head>
-<body><div class="shell"><aside class="side"><img src="{{ logo_data }}" alt="Tramuri"><h1>Product Engineering</h1><p>Relatório local · {{ run.mode|upper }}</p><nav><a href="#overview">Overview</a><a href="#problem">Problem &amp; Opportunity</a><a href="#discovery">Discovery</a><a href="#scope">Scope</a><a href="#success">Success Metrics</a><a href="#decisions">Decisions</a><a href="#risks">Risks</a><a href="prototype.html">Product Navigation</a></nav></aside><main>
-  <div class="hero" id="overview"><div><div class="eyebrow">Tramuri / Product</div><h2>{{ framing.product_name or run.idea }}</h2><p>Execução <code>{{ run.id }}</code> · provider <code>{{ run.provider }}</code></p></div><span class="tag">{{ run.status|upper }}</span></div>
-  <div class="grid"><div class="card"><span>Mode</span><strong>{{ run.mode|upper }}</strong></div><div class="card"><span>Status</span><strong>{{ status_view.semantic_status|upper }}</strong><small>{{ status_view.next_action }}</small></div><div class="card"><span>Stages</span><strong>{{ status_view.progress.completed }}/{{ status_view.progress.total }}</strong><small>{{ status_view.progress.percent }}% verified</small></div><div class="card"><span>Hypotheses</span><strong>{{ hypotheses|length }}</strong></div><div class="card"><span>Validations</span><strong>{{ validations|length }}</strong></div></div>
-  <section id="problem"><h3>Problem &amp; Opportunity</h3><p>{{ framing.problem or 'Problem framing will be refined from the supplied intent.' }}</p><p><b>Value proposition:</b> {{ framing.value_proposition or 'Pending framing.' }}</p><p><b>Target users:</b> {{ framing.target_users|join(', ') if framing.target_users else 'Pending validation.' }}</p><div class="notice">This report distinguishes intent, inference, hypothesis, decision and pending validation. It contains no fabricated interviews or market data.</div></section>
-  <section id="discovery"><h3>Discovery &amp; Hypotheses</h3><p><b>Gaps:</b> {{ discovery.gaps|join('; ') if discovery.gaps else 'None recorded.' }}</p><table><thead><tr><th>Hypothesis</th><th>Risk</th><th>Test</th><th>State</th></tr></thead><tbody>{% for item in hypotheses %}<tr><td>{{ item.statement }}</td><td>{{ item.risk_level }}</td><td>{{ item.test_method }}</td><td>{{ item.evidence_state }}</td></tr>{% endfor %}</tbody></table></section>
-  <section id="scope"><h3>Product Scope</h3><h4>In scope</h4><ul>{% for item in shaping.in_scope or [] %}<li>{{ item }}</li>{% endfor %}</ul><h4>Out of scope</h4><ul>{% for item in shaping.out_of_scope or [] %}<li>{{ item }}</li>{% endfor %}</ul></section>
-  <section id="success"><h3>Success Metrics</h3><ul>{% for item in success.outcomes or [] %}<li>{{ item }}</li>{% endfor %}</ul><table><thead><tr><th>Metric</th><th>Target</th><th>State</th></tr></thead><tbody>{% for item in success.metrics or [] %}<tr><td>{{ item.name }}</td><td>{{ item.target }}</td><td>{{ item.state }}</td></tr>{% endfor %}</tbody></table></section>
-  <section><h3>Workflow progress</h3>{% for item in stages %}<div class="stage {{ item.status }}"><span class="dot"></span><span>{{ item.position + 1 }}. {{ item.stage_key }}</span><small>{{ item.status }} · {{ item.owner }}</small></div>{% endfor %}</section>
-  <section id="verification"><h3>Verification &amp; resume</h3><p><b>Next action:</b> {{ status_view.next_action }}</p><p><b>Sensor receipts:</b> {{ sensor_results|length }} · <b>Checkpoints:</b> {{ checkpoints|length }} · <b>Knowledge:</b> {{ knowledge|length }}</p>{% if status_view.gates.blocking_failures %}<div class="notice">This workflow has {{ status_view.gates.blocking_failures }} blocking sensor failure(s). It is not presented as verified complete.</div>{% endif %}</section>
-  <section id="decisions"><h3>Decisions &amp; traceability</h3><table><thead><tr><th>Title</th><th>Decision</th><th>Classification</th><th>Rationale</th></tr></thead><tbody>{% for item in decisions %}<tr><td>{{ item.title }}</td><td>{{ item.decision_text }}</td><td>{{ item.classification }}</td><td>{{ item.rationale }}</td></tr>{% endfor %}</tbody></table></section>
-  <section id="risks"><h3>Critical review &amp; risks</h3><ul>{% for item in review.findings or [] %}<li>{{ item }}</li>{% endfor %}</ul><p><b>Risks:</b> {{ review.risks|join('; ') if review.risks else 'None recorded.' }}</p></section>
-  <p class="footer">Generated offline by Tramuri. Synthetic/demo data is labeled in the workflow; validate hypotheses with real evidence before delivery.</p>
-</main></div></body></html>
+{% extends "report_base.html" %}
+{% import "report_components.html" as ui %}
+{% block report_content %}
+  <section class="overview" id="overview" aria-labelledby="report-title">
+    <div class="overview-label"><svg aria-hidden="true"><use href="#icon-intelligence"/></svg><span data-i18n="overview.label">Tramuri / Product report</span><span aria-hidden="true">·</span><span>{{ run.mode|upper }}</span></div>
+    <div class="overview-title-row">
+      <div>
+        <h1 id="report-title">{{ framing.product_name or run.idea }}</h1>
+        <p class="overview-summary">{{ framing.summary or framing.problem or intent_profile.summary or "The run records the current product framing, evidence and decisions." }}</p>
+        <p class="overview-idea"><span data-i18n="overview.problemLabel">Product intent</span><span>{{ run.idea }}</span></p>
+      </div>
+      <div class="overview-status">{{ ui.state(status_view.semantic_status) }}</div>
+    </div>
+    <div class="overview-meta">
+      <span><span data-i18n="meta.mode">Mode</span><code>{{ run.mode|upper }}</code></span>
+      <span><span data-i18n="meta.provider">Provider</span><code>{{ run.provider }}</code></span>
+      <span><span data-i18n="meta.archetype">Product shape</span><code>{{ intent_profile.archetype }}</code></span>
+      <span><span data-i18n="run.identifier">Run identifier</span><code>{{ run.id }}</code></span>
+    </div>
+    <dl class="metric-strip">
+      <div class="metric"><dt data-i18n="metric.progress">Workflow progress</dt><dd>{{ status_view.progress.percent }}<small>%</small></dd><span class="metric-note" data-i18n="metric.progressNote">Persisted stage state</span></div>
+      <div class="metric"><dt data-i18n="metric.stages">Stages verified</dt><dd>{{ status_view.progress.completed }}<small>/ {{ status_view.progress.total }}</small></dd><span class="metric-note" data-i18n="journey.progress">verified</span></div>
+      <div class="metric"><dt data-i18n="metric.evidence">Evidence sources</dt><dd>{{ research.source_count or 0 }}</dd><span class="metric-note" data-i18n="metric.evidenceNote">External sources in the research pack</span></div>
+      <div class="metric"><dt data-i18n="metric.decisions">Recorded decisions</dt><dd>{{ decisions|length }}</dd><span class="metric-note" data-i18n="metric.decisionsNote">Decisions in this run</span></div>
+    </dl>
+    <div class="next-action"><svg aria-hidden="true"><use href="#icon-arrow"/></svg><div><strong data-i18n="next.title">Next recorded action</strong><p>{{ status_view.next_action }}</p></div></div>
+    {% if decisions or review.risks %}<div class="overview-signals">
+      {% if decisions %}<div><h2 data-i18n="overview.decisions">Key decisions</h2><ul>{% for item in decisions[:2] %}<li><strong>{{ item.title }}</strong><span>{{ item.decision_text }}</span></li>{% endfor %}</ul></div>{% endif %}
+      {% if review.risks %}<div><h2 data-i18n="overview.risks">Risks to watch</h2><ul>{% for item in review.risks[:3] %}<li>{{ item }}</li>{% endfor %}</ul></div>{% endif %}
+    </div>{% endif %}
+  </section>
+
+  <section class="report-section" id="journey" aria-labelledby="journey-title">
+    {{ ui.section_heading("01", "journey-title", "section.journey.title", "The product journey", "section.journey.description", "A stage-by-stage view of this run, taken from persisted workflow state.") }}
+    <div class="journey-summary"><span>{{ status_view.progress.completed }} / {{ status_view.progress.total }} <span data-i18n="journey.progress">completed</span></span><div class="journey-progress" role="progressbar" aria-label="Persisted workflow progress" data-i18n-aria="aria.workflowProgress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ status_view.progress.percent }}" style="--progress: {{ status_view.progress.percent }}%"><span></span></div><span>{{ status_view.progress.percent }}%</span></div>
+    {% if stages %}
+      <div class="journey-scroll"><div class="journey-track" role="list" aria-label="Product development stages" data-i18n-aria="aria.stages">
+        {% for item in stages %}
+          <article class="journey-item" role="listitem" data-stage-status="{{ item.status }}" id="stage-{{ item.stage_key }}">
+            <span class="journey-node" aria-hidden="true">{% if item.status == 'completed' %}✓{% else %}{{ "%02d"|format(item.position + 1) }}{% endif %}</span>
+            <h3 data-stage-label="{{ item.stage_key }}">{{ item.stage_key|replace('_', ' ')|title }}</h3>
+            {{ ui.state(item.status) }}
+            <p><span data-i18n="journey.owner">Owner</span>: {{ item.owner }}</p>
+            <p>{{ item.attempts or 0 }} <span data-i18n="journey.attempts">attempts</span></p>
+          </article>
+        {% endfor %}
+      </div></div>
+      <div class="journey-detail-list">
+        {% for item in stages %}
+          <div class="journey-detail"><h3 data-stage-label="{{ item.stage_key }}">{{ item.stage_key|replace('_', ' ')|title }}</h3>{{ ui.state(item.status) }}<p><span data-i18n="journey.dependencies">Depends on</span>: {% if item.dependencies %}{{ item.dependencies|join(", ") }}{% else %}<span data-i18n="journey.noDependencies">No recorded dependency</span>{% endif %}</p></div>
+        {% endfor %}
+      </div>
+    {% else %}
+      {{ ui.empty_state("execution.empty", "execution.emptyDetail") }}
+    {% endif %}
+  </section>
+
+  <section class="report-section" id="intelligence" aria-labelledby="intelligence-title">
+    {{ ui.section_heading("02", "intelligence-title", "section.intelligence.title", "Product intelligence", "section.intelligence.description", "The product's problem, audience and value proposition, with uncertainty kept visible.") }}
+    <div class="section-body">
+      <dl>
+        <div class="labelled-value"><dt data-i18n="label.problem">Problem</dt><dd>{{ framing.problem or "" }}</dd></div>
+        <div class="labelled-value"><dt data-i18n="label.users">Target users</dt><dd>{{ framing.target_users|join(", ") if framing.target_users else "" }}</dd></div>
+        <div class="labelled-value"><dt data-i18n="label.needs">User needs</dt><dd>{{ framing.user_needs|join("; ") if framing.user_needs else "" }}</dd></div>
+        <div class="labelled-value"><dt data-i18n="label.value">Value proposition</dt><dd>{{ framing.value_proposition or "" }}</dd></div>
+        <div class="labelled-value"><dt data-i18n="label.archetype">Product shape</dt><dd>{{ intent_profile.archetype }}</dd></div>
+        {% if framing.constraints %}<div class="labelled-value"><dt data-i18n="label.constraints">Constraints</dt><dd>{{ framing.constraints|join("; ") if framing.constraints is sequence and framing.constraints is not string else framing.constraints }}</dd></div>{% endif %}
+        {% if discovery.gaps %}<div class="labelled-value"><dt data-i18n="label.discoveryGaps">Discovery gaps</dt><dd>{{ discovery.gaps|join("; ") }}</dd></div>{% endif %}
+      </dl>
+      <div class="notice"><span class="notice-mark" aria-hidden="true">i</span><p><strong data-i18n="notice.evidence.title">Evidence boundary</strong><br><span data-i18n="notice.evidence.body">Interviews, market numbers and user validation are presented as facts only when supporting evidence exists.</span></p></div>
+    </div>
+  </section>
+
+  <section class="report-section" id="market" aria-labelledby="market-title">
+    {{ ui.section_heading("03", "market-title", "section.market.title", "Market Research &amp; Opportunity", "section.market.description", "Competitive context, buying motivations and market signals are included only from a validated research pack.") }}
+    <div class="section-body">
+      <dl class="labelled-value"><dt data-i18n="market.status">Research status</dt><dd>{{ ui.state(status_view.research.status) }} <span>· {{ status_view.research.source_count }} <span data-i18n="metric.evidence">Evidence sources</span></span></dd></dl>
+      {% if research.status == "imported" %}
+        <dl>
+          {% if research.query %}<div class="labelled-value"><dt data-i18n="market.query">Research question</dt><dd>{{ research.query }}</dd></div>{% endif %}
+          {% if research.researched_at %}<div class="labelled-value"><dt data-i18n="market.date">Research date</dt><dd>{{ research.researched_at }}</dd></div>{% endif %}
+        </dl>
+        <h3 class="section-subtitle" data-i18n="market.competitors">Competitive landscape</h3>
+        {% if research.competitors %}
+          <div class="table-wrap"><table><thead><tr><th scope="col" data-i18n="market.product">Product</th><th scope="col" data-i18n="market.positioning">Positioning</th><th scope="col" data-i18n="market.strengths">Strengths</th><th scope="col" data-i18n="market.gaps">Observed gaps</th></tr></thead><tbody>
+            {% for item in research.competitors %}<tr><td>{{ item.name }}</td><td>{{ item.positioning or "" }}</td><td>{{ item.strengths|join(", ") if item.strengths else "" }}</td><td>{{ item.gaps|join(", ") if item.gaps else "" }}</td></tr>{% endfor %}
+          </tbody></table></div>
+        {% else %}{{ ui.empty_state("market.competitors", "market.pendingDetail") }}{% endif %}
+        {% for key, title_key in [("market_signals", "market.signals"), ("buying_motivations", "market.buying"), ("build_buy_partner", "market.tradeoffs"), ("positioning", "market.positioning")] %}
+          {% set items = research.get(key, []) %}
+          {% if items %}<h3 class="section-subtitle" data-i18n="{{ title_key }}">{{ title_key|replace("market.", "")|replace("_", " ")|title }}</h3><ul class="clean-list">
+            {% for item in items %}<li>{% if item.signal %}{{ item.signal }}{% elif item.motivation %}{{ item.motivation }}{% elif item.trade_off %}<strong>{{ item.option }}</strong>: {{ item.trade_off }}{% elif item.statement %}{{ item.statement }}{% endif %}<span class="list-meta">{% if item.source_ids %}{{ item.source_ids|join(", ") }}{% endif %}</span></li>{% endfor %}
+          </ul>{% endif %}
+        {% endfor %}
+        <h3 class="section-subtitle" data-i18n="market.sizing">Audience sizing</h3>
+        {% set sizing = research.market_sizing or {} %}
+        <div class="labelled-value"><dt>{{ sizing.status|default("pending_validation")|replace("_", " ")|title }}</dt><dd>{% if sizing.claims %}<ul class="clean-list">{% for claim in sizing.claims %}<li>{{ claim.claim or claim.statement or claim }}</li>{% endfor %}</ul>{% else %}<span data-i18n="market.pendingDetail">No validated sizing claims were provided.</span>{% endif %}</dd></div>
+        <p class="footer-note" data-i18n="market.sourceNote">Claims retain their source identifiers from the research pack.</p>
+      {% else %}
+        <div class="notice"><span class="notice-mark" aria-hidden="true">!</span><p><strong data-i18n="market.pending">Research not run · No market evidence</strong><br><span data-i18n="market.pendingDetail">This run has no imported, source-backed market research. The report leaves competitors, market size and buying signals unasserted.</span></p></div>
+      {% endif %}
+      {% if research.sources %}
+        <h3 class="section-subtitle" data-i18n="market.sources">Sources &amp; traceability</h3>
+        <div class="table-wrap"><table><thead><tr><th>ID</th><th scope="col" data-i18n="evidence.source">Source</th><th scope="col" data-i18n="market.publisher">Publisher</th><th scope="col" data-i18n="market.confidence">Confidence</th></tr></thead><tbody>
+          {% for item in research.sources %}<tr id="research-source-{{ item.id }}"><td><code>{{ item.id }}</code></td><td>{% set source_href = safe_http_url(item.url) %}{% if source_href %}<a class="source-link" href="{{ source_href }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>{% else %}<span class="source-link">{{ item.title }}</span>{% endif %}<span class="source-url">{{ item.url }}</span></td><td>{{ item.publisher }}</td><td>{{ item.confidence }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="report-section" id="hypotheses" aria-labelledby="hypotheses-title">
+    {{ ui.section_heading("04", "hypotheses-title", "section.hypotheses.title", "Assumptions to test", "section.hypotheses.description", "Hypotheses remain distinct from validated evidence and keep their risk and test signal attached.") }}
+    <div class="section-body">
+      {% if hypotheses %}
+        <div class="table-wrap"><table><thead><tr><th scope="col" data-i18n="hypothesis.statement">Hypothesis</th><th scope="col" data-i18n="hypothesis.risk">Risk</th><th scope="col" data-i18n="hypothesis.test">Test method</th><th scope="col" data-i18n="hypothesis.signal">Success signal</th><th scope="col" data-i18n="hypothesis.state">Evidence state</th></tr></thead><tbody>
+          {% for item in hypotheses %}<tr id="hypothesis-{{ item.id }}"><td>{{ item.statement }}</td><td><span class="risk-level risk-level--{{ item.risk_level|lower }}" data-risk-label="{{ item.risk_level }}">{{ item.risk_level }}</span></td><td>{{ item.test_method }}</td><td>{{ item.success_signal }}</td><td>{{ item.evidence_state }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      {% else %}{{ ui.empty_state("hypothesis.empty", "hypothesis.emptyDetail") }}{% endif %}
+    </div>
+  </section>
+
+  <section class="report-section" id="scope" aria-labelledby="scope-title">
+    {{ ui.section_heading("05", "scope-title", "section.scope.title", "Scope &amp; Product Experience", "section.scope.description", "The defined product scope and generated experience are shown separately from production engineering.") }}
+    <div class="section-body">
+      {% if shaping %}
+        <div class="two-column">
+          <div class="column-rule"><h3 data-i18n="scope.in">Included in scope</h3>
+            {% if shaping.in_scope %}<ol class="priority-list clean-list">{% for item in shaping.in_scope %}<li class="priority-item"><p>{% if item is mapping %}{{ item.name or item.feature or item.title }}<small>{{ item.rationale or item.description or item.priority or "" }}</small>{% else %}{{ item }}{% endif %}</p></li>{% endfor %}</ol>{% else %}<p class="prose" data-i18n="scope.emptyDetail">No included capabilities were recorded.</p>{% endif %}
+          </div>
+          <div class="column-rule"><h3 data-i18n="scope.out">Outside this increment</h3>
+            {% if shaping.out_of_scope %}<ul class="clean-list">{% for item in shaping.out_of_scope %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<p class="prose" data-i18n="label.notRecorded">Not recorded</p>{% endif %}
+          </div>
+        </div>
+      {% else %}{{ ui.empty_state("scope.empty", "scope.emptyDetail") }}{% endif %}
+      <h3 class="section-subtitle" data-i18n="experience.surfaces">Generated surfaces</h3>
+      <p class="prose" data-i18n="experience.disclaimer">The generated experience is an offline product exploration, not a production application. Synthetic data is labeled in the demo.</p>
+      <p class="prose"><strong data-i18n="experience.traceability">Screen and interaction traceability</strong>{% if navigation.surfaces %}: {{ navigation.surfaces|join(", ") }}{% endif %}</p>
+      <div class="demo-links">
+        <a class="demo-link" href="../../demo/index.html"><span data-i18n="experience.marketing">Marketing site</span><svg aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+        <a class="demo-link" href="../../demo/app.html"><span data-i18n="experience.customer">Customer experience</span><svg aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+        <a class="demo-link" href="../../demo/admin.html"><span data-i18n="experience.admin">Admin experience</span><svg aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section" id="decision-evidence" aria-labelledby="decision-evidence-title">
+    {{ ui.section_heading("06", "decision-evidence-title", "section.graph.title", "Decision &amp; Evidence Map", "section.graph.description", "Recorded dependencies and source references connect the product reasoning. Unlinked records remain unconnected.") }}
+    <p class="graph-intro" data-i18n="graph.relationshipRule">Lines appear only for persisted stage dependencies, artifact lineage or exact evidence references.</p>
+    {% if report_graph.edges %}
+      <p class="graph-scroll-hint" data-i18n="graph.scrollHint">Scroll horizontally to explore the full map.</p>
+      <div class="graph-legend" aria-label="Relationship map legend" data-i18n-aria="aria.legend">
+        {% for column in report_graph.columns %}<span class="legend-item"><i class="legend-swatch legend-swatch--{{ column.kind }}" aria-hidden="true"></i><span data-i18n="graph.{{ column.kind }}">{{ column.label }}</span></span>{% endfor %}
+      </div>
+      <div class="graph-scroll" tabindex="0" aria-label="Scrollable decision and evidence map" data-i18n-aria="aria.graphScroll">
+        <svg class="relationship-graph" xmlns="http://www.w3.org/2000/svg" width="{{ report_graph.width }}" height="{{ report_graph.height }}" viewBox="0 0 {{ report_graph.width }} {{ report_graph.height }}" role="group" aria-label="Recorded product relationships" data-i18n-aria="aria.graph">
+          <defs><marker id="graph-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path class="graph-arrow" d="M0 0 8 4 0 8z"/></marker></defs>
+          {% for column in report_graph.columns %}<text class="graph-column-label" x="{{ column.x }}" y="28" data-i18n="graph.{{ column.kind }}">{{ column.label }}</text>{% endfor %}
+          {% for edge in report_graph.edges %}<path class="graph-edge" d="{{ edge.path }}" marker-end="url(#graph-arrow)"><title>{{ edge.label }}</title></path>{% endfor %}
+          {% for node in report_graph.nodes %}
+            <a class="graph-node graph-node--{{ node.kind }}" href="{{ node.href }}" aria-label="{{ node.kind|title }}: {{ node.label }}. {{ node.description }}">
+              <rect x="{{ node.x }}" y="{{ node.y }}" width="{{ node.width }}" height="{{ node.height }}" rx="5"/>
+              <text class="graph-node-label" x="{{ node.x + 12 }}" y="{{ node.y + 27 }}">{{ node.short_label }}</text>
+              <text class="graph-node-meta" x="{{ node.x + 12 }}" y="{{ node.y + 47 }}">{{ node.description|truncate(30, True, "…") }}</text>
+            </a>
+          {% endfor %}
+        </svg>
+      </div>
+      <details class="graph-equivalent"><summary data-i18n="graph.accessible">Recorded relationships</summary><ul>
+        {% for edge in report_graph.edges %}<li><a href="{{ report_graph.node_by_id[edge.source].href }}">{{ report_graph.node_by_id[edge.source].label }}</a> → <a href="{{ report_graph.node_by_id[edge.target].href }}">{{ report_graph.node_by_id[edge.target].label }}</a> <code>{{ edge.kind|replace("_", " ") }}</code></li>{% endfor %}
+      </ul></details>
+    {% else %}
+      {{ ui.empty_state("graph.empty", "graph.emptyDetail") }}
+    {% endif %}
+  </section>
+
+  <section class="report-section" id="evidence" aria-labelledby="evidence-title">
+    {{ ui.section_heading("07", "evidence-title", "section.evidence.title", "Evidence &amp; Decisions", "section.evidence.description", "Claims, decisions and sources stay traceable to their stored classifications and references.") }}
+    <div class="section-body">
+      <h3 class="section-subtitle" data-i18n="evidence.records">Evidence records</h3>
+      {% if evidence %}<div class="table-wrap"><table><thead><tr><th scope="col" data-i18n="evidence.claim">Claim</th><th scope="col" data-i18n="evidence.classification">Classification</th><th scope="col" data-i18n="evidence.source">Source reference</th><th scope="col" data-i18n="evidence.freshness">Freshness</th><th scope="col" data-i18n="evidence.verifier">Verified by</th></tr></thead><tbody>
+        {% for item in evidence %}<tr id="evidence-{{ item.id }}"><td>{{ item.claim }}</td><td><span class="classification classification--{{ item.classification|replace("_", "-") }}" data-classification-label="{{ item.classification }}">{{ item.classification|replace("_", " ") }}</span></td><td><code>{{ item.source_ref or "—" }}</code></td><td><span data-freshness-label="{{ item.freshness }}">{{ item.freshness }}</span></td><td>{{ item.verified_by or "—" }}</td></tr>{% endfor %}
+      </tbody></table></div>{% else %}{{ ui.empty_state("evidence.empty", "evidence.emptyDetail") }}{% endif %}
+
+      <h3 class="section-subtitle" data-i18n="decision.title">Decisions</h3>
+      {% if decisions %}<div class="table-wrap"><table><thead><tr><th scope="col" data-i18n="decision.title">Decision</th><th scope="col" data-i18n="decision.outcome">Selected direction</th><th scope="col" data-i18n="decision.classification">Classification</th><th scope="col" data-i18n="decision.rationale">Rationale</th><th scope="col" data-i18n="evidence.source">Source reference</th></tr></thead><tbody>
+        {% for item in decisions %}<tr id="decision-{{ item.id }}"><td>{{ item.title }}</td><td>{% set decision_token = item.decision_text|trim|upper %}{% if decision_token.startswith("NO-GO") or decision_token.startswith("NOGO") %}<span class="decision-marker decision-marker--no-go">NO-GO</span> {% elif decision_token.startswith("ITERATE") %}<span class="decision-marker decision-marker--iterate">ITERATE</span> {% elif decision_token == "GO" or decision_token.startswith("GO:") %}<span class="decision-marker decision-marker--go">GO</span> {% endif %}{{ item.decision_text }}</td><td><span class="classification classification--{{ item.classification|replace("_", "-") }}" data-classification-label="{{ item.classification }}">{{ item.classification|replace("_", " ") }}</span></td><td>{{ item.rationale }}</td><td><code>{{ item.source_ref or "—" }}</code></td></tr>{% endfor %}
+      </tbody></table></div>{% else %}{{ ui.empty_state("decision.empty", "decision.emptyDetail") }}{% endif %}
+
+      <h3 class="section-subtitle" data-i18n="knowledge.title">Knowledge notes</h3>
+      {% if knowledge %}<div class="table-wrap"><table><thead><tr><th scope="col" data-i18n="knowledge.content">Recorded information</th><th scope="col" data-i18n="knowledge.classification">Classification</th><th scope="col" data-i18n="knowledge.freshness">Freshness</th><th scope="col" data-i18n="knowledge.status">Status</th></tr></thead><tbody>
+        {% for item in knowledge %}<tr><td>{{ item.content }}</td><td><span class="classification classification--{{ item.classification|replace("_", "-") }}" data-classification-label="{{ item.classification }}">{{ item.classification|replace("_", " ") }}</span></td><td><span data-freshness-label="{{ item.freshness }}">{{ item.freshness }}</span></td><td>{{ item.status }}</td></tr>{% endfor %}
+      </tbody></table></div>{% else %}{{ ui.empty_state("knowledge.empty", "knowledge.emptyDetail") }}{% endif %}
+    </div>
+  </section>
+
+  <section class="report-section" id="execution" aria-labelledby="execution-title">
+    {{ ui.section_heading("08", "execution-title", "section.execution.title", "Execution &amp; Outcomes", "section.execution.description", "Progress, validation receipts, checkpoints and risks from this run's actual execution.") }}
+    <div class="section-body">
+      {% if success.outcomes %}<h3 class="section-subtitle" data-i18n="execution.outcomes">Desired outcomes</h3><ul class="clean-list">{% for item in success.outcomes %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+      {% if success.metrics %}<h3 class="section-subtitle" data-i18n="execution.metrics">Success criteria</h3><div class="table-wrap"><table><thead><tr><th scope="col" data-i18n="execution.metricsName">Metric</th><th scope="col" data-i18n="execution.metricsTarget">Target</th><th scope="col" data-i18n="execution.metricsState">State</th></tr></thead><tbody>{% for item in success.metrics %}<tr><td>{{ item.name }}</td><td>{{ item.target }}</td><td>{{ item.state }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+
+      <h3 class="section-subtitle" data-i18n="execution.validations">Validation receipts</h3>
+      {% if validations %}<div class="table-wrap"><table><thead><tr><th scope="col" data-i18n="execution.stage">Stage</th><th scope="col" data-i18n="execution.check">Check</th><th scope="col" data-i18n="execution.result">Result</th><th scope="col" data-i18n="execution.details">Details</th><th scope="col" data-i18n="execution.checkedAt">Checked at</th></tr></thead><tbody>
+        {% for item in validations %}<tr><td>{{ stage_name_by_id.get(item.stage_id, item.stage_id or "—") }}</td><td>{{ item.check_key }}</td><td>{{ ui.state(item.result) }}</td><td>{{ item.details }}</td><td>{{ item.checked_at }}</td></tr>{% endfor %}
+      </tbody></table></div>{% else %}{{ ui.empty_state("execution.empty", "execution.emptyDetail") }}{% endif %}
+
+      <details class="disclosure"><summary><span data-i18n="execution.events">Workflow events</span><span class="disclosure-count">{{ events|length }}</span></summary>
+        {% if events %}<ul class="record-list">{% for item in events %}<li class="record-row"><strong>{{ item.event_type }}</strong><code>{{ item.created_at }}</code><p>{% if item.stage_id %}{{ stage_name_by_id.get(item.stage_id, item.stage_id) }}{% else %}<span data-i18n="execution.runEvent">Run-level event</span>{% endif %}</p></li>{% endfor %}</ul>{% else %}{{ ui.empty_state("execution.empty", "execution.emptyDetail") }}{% endif %}
+      </details>
+
+      <h3 class="section-subtitle" data-i18n="execution.checkpoints">Resume checkpoints</h3>
+      {% if checkpoints %}<ul class="checkpoint-list">{% for item in checkpoints %}<li class="checkpoint-row"><strong>{{ item.stage_key or item.id }}</strong><code>{{ item.status }} · {{ item.created_at }}</code><p>{{ item.next_action or "" }}{% if not item.next_action %}<span data-i18n="execution.noNextAction">No next action recorded.</span>{% endif %}</p></li>{% endfor %}</ul>{% else %}{{ ui.empty_state("execution.empty", "execution.emptyDetail") }}{% endif %}
+
+      <h3 class="section-subtitle" data-i18n="execution.sensors">Sensor results</h3>
+      {% if sensor_results %}<div class="table-wrap"><table><thead><tr><th scope="col" data-i18n="execution.stage">Stage</th><th scope="col" data-i18n="execution.sensor">Sensor</th><th scope="col" data-i18n="execution.result">Result</th><th scope="col" data-i18n="execution.severity">Severity</th><th scope="col" data-i18n="execution.details">Evidence</th></tr></thead><tbody>
+        {% for item in sensor_results %}<tr><td>{{ item.stage_key or "—" }}</td><td>{{ item.sensor_key }}</td><td>{{ ui.state(item.status) }}</td><td>{{ item.severity }}</td><td>{{ item.evidence|tojson }}</td></tr>{% endfor %}
+      </tbody></table></div>{% else %}{{ ui.empty_state("execution.empty", "execution.emptyDetail") }}{% endif %}
+
+      <h3 class="section-subtitle" data-i18n="execution.risks">Risks &amp; critical review</h3>
+      {% if review.findings or review.risks %}<div class="two-column"><div class="column-rule"><h3 data-i18n="execution.risks">Risks</h3><ul class="clean-list">{% for item in review.risks or [] %}<li>{{ item }}</li>{% endfor %}</ul></div><div class="column-rule"><h3 data-i18n="execution.reviewFindings">Review findings</h3><ul class="clean-list">{% for item in review.findings or [] %}<li>{{ item }}</li>{% endfor %}</ul></div></div>{% else %}{{ ui.empty_state("execution.empty", "execution.emptyDetail") }}{% endif %}
+
+      <h3 class="section-subtitle" data-i18n="execution.artifacts">Generated artifacts</h3>
+      {% if artifacts %}<ul class="deliverable-list">{% for item in artifacts %}<li id="artifact-{{ item.id }}"><a href="#{{ 'market' if item.kind == 'pm.market_research' else 'intelligence' if item.kind == 'pm.framing' else 'scope' if item.kind == 'pm.shaping' else 'execution' }}">{{ item.kind|replace("pm.", "")|replace("_", " ")|title }} · v{{ item.revision }}</a>{{ ui.state(item.status) }}</li>{% endfor %}</ul>{% else %}{{ ui.empty_state("execution.empty", "execution.emptyDetail") }}{% endif %}
+    </div>
+  </section>
+
+  <section class="report-section" id="experience" aria-labelledby="experience-title">
+    {{ ui.section_heading("09", "experience-title", "nav.demo", "Product experience", "experience.traceability", "Generated screens and interactions remain tied to the product definition.") }}
+    <div class="section-body">
+      <p class="prose" data-i18n="experience.disclaimer">The generated experience is an offline product exploration, not a production application. Synthetic data is labeled in the demo.</p>
+      <div class="demo-links">
+        <a class="demo-link" href="../../demo/index.html"><span data-i18n="experience.marketing">Marketing site</span><svg aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+        <a class="demo-link" href="../../demo/app.html"><span data-i18n="experience.customer">Customer experience</span><svg aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+        <a class="demo-link" href="../../demo/admin.html"><span data-i18n="experience.admin">Admin experience</span><svg aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+      </div>
+      <p class="footer-note" data-i18n="footer.validation">Validate open hypotheses and research before making delivery decisions.</p>
+    </div>
+  </section>
+{% endblock %}

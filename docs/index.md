@@ -29,17 +29,28 @@ to be an LLM backend.
 - [CLI](reference/cli.md) — command grammar and output contracts.
 - [Providers](reference/providers.md) — detected capabilities and fallbacks.
 - [Hooks](reference/hooks.md) — deterministic provider gate and SQLite contract.
+- [Product skills](reference/product-skills.md) — focused skills and provider discovery.
+
+## Design
+
+- [Report design system](design/report-design-system.md) — reusable visual,
+  evidence, accessibility and validation rules for offline product reports.
+- [Product Demo Engine](design/product-demo-system.md) — contextual categories,
+  versioned demo specification, offline templates and simulation boundaries.
 
 The local runtime also provides resumable context, provenance-labelled
 knowledge, trusted deterministic sensors and a truthful `tramuri status`
-projection. These mechanisms are provider-neutral and require no LLM, Node.js,
-Rust or hosted service.
+projection. It generates readable project memory under
+`tramuri_output/memorys/`. These mechanisms are provider-neutral and require no
+LLM, Node.js, Rust or hosted service.
 
 ## Product Experience
 
 Every completed product run can generate a central offline portal at
 `tramuri_output/portal/index.html` and a separate exploratory demo at
-`tramuri_output/demo/index.html`. The
-portal links the Product Definition report to the Product Demo and makes Product
-UX and Product Engineering explicit future stages. The demo is synthetic and
-must not be presented as a production application or user research.
+`tramuri_output/demo/index.html`. The demo chooses its environment from the
+persisted product context; see the [Product Demo Engine design](design/product-demo-system.md).
+The portal links the Product Definition report to the Product Demo and makes
+Product UX and Product Engineering explicit future stages. The demo is
+synthetic and must not be presented as a production application or user
+research.

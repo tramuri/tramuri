@@ -57,7 +57,7 @@ class ProductPortalBuilder:
             action = (
                 f'<a class="stage-link" href="{escape(stage.href)}">Open stage</a>'
                 if stage.href
-                else '<button class="stage-link future-button" type="button" data-stage="{stage.key}">Explore later</button>'
+                else f'<button class="stage-link future-button" type="button" data-stage="{escape(stage.key)}">Explore later</button>'
             )
             nodes.append(
                 f'<article class="stage stage-{stage.status}" data-stage-card="{stage.key}"><span class="stage-number">{len(nodes) + 1:02d}</span><p class="eyebrow">{escape(stage.status)}</p><h2>{escape(stage.label)}</h2><p>{escape(stage.summary)}</p>{action}</article>'

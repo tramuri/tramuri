@@ -22,7 +22,7 @@ def check_run(details: dict[str, Any]) -> list[dict[str, str]]:
         {
             "key": "completeness",
             "result": "passed"
-            if stages and all(item["status"] == "completed" for item in stages)
+            if stages and all(item["status"] in {"completed", "skipped"} for item in stages)
             else "failed",
         }
     )

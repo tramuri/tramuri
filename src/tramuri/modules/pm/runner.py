@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from tramuri.core.context import build_context_pack
 from tramuri.core.errors import ValidationError
 from tramuri.core.models import Mode, RunStatus, StageStatus
 from tramuri.core.workflow import stage_specs
+from tramuri.knowledge.memory import MemoryService
 from tramuri.knowledge.service import KnowledgeService
-from tramuri.modules.pm.stages import MODE_PROFILES, capability_name
+from tramuri.modules.pm.intent import IntentProfile, parse_intent
+from tramuri.modules.pm.research import load_research_pack, not_run_payload
+from tramuri.modules.pm.stages import MODE_PROFILES, capability_name, specialist_name
 from tramuri.sensors.registry import SensorRegistry
 from tramuri.storage.database import Database
 
@@ -24,32 +28,75 @@ ProgressCallback = Callable[[str, str, str], None]
 
 
 def _title(idea: str) -> str:
-    cleaned = re.sub(r"\s+", " ", idea.strip()).strip(" .")
-    return cleaned[:80] or "Unnamed product idea"
+    profile = parse_intent(idea)
+    cleaned = re.sub(r"\s+", " ", profile.title.strip()).strip(" .")
+    return cleaned[:100] or "Unnamed product idea"
 
 
-def _payloads(idea: str, mode: Mode) -> dict[str, dict[str, Any]]:
-    title = _title(idea)
-    profile = MODE_PROFILES[mode]
-    base = {
+def _payloads(
+    idea: str, mode: Mode, profile: IntentProfile | None = None
+) -> dict[str, dict[str, Any]]:
+    profile = profile or parse_intent(idea)
+    title = profile.title
+    mode_profile = MODE_PROFILES[mode]
+    base: dict[str, Any] = {
         "product_name": title,
         "mode": mode.value,
-        "mode_label": profile["label"],
-        "focus": profile["focus"],
+        "mode_label": mode_profile["label"],
+        "focus": mode_profile["focus"],
         "idea": idea.strip(),
         "classification": "inference",
+        "archetype": profile.archetype,
+        "archetype_confidence": profile.archetype_confidence,
+        "execution": "deterministic-local",
     }
+    intent_profile = parse_intent(idea)
+    if intent_profile.archetype == "learning":
+        target_users = list(intent_profile.audience)
+        problem = "Learners and independent creators need a clear way to sell and complete outcome-led courses."
+        value = "Connect course creators with learners through purchase, learning progress and proof of completion."
+        in_scope = [
+            "Course catalog",
+            "Course purchase",
+            "Learner progress",
+            "Creator administration",
+        ]
+        out_of_scope = ["Accreditation", "Live teaching infrastructure", "Enterprise billing"]
+    elif intent_profile.archetype == "appointment":
+        target_users = list(intent_profile.audience)
+        problem = "People who need a service need a reliable way to find availability and complete a booking."
+        value = "Help a customer move from service selection to a confirmed appointment with clear availability."
+        in_scope = ["Service selection", "Availability", "Booking confirmation"]
+        out_of_scope = [
+            "Advanced administration",
+            "Unvalidated integrations",
+            "Operational scale work",
+        ]
+    else:
+        target_users = list(intent_profile.audience)
+        problem = "The supplied intent needs a validated problem frame before implementation breadth is chosen."
+        value = f"A focused first workflow for the outcome expressed in: {intent_profile.intent}"
+        in_scope = ["Intent capture", "Core outcome flow", "Confirmation or result state"]
+        out_of_scope = ["Unvalidated integrations", "Operational scale work"]
+    base.update(
+        {
+            "intent_text": intent_profile.intent,
+            "desired_outcome": intent_profile.desired_outcome,
+            "constraints": list(intent_profile.constraints),
+        }
+    )
     return {
         "intent": base
         | {
-            "desired_outcome": "Turn the stated intent into a product decision set.",
+            "desired_outcome": intent_profile.desired_outcome,
+            "intent_profile": intent_profile.to_dict(),
             "classification": "confirmed",
         },
         "framing": base
         | {
-            "problem": f"People who need {title.lower()} may struggle to achieve the intended outcome consistently.",
-            "target_users": ["Primary users inferred from the idea; validate with real users."],
-            "value_proposition": f"A focused way to help users achieve the outcome implied by: {idea.strip()}",
+            "problem": problem,
+            "target_users": target_users,
+            "value_proposition": value,
             "classification": "hypothesis",
         },
         "discovery": base
@@ -67,20 +114,31 @@ def _payloads(idea: str, mode: Mode) -> dict[str, dict[str, Any]]:
         },
         "hypothesis": base
         | {
-            "hypotheses": [
-                {
-                    "statement": "A focused first workflow will be more useful than a broad feature set.",
-                    "risk": "high",
-                    "test": "Observe completion of the smallest end-to-end task.",
-                },
-                {
-                    "statement": "The inferred primary user has a recurring need for the outcome.",
-                    "risk": "high",
-                    "test": "Interview or observe representative users.",
-                },
-            ],
+            "hypotheses": list(
+                [
+                    {
+                        "statement": f"The primary audience will use {title} to reach the stated outcome.",
+                        "risk": "high",
+                        "test": "Observe completion of the smallest end-to-end task.",
+                    },
+                    {
+                        "statement": "A focused first workflow will be more useful than a broad feature set.",
+                        "risk": "high",
+                        "test": "Interview or observe representative users.",
+                    },
+                ]
+                + [
+                    {
+                        "statement": item,
+                        "risk": "medium",
+                        "test": "Design a falsifiable experiment with representative users.",
+                    }
+                    for item in intent_profile.hypotheses
+                ]
+            ),
             "classification": "hypothesis",
         },
+        "research": not_run_payload("local-demo"),
         "experiment": base
         | {
             "main_hypothesis": "A small end-to-end experiment can establish whether the core outcome is feasible.",
@@ -90,12 +148,8 @@ def _payloads(idea: str, mode: Mode) -> dict[str, dict[str, Any]]:
         },
         "shaping": base
         | {
-            "in_scope": ["Intent capture", "Core outcome flow", "Confirmation or result state"],
-            "out_of_scope": [
-                "Advanced administration",
-                "Unvalidated integrations",
-                "Operational scale work",
-            ],
+            "in_scope": in_scope,
+            "out_of_scope": out_of_scope,
             "prioritization": "Value and risk first; defer breadth until the core outcome is validated.",
             "classification": "decision",
         },
@@ -171,8 +225,12 @@ def _payloads(idea: str, mode: Mode) -> dict[str, dict[str, Any]]:
                 "Overview",
                 "Problem",
                 "Users",
+                "Market Research",
+                "Buying Motivations",
+                "Positioning",
                 "Hypotheses",
                 "Scope",
+                "Product UX",
                 "Success",
                 "Decisions",
                 "Risks",
@@ -181,7 +239,8 @@ def _payloads(idea: str, mode: Mode) -> dict[str, dict[str, Any]]:
         },
         "navigation": base
         | {
-            "prototype": "Offline HTML prototype scoped to the defined core journey.",
+            "prototype": "Offline multi-surface Product Experience scoped to the defined journey.",
+            "surfaces": ["marketing", "customer", "admin"],
             "classification": "generated",
         },
     }
@@ -197,7 +256,12 @@ class PMRunner:
             self.progress(stage, status, owner)
 
     def run(
-        self, idea: str, mode: Mode, provider: str = "local-demo", run_id: str | None = None
+        self,
+        idea: str,
+        mode: Mode,
+        provider: str = "local-demo",
+        run_id: str | None = None,
+        research_file: Path | None = None,
     ) -> str:
         if not idea.strip():
             raise ValidationError(
@@ -246,27 +310,88 @@ class PMRunner:
                 {"count": len(relevant_knowledge), "source": "local"},
                 idempotency_key=f"knowledge-retrieved:{run_id}",
             )
-        payloads = _payloads(str(details["run"]["idea"]), Mode(str(details["run"]["mode"])))
+        intent_profile = parse_intent(str(details["run"]["idea"]))
+        payloads = _payloads(
+            str(details["run"]["idea"]), Mode(str(details["run"]["mode"])), intent_profile
+        )
+        if research_file is not None:
+            payloads["research"] = load_research_pack(research_file).payload
         sensor_registry = SensorRegistry()
         for spec in stage_specs(mode):
             stage = self.database.stage(run_id, spec.key)
             if StageStatus(stage["status"]) == StageStatus.COMPLETED:
                 continue
+            if spec.key == "research" and research_file is None and provider == "local-demo":
+                self.database.transition_stage(
+                    run_id,
+                    spec.key,
+                    StageStatus.SKIPPED,
+                    idempotency_key=f"{run_id}:research:not-run:skipped",
+                )
+                self.database.event(
+                    run_id,
+                    "research.not_run",
+                    {"reason": "local-demo", "status": "not_run"},
+                    idempotency_key=f"{run_id}:research:not-run:event",
+                )
+                self._notify(spec.key, "skipped", capability_name(spec.owner))
+                self._save_checkpoint(run_id, spec.key, session_id)
+                continue
+            if spec.key == "research" and research_file is None:
+                self.database.transition_stage(run_id, spec.key, StageStatus.RUNNING)
+                self.database.event(
+                    run_id,
+                    "research.required",
+                    {
+                        "status": "blocked",
+                        "next_action": "Supply a provider-produced research JSON pack and resume",
+                    },
+                )
+                self.database.transition_stage(
+                    run_id,
+                    spec.key,
+                    StageStatus.BLOCKED,
+                    "Provider research pack is required before product shaping.",
+                )
+                self.database.complete_run(run_id, RunStatus.BLOCKED)
+                self._save_checkpoint(
+                    run_id,
+                    spec.key,
+                    session_id,
+                    next_action="Import a validated research pack with tramuri product research",
+                )
+                return run_id
             if not self.database.completed_stages(run_id).issuperset(spec.dependencies):
                 self.database.complete_run(run_id, RunStatus.BLOCKED)
                 return run_id
             for attempt in range(1, 4):
+                agent_id = specialist_name(spec.key, spec.owner)
                 try:
                     self.database.event(
                         run_id,
                         "stage.planned",
-                        {"stage": spec.key, "owner": spec.owner},
+                        {
+                            "stage": spec.key,
+                            "owner": spec.owner,
+                            "agent_id": agent_id,
+                            "provider": provider,
+                        },
                         idempotency_key=f"{run_id}:{spec.key}:{attempt}:planned",
                     )
                     self.database.event(
                         run_id,
                         "stage.delegated",
-                        {"stage": spec.key, "owner": spec.owner},
+                        {
+                            "stage": spec.key,
+                            "owner": spec.owner,
+                            "agent_id": agent_id,
+                            "provider": provider,
+                            "execution_mode": "deterministic-local"
+                            if provider == "local-demo"
+                            else "provider-handoff",
+                            "agent_status": "not_invoked",
+                            "limitation": "Core runner records deterministic delegation; provider-native agent invocation remains in the assistant session.",
+                        },
                         idempotency_key=f"{run_id}:{spec.key}:{attempt}:delegated",
                     )
                     self.database.transition_stage(
@@ -306,16 +431,45 @@ class PMRunner:
                     self.database.event(
                         run_id,
                         "stage.executed",
-                        {"stage": spec.key},
+                        {
+                            "stage": spec.key,
+                            "agent_id": agent_id,
+                            "owner": spec.owner,
+                            "provider": provider,
+                            "execution_mode": "deterministic-local"
+                            if provider == "local-demo"
+                            else "provider-handoff",
+                            "agent_status": "not_invoked",
+                        },
                         idempotency_key=f"{run_id}:{spec.key}:{attempt}:executed",
                     )
                     artifact_id = self.database.add_artifact(
                         run_id,
                         spec.key,
-                        f"pm.{spec.key}",
+                        "pm.market_research" if spec.key == "research" else f"pm.{spec.key}",
                         payload,
                         list(spec.dependencies),
                         idempotency_key=f"{run_id}:{spec.key}:{attempt}:artifact",
+                    )
+                    self.database.event(
+                        run_id,
+                        "agent.invocation",
+                        {
+                            "role": spec.owner,
+                            "agent_id": agent_id,
+                            "provider": provider,
+                            "session_id": session_id,
+                            "status": "not_invoked",
+                            "mode": "deterministic-local"
+                            if provider == "local-demo"
+                            else "provider-handoff",
+                            "input_artifacts": list(spec.dependencies),
+                            "output_artifact": artifact_id,
+                            "limitations": [
+                                "The core runner does not invoke a remote subagent; the installed provider skill may delegate within the assistant session."
+                            ],
+                        },
+                        idempotency_key=f"{run_id}:{spec.key}:{attempt}:agent-invocation",
                     )
                     self._persist_records(run_id, spec.key, payload)
                     self.database.validation(
@@ -372,7 +526,7 @@ class PMRunner:
         )
         return run_id
 
-    def resume(self, run_id: str) -> str:
+    def resume(self, run_id: str, research_file: Path | None = None) -> str:
         details = self.database.run_details(run_id)
         checkpoint = self.database.latest_checkpoint(run_id)
         self.database.record_session_event(
@@ -391,6 +545,7 @@ class PMRunner:
             Mode(str(details["run"]["mode"])),
             str(details["run"]["provider"]),
             run_id,
+            research_file,
         )
 
     def _save_checkpoint(
@@ -402,32 +557,41 @@ class PMRunner:
         next_action: str | None = None,
     ) -> None:
         details = self.database.run_details(run_id)
-        completed = [
+        settled = [
             str(item["stage_key"])
             for item in details["stages"]
-            if item["status"] == StageStatus.COMPLETED.value
+            if item["status"] in {StageStatus.COMPLETED.value, StageStatus.SKIPPED.value}
         ]
         pending = [
             str(item["stage_key"])
             for item in details["stages"]
-            if item["status"] != StageStatus.COMPLETED.value
+            if item["status"] not in {StageStatus.COMPLETED.value, StageStatus.SKIPPED.value}
         ]
         context = build_context_pack(
             details,
             knowledge=details.get("knowledge", []),
             sensors=details.get("sensor_results", []),
         )
-        self.database.save_checkpoint(
+        checkpoint_id = self.database.save_checkpoint(
             run_id,
             stage_key,
             session_id,
             next_action=next_action
             or (f"Continue {pending[0]}" if pending else "Review verified outcomes"),
-            state={"completed_stages": completed, "run_status": details["run"]["status"]},
+            state={"settled_stages": settled, "run_status": details["run"]["status"]},
             pending={"stages": pending},
             context_digest=str(context["digest"]),
-            idempotency_key=f"{run_id}:checkpoint:{stage_key or 'final'}:{len(completed)}",
+            idempotency_key=f"{run_id}:checkpoint:{stage_key or 'final'}:{len(settled)}",
         )
+        try:
+            MemoryService(self.database).show(run_id)
+        except (OSError, ValidationError) as exc:
+            self.database.event(
+                run_id,
+                "memory.projection.failed",
+                {"checkpoint_id": checkpoint_id, "error_type": type(exc).__name__},
+                idempotency_key=f"memory-projection-failed:{checkpoint_id}",
+            )
 
     def _persist_records(self, run_id: str, stage_key: str, payload: dict[str, Any]) -> None:
         classification = str(payload.get("classification", "inference"))
@@ -475,3 +639,35 @@ class PMRunner:
                         "verified_by": None,
                     },
                 )
+        if stage_key == "research" and payload.get("status") == "imported":
+            source_by_id = {str(source.get("id")): source for source in payload.get("sources", [])}
+            for collection in (
+                "competitors",
+                "market_signals",
+                "buying_motivations",
+                "build_buy_partner",
+                "positioning",
+            ):
+                for item in payload.get(collection, []):
+                    statement = str(
+                        item.get("statement")
+                        or item.get("signal")
+                        or item.get("motivation")
+                        or item.get("positioning")
+                        or item.get("option")
+                        or item.get("name")
+                        or "Research claim"
+                    )
+                    refs = [source_by_id[str(item_id)]["url"] for item_id in item["source_ids"]]
+                    self.database.add_record(
+                        "evidence",
+                        {
+                            "run_id": run_id,
+                            "claim": statement,
+                            "source_kind": "market_research",
+                            "source_ref": ",".join(refs),
+                            "classification": "evidence",
+                            "freshness": str(payload["researched_at"]),
+                            "verified_by": "provider-research-pack",
+                        },
+                    )

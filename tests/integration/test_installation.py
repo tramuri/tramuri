@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from tramuri.core.models import InstallationComponent, InstallationPlan
 from tramuri.harness import adapter_for
 from tramuri.harness.installer import Installer
 from tramuri.storage.database import Database
@@ -63,3 +64,25 @@ def test_project_instructions_add_identity_without_overwriting_user_content(tmp_
         instructions.read_text(encoding="utf-8")
         == "# Existing project guidance\n\nKeep the API stable.\n"
     )
+
+
+def test_codex_update_migrates_skill_identifier_in_place(tmp_path: Path) -> None:
+    installer = Installer(tmp_path, Database(tmp_path))
+    legacy_plan = InstallationPlan(
+        "codex",
+        [
+            InstallationComponent(
+                "skill-product-status",
+                ".agents/skills/product-status/SKILL.md",
+                "---\nname: product-status\ndescription: Legacy status skill.\n---\n",
+            )
+        ],
+        [],
+    )
+    installer.install(legacy_plan)
+
+    installer.install(adapter_for("codex").installation_plan(tmp_path))
+
+    migrated = tmp_path / ".agents" / "skills" / "product-status" / "SKILL.md"
+    assert "name: tramuri-status" in migrated.read_text(encoding="utf-8")
+    assert not (tmp_path / ".agents" / "skills" / "tramuri-status").exists()

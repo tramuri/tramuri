@@ -8,39 +8,6 @@ from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
-class SkillRecord:
-    name: str
-    source: str
-    skill_path: str
-    content_hash: str
-    capabilities: tuple[str, ...] = ()
-    dependencies: tuple[str, ...] = ()
-    status: str = "available"
-    notes: tuple[str, ...] = ()
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(frozen=True, slots=True)
-class SkillSelection:
-    task_kind: str
-    selected: tuple[SkillRecord, ...]
-    unavailable: tuple[str, ...]
-    reasons: dict[str, str]
-    required_checks: tuple[str, ...]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "task_kind": self.task_kind,
-            "selected": [item.to_dict() for item in self.selected],
-            "unavailable": list(self.unavailable),
-            "reasons": dict(self.reasons),
-            "required_checks": list(self.required_checks),
-        }
-
-
-@dataclass(frozen=True, slots=True)
 class ExperienceStage:
     key: str
     label: str
@@ -122,6 +89,17 @@ class DemoReview:
 
 
 @dataclass(frozen=True, slots=True)
+class ProductSurface:
+    key: str
+    label: str
+    screens: tuple[str, ...] = ()
+    interactions: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
 class DemoResult:
     root: Path
     index: Path
@@ -129,6 +107,10 @@ class DemoResult:
     screens: tuple[str, ...]
     source_artifacts: tuple[str, ...]
     synthetic: bool = True
+    surfaces: tuple[ProductSurface, ...] = ()
+    category: str = "other"
+    template_id: str = "other"
+    specification: Path | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -138,6 +120,10 @@ class DemoResult:
             "screens": list(self.screens),
             "source_artifacts": list(self.source_artifacts),
             "synthetic": self.synthetic,
+            "surfaces": [item.to_dict() for item in self.surfaces],
+            "category": self.category,
+            "template_id": self.template_id,
+            "specification": str(self.specification) if self.specification else None,
         }
 
 

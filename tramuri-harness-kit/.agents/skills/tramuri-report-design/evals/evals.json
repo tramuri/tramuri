@@ -1,0 +1,23 @@
+{
+  "skill_name": "tramuri-report-design",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The product report in src/tramuri/reports/templates/report.html still feels like a generic dashboard. Redesign the reading flow, keep it offline, and show the actual stages, decisions and research state.",
+      "expected_output": "The agent loads the report design skill, inspects the generator and persisted data, reuses Tramuri tokens, keeps state truthful, and validates the rendered report in a browser.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Add a visual map connecting product evidence to decisions. We only have source_ref values on a few records; don't make up connections for the rest.",
+      "expected_output": "The agent uses stored references only, leaves unlinked records disconnected, provides a text equivalent, and tests the projection.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Adjust the product framing skill's wording for Portuguese. No report layout or report output changes are needed.",
+      "expected_output": "The agent does not route the task through the report-design skill; it uses the product-skill workflow instead.",
+      "files": []
+    }
+  ]
+}

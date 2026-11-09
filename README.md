@@ -14,13 +14,14 @@
 </p>
 
 Tramuri is a local-first Python tool for turning an incomplete product idea into
-a structured, reviewable product result. It keeps workflow state in
-SQLite, installs provider-native guidance for Codex, Claude Code and Gemini CLI,
-and generates an offline report plus a navigable prototype.
+a structured, evidence-aware product result. It keeps workflow state in SQLite,
+installs provider-native guidance for Codex, Claude Code and Gemini CLI, and
+generates a bilingual report plus a complete offline product experience.
 
-The first release implements the product-definition workflow only. It does not
-pretend to implement UX or Engineering modules, and it does not require a
-hosted model or duplicate provider credentials.
+The current product-definition workflow preserves the supplied domain, supports
+provider-backed market research, and generates connected marketing, customer
+and admin surfaces when the product calls for them. Product Engineering remains
+a future stage; the generated experience is not a production application.
 
 The runtime is split into a provider-neutral core, the product capability module and
 thin provider harnesses. The core owns workflow state and policy; harnesses own
@@ -132,8 +133,9 @@ tramuri_output/
 ├── portal/index.html                 # central product map
 ├── reports/<run-id>/report.html      # product report
 ├── reports/<run-id>/prototype.html  # offline navigation prototype
-├── demo/                             # navigable product demo
+├── demo/                             # marketing, customer and admin experience
 ├── database/tramuri.sqlite3          # durable workflow memory
+├── memorys/                          # readable memory and per-run summaries
 ├── manifests/                        # provider installation records
 └── backups/                          # safe installer backups
 ```
@@ -150,13 +152,29 @@ The installed entry skill is written as:
 .gemini/commands/tramuri.toml          # Gemini native /tramuri command
 ```
 
+Focused product skills are installed alongside the entry skill, for example
+`.agents/skills/product-framing/SKILL.md` and
+`.agents/skills/product-memory/SKILL.md` in Codex projects. Their public names
+are Tramuri-prefixed, so you can invoke `$tramuri-framing` or `$tramuri-memory`.
+Run `tramuri update --provider codex` to install or refresh them. If newly installed
+skills do not appear in Codex, restart Codex.
+
 Use the terminal to inspect the same real workflow state:
 
 ```bash
 tramuri status
 tramuri runs list
 tramuri resume <run-id>
+tramuri memory show
+tramuri memory search "pricing decision"
+tramuri memory save --title "Launch region" --content "Start in Brazil" --classification decision
 ```
+
+Tramuri saves concise project memory and workflow state in SQLite, then writes
+readable, regenerable files to `tramuri_output/memorys/`. It does not save full
+conversation transcripts. When asked what it remembers or what work was in
+progress, the `tramuri-memory` skill retrieves these records and checks current
+status before answering.
 
 ## Common commands
 
@@ -176,6 +194,7 @@ tramuri --help
 tramuri status
 tramuri --json explain "value proposition"
 tramuri product run --idea-file idea.md --mode mvp
+tramuri product research --run-id <run-id> --research-file research.json
 tramuri product demo --mode mvp
 tramuri experience check <run-id>
 tramuri report open <run-id>
@@ -208,14 +227,19 @@ tramuri report open <run-id> --no-open
 ```
 
 The demo requires no network or provider authentication. Generated hypotheses
-and example data are explicitly marked as synthetic.
+and example data are explicitly marked as synthetic. The local demo records
+market research as `not_run`; it never presents invented web research as
+evidence. A provider can produce a `tramuri.research.v1` JSON pack with source
+URLs, competitors, market signals, buying motivations, positioning, audience
+sizing and build/buy/partner trade-offs; import it with `tramuri product
+research` to resume the research-dependent stages.
 
 Each demo also produces `tramuri_output/portal/index.html`, the Product
-Experience map, and `tramuri_output/demo/index.html`, an offline Product Demo
-with a real simulated journey. Open the portal to move from Product Definition
-to the demo; Product UX and Product Engineering remain visible as future
-stages. Validate the generated artifacts with `tramuri --json experience check
-<run-id>`.
+Experience map, and `tramuri_output/demo/` with marketing, customer/learner and
+admin surfaces, real local links and simulated interactions. Open the portal to
+move from Product Definition to Product Demo; Product UX is represented by the
+generated experience, while Product Engineering remains a future stage.
+Validate the generated artifacts with `tramuri --json experience check <run-id>`.
 
 The workflow survives provider-session boundaries. Use `tramuri status` to see
 the real stage position, checkpoint, sensor gates and next action, then

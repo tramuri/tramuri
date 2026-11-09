@@ -1,0 +1,53 @@
+{
+  "description": "Deterministic Tramuri workflow gate and SQLite checkpoint recorder.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tramuri hooks runtime --provider codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tramuri hooks runtime --provider codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tramuri hooks runtime --provider codex",
+            "timeout": 10,
+            "statusMessage": "Checking Tramuri workflow state"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tramuri hooks runtime --provider codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -16,6 +16,12 @@ from tramuri.experience.demo import ProductDemoBuilder
 from tramuri.experience.portal import ProductPortalBuilder
 from tramuri.experience.reviewer import ProductLeadReviewer
 from tramuri.experience.sensors import DemoQualitySensors
+from tramuri.modules.pm.intent import parse_intent
+from tramuri.reports.presentation import (
+    build_relationship_graph,
+    redact_report_value,
+    safe_http_url,
+)
 
 
 class ReportGenerator:
@@ -28,6 +34,7 @@ class ReportGenerator:
         )
 
     def generate(self, details: dict[str, Any]) -> dict[str, Any]:
+        details = redact_report_value(details)
         run_id = str(details["run"]["id"])
         output_dir = output_root(self.project_dir) / "reports" / run_id
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -53,6 +60,10 @@ class ReportGenerator:
             "prototype": str(prototype_path),
             "portal": str(portal),
             "demo": str(demo.index),
+            "demo_specification": str(demo.specification) if demo.specification else None,
+            "demo_category": demo.category,
+            "demo_template": demo.template_id,
+            "experience_surfaces": [item.key for item in demo.surfaces],
             "review": review.to_dict(),
             "experience_sensors": [item.to_dict() for item in sensors],
         }
@@ -78,6 +89,16 @@ class ReportGenerator:
             )
         run = details["run"]
         status_view = build_status(details)
+        intent_profile = parse_intent(str(run.get("idea", ""))).to_dict()
+        research = by_kind.get("pm.market_research", {})
+        navigation = by_kind.get("pm.navigation", {})
+        report_graph = build_relationship_graph(details)
+        report_graph["node_by_id"] = {item["id"]: item for item in report_graph["nodes"]}
+        stage_name_by_id = {
+            str(item.get("id")): str(item.get("stage_key", "")).replace("_", " ").title()
+            for item in details.get("stages", [])
+            if item.get("id")
+        }
         return {
             "run": run,
             "stages": details.get("stages", []),
@@ -89,6 +110,7 @@ class ReportGenerator:
             "checkpoints": details.get("checkpoints", []),
             "knowledge": details.get("knowledge", []),
             "sensor_results": details.get("sensor_results", []),
+            "events": details.get("events", []),
             "status_view": status_view,
             "framing": by_kind.get("pm.framing", {}),
             "discovery": by_kind.get("pm.discovery", {}),
@@ -96,6 +118,13 @@ class ReportGenerator:
             "success": by_kind.get("pm.success", {}),
             "delivery": by_kind.get("pm.delivery", {}),
             "review": by_kind.get("pm.critical_review", {}),
+            "report_graph": report_graph,
+            "stage_name_by_id": stage_name_by_id,
+            "intent_profile": intent_profile,
+            "research": research,
+            "navigation": navigation,
+            "experience_surfaces": ["marketing", "customer", "admin"],
             "logo_data": logo_data,
+            "safe_http_url": safe_http_url,
             "escape": escape,
         }

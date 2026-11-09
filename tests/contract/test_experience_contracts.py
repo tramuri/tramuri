@@ -1,4 +1,4 @@
-from tramuri.experience.models import ExperienceStage, SensorResult, SkillSelection
+from tramuri.experience.models import ExperienceStage, SensorResult
 
 
 def test_experience_stage_contract_has_four_lifecycle_states() -> None:
@@ -15,9 +15,7 @@ def test_experience_stage_contract_has_four_lifecycle_states() -> None:
     assert stages[3].status == "future"
 
 
-def test_skill_selection_and_sensor_results_are_serializable() -> None:
-    selection = SkillSelection("python", (), (), {"task": "mapped"}, ())
+def test_sensor_results_are_serializable() -> None:
     sensor = SensorResult("links", "passed", "No broken local links", ("demo/index.html",))
 
-    assert selection.to_dict()["task_kind"] == "python"
     assert sensor.to_dict()["status"] == "passed"

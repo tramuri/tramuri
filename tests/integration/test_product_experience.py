@@ -1,8 +1,12 @@
 import json
 from pathlib import Path
 
+from typer.testing import CliRunner
+
+from tramuri.cli.app import app
 from tramuri.core.models import Mode
 from tramuri.experience.lifecycle import ExperienceLifecycle
+from tramuri.experience.models import SensorResult
 from tramuri.experience.reviewer import ProductLeadReviewer
 from tramuri.experience.sensors import DemoQualitySensors
 from tramuri.modules.pm.demo import run_demo
@@ -96,3 +100,59 @@ def test_experience_lifecycle_records_changed_retry_without_duplication(tmp_path
     ]
     assert len(events) == 2
     assert lifecycle.status()["browser_validation"]["payload"]["status"] == "passed"
+
+
+def test_experience_check_records_a_validated_delivery(monkeypatch, tmp_path: Path) -> None:
+    database = Database(tmp_path)
+    run_id = run_demo(database, Mode.MVP)
+    ReportGenerator(tmp_path).generate(database.run_details(run_id))
+    monkeypatch.setattr(
+        "tramuri.cli.app.run_browser_validation",
+        lambda demo_path: SensorResult(
+            "browser",
+            "passed",
+            "Finance and responsive browser flow passed.",
+            (str(demo_path),),
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "--project-dir",
+            str(tmp_path),
+            "--json",
+            "experience",
+            "check",
+            run_id,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    delivery = payload["lifecycle"]["delivery"]["payload"]
+    assert delivery["status"] == "completed"
+    assert delivery["browser"]["status"] == "passed"
+    assert delivery["review"]["status"] == "passed"
+    assert all(item["status"] == "passed" for item in delivery["sensors"])
+
+
+def test_experience_lifecycle_allows_a_previous_state_to_become_current_again(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path)
+    run_id = run_demo(database, Mode.MVP)
+    lifecycle = ExperienceLifecycle(database, run_id)
+    passed = {"status": "passed", "findings": []}
+    warned = {"status": "passed", "findings": ["stale scope warning"]}
+
+    lifecycle.record("critical_review", passed)
+    lifecycle.record("critical_review", warned)
+    lifecycle.record("critical_review", passed)
+
+    details = database.run_details(run_id)
+    reviews = [
+        event for event in details["events"] if event["event_type"] == "experience.critical_review"
+    ]
+    assert len(reviews) == 3
+    assert lifecycle.status()["critical_review"]["payload"] == passed

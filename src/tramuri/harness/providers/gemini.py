@@ -16,6 +16,7 @@ from tramuri.harness.providers.base import (
     ProviderAdapter,
     ProviderDetection,
     ProviderValidation,
+    capability_components,
     identity_instructions,
     probe_executable,
     product_skill,
@@ -68,7 +69,7 @@ class GeminiAdapter(ProviderAdapter):
                 self.key,
                 "subagents",
                 CapabilityStatus.UNKNOWN,
-                details="Version-dependent preview surface",
+                details="Project agent definitions are installed in .gemini/agents; runtime support depends on the active Gemini CLI version and is not inferred from files alone.",
             ),
         ]
 
@@ -110,10 +111,11 @@ class GeminiAdapter(ProviderAdapter):
                     description="Gemini native /tramuri command",
                 ),
             ]
-            + product_skill_components(".gemini/skills"),
+            + product_skill_components(".gemini/skills")
+            + capability_components(".gemini/agents", "md"),
             [
                 "GEMINI.md receives a managed Tramuri block without replacing existing instructions.",
-                "Gemini hook support is version-dependent; the installer never claims unsupported subagents.",
+                "Gemini project agents are installed under .gemini/agents; runtime availability depends on the active CLI version and must be confirmed in-session.",
             ],
         )
 

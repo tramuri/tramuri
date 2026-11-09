@@ -1,0 +1,23 @@
+{
+  "skill_name": "tramuri-product-demo-engine",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "A user gives Tramuri a mobile finance concept, a budget journey, and says nothing about design. Generate the normal Product Experience demo.",
+      "expected_output": "The engine is routed automatically, weighs persisted intent and platform, creates a multi-screen smartphone simulation with local interactions and traceability, and labels illustrative amounts honestly.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Generate a CLI developer-tool demo that accepts typed commands. Make sure it never runs arbitrary system commands and let me correct the category if the inferred surface is wrong.",
+      "expected_output": "The agent selects the CLI template, limits results to predefined local scenarios, persists category evidence and provides the existing category-correction command.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "The generated product report typography needs changes; leave the demo untouched.",
+      "expected_output": "The task routes to tramuri-report-design and does not apply the Product Demo Engine skill to report-only styling.",
+      "files": []
+    }
+  ]
+}

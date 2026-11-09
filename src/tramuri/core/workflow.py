@@ -21,7 +21,8 @@ MODE_STAGES: dict[Mode, tuple[StageSpec, ...]] = {
         StageSpec("intent", "product-framing"),
         StageSpec("framing", "product-framing", ("intent",)),
         StageSpec("discovery", "product-discovery", ("framing",)),
-        StageSpec("hypothesis", "product-discovery", ("discovery",)),
+        StageSpec("research", "product-discovery", ("discovery",)),
+        StageSpec("hypothesis", "product-discovery", ("research",)),
         StageSpec("shaping", "product-scope", ("hypothesis",)),
         StageSpec("success", "product-analysis", ("shaping",)),
         StageSpec("delivery", "product-scope", ("success",)),
@@ -33,7 +34,8 @@ MODE_STAGES: dict[Mode, tuple[StageSpec, ...]] = {
         StageSpec("intent", "product-framing"),
         StageSpec("framing", "product-framing", ("intent",)),
         StageSpec("discovery", "product-discovery", ("framing",)),
-        StageSpec("hypothesis", "product-discovery", ("discovery",)),
+        StageSpec("research", "product-discovery", ("discovery",)),
+        StageSpec("hypothesis", "product-discovery", ("research",)),
         StageSpec("shaping", "product-scope", ("hypothesis",)),
         StageSpec("success", "product-analysis", ("shaping",)),
         StageSpec("governance", "product-analysis", ("success",)),
@@ -63,7 +65,9 @@ ALLOWED_TRANSITIONS = {
     StageStatus.FAILED: {StageStatus.RUNNING, StageStatus.BLOCKED},
     StageStatus.BLOCKED: {StageStatus.RUNNING},
     StageStatus.COMPLETED: set(),
-    StageStatus.SKIPPED: set(),
+    # A local demo may skip provider research, then a later provider handoff
+    # can replace that explicit not-run state with an imported evidence pack.
+    StageStatus.SKIPPED: {StageStatus.RUNNING},
 }
 
 

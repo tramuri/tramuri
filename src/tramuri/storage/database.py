@@ -746,6 +746,7 @@ class Database:
         source_hash: str | None = None,
         freshness: str = "unknown",
         status: str = "active",
+        supersedes_id: str | None = None,
     ) -> str:
         """Store a provenance-labelled knowledge entry, never executable instructions."""
         project_id = self.project_id()
@@ -756,7 +757,8 @@ class Database:
             db.execute(
                 "INSERT INTO knowledge_entries(id, project_id, run_id, tier, title, content, "
                 "classification, source_kind, source_ref, content_hash, source_hash, freshness, "
-                "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "status, created_at, updated_at, supersedes_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     entry_id,
                     project_id,
@@ -773,6 +775,7 @@ class Database:
                     status,
                     timestamp,
                     timestamp,
+                    supersedes_id,
                 ),
             )
             if run_id:
@@ -937,7 +940,8 @@ class Database:
     def completed_stages(self, run_id: str) -> set[str]:
         with self.connection() as db:
             rows = db.execute(
-                "SELECT stage_key FROM stages WHERE run_id = ? AND status = 'completed'", (run_id,)
+                "SELECT stage_key FROM stages WHERE run_id = ? AND status IN ('completed', 'skipped')",
+                (run_id,),
             ).fetchall()
         return {str(row[0]) for row in rows}
 
@@ -1255,7 +1259,9 @@ class Database:
 
     def list_runs(self) -> list[dict[str, Any]]:
         with self.connection() as db:
-            rows = db.execute("SELECT * FROM runs ORDER BY created_at DESC").fetchall()
+            rows = db.execute(
+                "SELECT * FROM runs ORDER BY updated_at DESC, created_at DESC, rowid DESC"
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def run_details(self, run_id: str) -> dict[str, Any]:

@@ -17,7 +17,7 @@ def test_demo_completes_and_generates_offline_artifacts(tmp_path: Path) -> None:
     ReportGenerator(tmp_path).generate(details)
     report = Path(paths["report"]).read_text(encoding="utf-8")
     prototype = Path(paths["prototype"]).read_text(encoding="utf-8")
-    assert "Product Engineering" in report
+    assert "Product report" in report
     assert "#service" in prototype
     assert "https://" not in report
     assert "https://" not in prototype

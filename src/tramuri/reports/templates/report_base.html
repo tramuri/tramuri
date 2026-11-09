@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f4">
+  <meta name="color-scheme" content="light dark">
+  <title>{{ framing.product_name or run.idea }} · Tramuri</title>
+  <style>{% include "report.css" %}</style>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip.main">Skip to report</a>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-overview" viewBox="0 0 24 24"><path d="M4 5h7v6H4zM13 5h7v14h-7zM4 13h7v6H4z"/></symbol>
+    <symbol id="icon-journey" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M7 6h5a3 3 0 0 1 3 3v3a3 3 0 0 0 3 3h1M5 8v8a2 2 0 0 0 2 2h10"/></symbol>
+    <symbol id="icon-intelligence" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M8 10.5h5M10.5 8v5"/></symbol>
+    <symbol id="icon-market" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M7 15l4-4 3 2 5-6"/><path d="M16 7h3v3"/></symbol>
+    <symbol id="icon-scope" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="7" cy="18" r="2"/></symbol>
+    <symbol id="icon-evidence" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7"/></symbol>
+    <symbol id="icon-execution" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="m7 15 4-4 3 2 5-6"/></symbol>
+    <symbol id="icon-experience" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 9v11M12 13h5M12 16h5"/></symbol>
+    <symbol id="icon-theme" viewBox="0 0 24 24"><path d="M20.5 15.5A8.5 8.5 0 0 1 8.5 3.5 8.5 8.5 0 1 0 20.5 15.5Z"/></symbol>
+    <symbol id="icon-print" viewBox="0 0 24 24"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-4a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/><path d="M17 11h.01"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  </svg>
+  <div class="report-shell">
+    <aside class="sidebar" aria-label="Report navigation" data-i18n-aria="aria.navigation">
+      <a class="brand" href="#overview" aria-label="Tramuri report overview">
+        <img src="{{ logo_data }}" width="44" height="44" alt="Tramuri" fetchpriority="high">
+        <span class="brand-wordmark">TRAMURI<span class="brand-period">.</span><small data-i18n="brand.report">Product report</small></span>
+      </a>
+      <div class="sidebar-rule"></div>
+      <p class="sidebar-caption" data-i18n="nav.contents">Report contents</p>
+      <nav class="report-nav">
+        <a href="#overview"><svg aria-hidden="true"><use href="#icon-overview"/></svg><span data-i18n="nav.overview">Overview</span></a>
+        <a href="#journey"><svg aria-hidden="true"><use href="#icon-journey"/></svg><span data-i18n="nav.journey">PDLC journey</span></a>
+        <a href="#intelligence"><svg aria-hidden="true"><use href="#icon-intelligence"/></svg><span data-i18n="nav.intelligence">Product intelligence</span></a>
+        <a href="#market"><svg aria-hidden="true"><use href="#icon-market"/></svg><span data-i18n="nav.market">Market research</span></a>
+        <a href="#scope"><svg aria-hidden="true"><use href="#icon-scope"/></svg><span data-i18n="nav.scope">Scope &amp; experience</span></a>
+        <a href="#decision-evidence"><svg aria-hidden="true"><use href="#icon-evidence"/></svg><span data-i18n="nav.traceability">Decision &amp; evidence</span></a>
+        <a href="#execution"><svg aria-hidden="true"><use href="#icon-execution"/></svg><span data-i18n="nav.execution">Execution &amp; outcomes</span></a>
+        <a href="#experience"><svg aria-hidden="true"><use href="#icon-experience"/></svg><span data-i18n="nav.demo">Product experience</span></a>
+      </nav>
+      <div class="sidebar-bottom">
+        <span class="sidebar-run-label" data-i18n="run.identifier">Run identifier</span>
+        <code>{{ run.id }}</code>
+        <span class="sidebar-version">TRAMURI · OFFLINE REPORT</span>
+      </div>
+    </aside>
+
+    <div class="page-column">
+      <header class="topbar">
+        <span class="topbar-context"><span class="topbar-mark" aria-hidden="true"></span><span data-i18n="topbar.context">Product intelligence</span></span>
+        <div class="topbar-actions" aria-label="Report display settings" data-i18n-aria="aria.displaySettings">
+          <div class="language-switch" role="group" aria-label="Report language" data-i18n-aria="aria.language">
+            <button type="button" data-language="en" aria-pressed="true" aria-label="Read in English">EN</button>
+            <button type="button" data-language="pt-BR" aria-pressed="false" aria-label="Portugues (Brasil)" title="Português (Brasil)">PT-BR</button>
+          </div>
+          <button class="icon-button" type="button" data-theme-toggle aria-label="Switch to dark theme" title="Switch theme">
+            <svg aria-hidden="true"><use href="#icon-theme"/></svg><span class="control-label" data-i18n="controls.theme">Theme</span>
+          </button>
+          <button class="icon-button print-button" type="button" data-print aria-label="Print or save as PDF" title="Print or save as PDF" data-i18n-aria="controls.printTitle" data-i18n-title="controls.printTitle">
+            <svg aria-hidden="true"><use href="#icon-print"/></svg><span class="control-label" data-i18n="controls.print">Print</span>
+          </button>
+        </div>
+      </header>
+      <main id="main" class="report-main">{% block report_content %}{% endblock %}</main>
+      <footer class="report-footer">
+        <span class="footer-brand">TRAMURI<span>.</span></span>
+        <span data-i18n="footer.offline">Generated locally · Product content reflects the recorded run</span>
+        <span class="footer-run">{{ run.id }}</span>
+      </footer>
+    </div>
+  </div>
+  <script>{% include "report.js" %}</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{% macro state(status) -%}
+  {% set value = status|string|lower|replace('_', '-') %}
+  <span class="state state--{{ value }}"><span class="state-mark" aria-hidden="true">{% if status == 'completed' or status == 'valid' or status == 'passed' %}✓{% elif status == 'running' %}↗{% elif status == 'blocked' or status == 'failed' %}!{% elif status == 'skipped' %}–{% else %}·{% endif %}</span><span data-status-label="{{ status }}">{{ status|replace('_', ' ')|title }}</span></span>
+{%- endmacro %}
+
+{% macro empty_state(title_key, detail_key) -%}
+  <div class="empty-state"><span class="empty-mark" aria-hidden="true">—</span><div><h3 data-i18n="{{ title_key }}"></h3><p data-i18n="{{ detail_key }}"></p></div></div>
+{%- endmacro %}
+
+{% macro section_heading(number, heading_id, title_key, title_fallback, description_key, description_fallback) -%}
+  <div class="section-heading"><span class="section-number" aria-hidden="true">{{ number }}</span><div><h2 id="{{ heading_id }}" data-i18n="{{ title_key }}">{{ title_fallback }}</h2><p data-i18n="{{ description_key }}">{{ description_fallback }}</p></div></div>
+{%- endmacro %}

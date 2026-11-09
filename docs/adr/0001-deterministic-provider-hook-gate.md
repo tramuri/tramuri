@@ -33,7 +33,7 @@ not persist prompt text, commands, tool arguments or credentials.
 - A shared runtime prevents three providers from implementing different workflow
   policies.
 - Native adapters preserve each host's trust and permission model.
-- The gate is deterministic while the Product Manager remains responsible for
+- The gate is deterministic while the Tramuri product workflow remains responsible for
   semantic analysis and artifact quality.
 
 ## Consequences

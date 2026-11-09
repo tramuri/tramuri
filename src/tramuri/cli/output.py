@@ -61,6 +61,7 @@ def stage_table(stages: list[dict[str, Any]], no_color: bool = False) -> Table:
     table = Table(title="TRAMURI / PRODUCT STAGES", box=None, show_header=True)
     table.add_column("State", width=8)
     table.add_column("Stage")
+    table.add_column("Agent")
     table.add_column("Attempts", justify="right")
     symbols = {
         "pending": "[ ]",
@@ -75,6 +76,7 @@ def stage_table(stages: list[dict[str, Any]], no_color: bool = False) -> Table:
         table.add_row(
             Text(symbols.get(state, "[?]")),
             str(stage.get("stage_key", stage.get("key", "unknown"))).replace("_", " ").title(),
+            str(stage.get("agent_id") or stage.get("owner") or "-"),
             str(stage.get("attempts", 0)),
         )
     return table
@@ -111,6 +113,22 @@ def render_status(view: dict[str, Any], no_color: bool = False) -> None:
     table.add_row("Current", str(view.get("current_stage") or "-"))
     table.add_row("Last completed", str(view.get("last_completed_stage") or "-"))
     table.add_row("Next action", str(view.get("next_action") or "-"))
+    research = view.get("research", {})
+    table.add_row(
+        "Research",
+        f"{research.get('status', 'not_started')} · {research.get('source_count', 0)} source(s)",
+    )
+    agents = view.get("agents", {})
+    table.add_row(
+        "Delegation",
+        f"{agents.get('delegated', 0)} stage(s) · {', '.join(agents.get('execution_modes', [])) or 'not recorded'} · "
+        f"{', '.join(agents.get('invocation_statuses', [])) or 'unknown'}",
+    )
+    experience = view.get("experience", {})
+    table.add_row(
+        "Experience",
+        f"{', '.join(experience.get('surfaces', [])) or 'not generated'} · browser {experience.get('browser', 'not_run')}",
+    )
     table.add_row(
         "Gates",
         f"{gates.get('blocking_failures', 0)} blocking | {gates.get('pending_validation', 0)} pending validation",
